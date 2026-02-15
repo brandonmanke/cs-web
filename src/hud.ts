@@ -1,4 +1,5 @@
 export class HUD {
+  private static readonly HITMARKER_DURATION = 0.15;
   private scoreEl: HTMLElement;
   private ammoEl: HTMLElement;
   private reloadEl: HTMLElement;
@@ -45,20 +46,17 @@ export class HUD {
 
   showHitmarker(): void {
     this.hitmarkerEl.style.display = "block";
-    this.hitmarkerTimer = 0.15;
-    this.tickHitmarker();
+    this.hitmarkerTimer = HUD.HITMARKER_DURATION;
   }
 
-  private tickHitmarker(): void {
-    if (this.hitmarkerTimer > 0) {
-      requestAnimationFrame(() => {
-        this.hitmarkerTimer -= 0.016;
-        if (this.hitmarkerTimer <= 0) {
-          this.hitmarkerEl.style.display = "none";
-        } else {
-          this.tickHitmarker();
-        }
-      });
+  update(dt: number): void {
+    if (this.hitmarkerTimer <= 0) {
+      return;
+    }
+
+    this.hitmarkerTimer -= dt;
+    if (this.hitmarkerTimer <= 0) {
+      this.hitmarkerEl.style.display = "none";
     }
   }
 }

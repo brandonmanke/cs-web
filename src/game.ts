@@ -55,9 +55,15 @@ export class Game {
 
     document.addEventListener("pointerlockchange", () => {
       const locked = document.pointerLockElement === this.renderer.domElement;
+      this.input.setPointerLocked(locked);
       overlay.style.display = locked ? "none" : "flex";
       this.hud.setVisible(locked);
       if (locked) this.audio.resume();
+      if (!locked) this.input.reset();
+    });
+
+    window.addEventListener("blur", () => {
+      this.input.reset();
     });
 
     window.addEventListener("resize", () => {
@@ -103,6 +109,7 @@ export class Game {
       this.weapon.update(dt, this.player.isMoving());
       this.hud.updateAmmo(this.weapon.ammo, this.weapon.reserveAmmo);
       this.hud.updateReloadMsg(this.weapon.isReloading, this.weapon.ammo === 0);
+      this.hud.update(dt);
     }
 
     this.targets.update(dt);
