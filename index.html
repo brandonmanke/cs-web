@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CS 1.6 Aim Trainer</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        overflow: hidden;
+        background: #000;
+        font-family: "Courier New", monospace;
+        color: #fff;
+        cursor: none;
+      }
+      canvas {
+        display: block;
+      }
+
+      /* Click-to-play overlay */
+      #overlay {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.8);
+        z-index: 100;
+        cursor: pointer;
+      }
+      #overlay h1 {
+        font-size: 48px;
+        margin-bottom: 16px;
+        letter-spacing: 4px;
+      }
+      #overlay p {
+        font-size: 18px;
+        color: #aaa;
+      }
+
+      /* Crosshair */
+      #crosshair {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        z-index: 10;
+        display: none;
+      }
+      #crosshair .h {
+        position: absolute;
+        background: #0f0;
+        width: 20px;
+        height: 2px;
+        top: -1px;
+      }
+      #crosshair .v {
+        position: absolute;
+        background: #0f0;
+        height: 20px;
+        width: 2px;
+        left: -1px;
+      }
+      #crosshair .h.left {
+        right: 4px;
+      }
+      #crosshair .h.right {
+        left: 4px;
+      }
+      #crosshair .v.top {
+        bottom: 4px;
+      }
+      #crosshair .v.bottom {
+        top: 4px;
+      }
+
+      /* HUD */
+      #hud {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 10;
+        display: none;
+      }
+      #score {
+        position: absolute;
+        top: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 24px;
+      }
+      #ammo {
+        position: absolute;
+        bottom: 32px;
+        right: 48px;
+        font-size: 28px;
+        font-weight: bold;
+      }
+      #reload-msg {
+        position: absolute;
+        bottom: 70px;
+        right: 48px;
+        font-size: 14px;
+        color: #f44;
+        display: none;
+      }
+      #hitmarker {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 24px;
+        color: #f00;
+        pointer-events: none;
+        z-index: 11;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="overlay">
+      <h1>AIM TRAINER</h1>
+      <p>Click to play — WASD to move, mouse to aim, LMB to shoot, R to reload</p>
+    </div>
+
+    <div id="crosshair">
+      <div class="h left"></div>
+      <div class="h right"></div>
+      <div class="v top"></div>
+      <div class="v bottom"></div>
+    </div>
+
+    <div id="hud">
+      <div id="score">Score: 0</div>
+      <div id="ammo">30 / 30</div>
+      <div id="reload-msg">RELOAD [R]</div>
+    </div>
+
+    <div id="hitmarker">X</div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
