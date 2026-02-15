@@ -44,6 +44,7 @@ export class Game {
     this.weapon = new Weapon(this.camera);
     this.targets = new TargetManager(this.scene);
 
+    this.scene.add(this.camera);
     createRoom(this.scene);
 
     // Pointer lock overlay
