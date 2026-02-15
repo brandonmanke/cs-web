@@ -22,7 +22,7 @@ export class Weapon {
   private muzzleTimer = 0;
 
   // Base position of the viewmodel
-  private basePos = new THREE.Vector3(0.3, -0.3, -0.6);
+  private basePos = new THREE.Vector3(0.36, -0.33, -0.62);
 
   constructor(camera: THREE.PerspectiveCamera) {
     this.camera = camera;
@@ -32,7 +32,7 @@ export class Weapon {
 
     // Muzzle flash light
     this.muzzleFlash = new THREE.PointLight(0xffaa00, 0, 3);
-    this.muzzleFlash.position.set(0, 0.035, -0.73);
+    this.muzzleFlash.position.set(0, 0.035, -0.75);
     this.model.add(this.muzzleFlash);
   }
 
@@ -46,18 +46,18 @@ export class Weapon {
 
     // === RECEIVER (main body) ===
     const receiver = new THREE.Mesh(
-      new THREE.BoxGeometry(0.055, 0.065, 0.32),
+      new THREE.BoxGeometry(0.055, 0.058, 0.32),
       metal
     );
-    receiver.position.set(0, 0, -0.05);
+    receiver.position.set(0, -0.002, -0.05);
     group.add(receiver);
 
     // Dust cover (top of receiver, slightly raised)
     const dustCover = new THREE.Mesh(
-      new THREE.BoxGeometry(0.048, 0.015, 0.25),
+      new THREE.BoxGeometry(0.048, 0.012, 0.25),
       metalDark
     );
-    dustCover.position.set(0, 0.038, -0.07);
+    dustCover.position.set(0, 0.033, -0.07);
     group.add(dustCover);
 
     // === BARREL ===
@@ -75,7 +75,8 @@ export class Weapon {
       metalDark
     );
     muzzleBrake.rotation.x = Math.PI / 2;
-    muzzleBrake.position.set(0, 0.035, -0.7);
+    muzzleBrake.rotation.z = 0.2;
+    muzzleBrake.position.set(0, 0.035, -0.72);
     group.add(muzzleBrake);
 
     // === GAS TUBE (above barrel, AK signature) ===
@@ -97,18 +98,32 @@ export class Weapon {
 
     // === FRONT SIGHT POST ===
     const frontSightBase = new THREE.Mesh(
-      new THREE.BoxGeometry(0.025, 0.025, 0.015),
+      new THREE.BoxGeometry(0.032, 0.05, 0.02),
       metal
     );
-    frontSightBase.position.set(0, 0.055, -0.6);
+    frontSightBase.position.set(0, 0.06, -0.62);
     group.add(frontSightBase);
 
     const frontSightPost = new THREE.Mesh(
       new THREE.BoxGeometry(0.004, 0.035, 0.004),
       metal
     );
-    frontSightPost.position.set(0, 0.08, -0.6);
+    frontSightPost.position.set(0, 0.09, -0.62);
     group.add(frontSightPost);
+
+    const frontSightEarL = new THREE.Mesh(
+      new THREE.BoxGeometry(0.004, 0.022, 0.008),
+      metalDark
+    );
+    frontSightEarL.position.set(-0.012, 0.078, -0.62);
+    group.add(frontSightEarL);
+
+    const frontSightEarR = new THREE.Mesh(
+      new THREE.BoxGeometry(0.004, 0.022, 0.008),
+      metalDark
+    );
+    frontSightEarR.position.set(0.012, 0.078, -0.62);
+    group.add(frontSightEarR);
 
     // === REAR SIGHT BLOCK ===
     const rearSight = new THREE.Mesh(
@@ -131,33 +146,41 @@ export class Weapon {
       new THREE.BoxGeometry(0.048, 0.025, 0.2),
       wood
     );
-    upperHandguard.position.set(0, 0.07, -0.33);
+    upperHandguard.position.set(0, 0.051, -0.29);
     group.add(upperHandguard);
 
     // === MAGAZINE (curved banana mag) ===
-    // Three overlapping sections for a smoother curve
+    // Four overlapping sections for a more pronounced AK curve
     const magTop = new THREE.Mesh(
-      new THREE.BoxGeometry(0.035, 0.06, 0.05),
+      new THREE.BoxGeometry(0.036, 0.06, 0.052),
       metalDark
     );
-    magTop.position.set(0, -0.06, -0.07);
-    magTop.rotation.x = 0.05;
+    magTop.position.set(0, -0.065, -0.072);
+    magTop.rotation.x = 0.08;
     group.add(magTop);
 
-    const magMid = new THREE.Mesh(
-      new THREE.BoxGeometry(0.034, 0.06, 0.048),
+    const magMidA = new THREE.Mesh(
+      new THREE.BoxGeometry(0.036, 0.058, 0.05),
       metalDark
     );
-    magMid.position.set(0, -0.115, -0.08);
-    magMid.rotation.x = 0.2;
-    group.add(magMid);
+    magMidA.position.set(0, -0.118, -0.088);
+    magMidA.rotation.x = 0.24;
+    group.add(magMidA);
+
+    const magMidB = new THREE.Mesh(
+      new THREE.BoxGeometry(0.035, 0.054, 0.048),
+      metalDark
+    );
+    magMidB.position.set(0, -0.165, -0.108);
+    magMidB.rotation.x = 0.4;
+    group.add(magMidB);
 
     const magBottom = new THREE.Mesh(
-      new THREE.BoxGeometry(0.032, 0.05, 0.045),
+      new THREE.BoxGeometry(0.033, 0.05, 0.045),
       metalDark
     );
-    magBottom.position.set(0, -0.16, -0.1);
-    magBottom.rotation.x = 0.4;
+    magBottom.position.set(0, -0.206, -0.14);
+    magBottom.rotation.x = 0.58;
     group.add(magBottom);
 
     // === PISTOL GRIP ===
@@ -181,7 +204,7 @@ export class Weapon {
     // === STOCK ===
     // Stock tang (overlaps into receiver for seamless join)
     const stockTang = new THREE.Mesh(
-      new THREE.BoxGeometry(0.046, 0.05, 0.12),
+      new THREE.BoxGeometry(0.04, 0.044, 0.12),
       wood
     );
     stockTang.position.set(0, -0.01, 0.14);
@@ -190,16 +213,16 @@ export class Weapon {
 
     // Stock body (tapers down like AK, overlaps tang)
     const stockBody = new THREE.Mesh(
-      new THREE.BoxGeometry(0.044, 0.055, 0.2),
+      new THREE.BoxGeometry(0.038, 0.048, 0.2),
       wood
     );
-    stockBody.position.set(0, -0.025, 0.28);
+    stockBody.position.set(0, -0.027, 0.28);
     stockBody.rotation.x = 0.08;
     group.add(stockBody);
 
     // Stock butt plate
     const buttPlate = new THREE.Mesh(
-      new THREE.BoxGeometry(0.046, 0.06, 0.01),
+      new THREE.BoxGeometry(0.04, 0.052, 0.01),
       metalDark
     );
     buttPlate.position.set(0, -0.04, 0.39);
