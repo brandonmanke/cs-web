@@ -45,7 +45,7 @@ export class TargetManager {
   }
 
   private spawnTarget(): void {
-    const mesh = new THREE.Mesh(this.geometry, this.targetMat.clone());
+    const mesh = new THREE.Mesh(this.geometry, this.targetMat);
     mesh.position.copy(this.randomPos());
     this.scene.add(mesh);
     this.targets.push({ mesh, hitTime: -1 });
@@ -64,7 +64,7 @@ export class TargetManager {
       const target = this.targets.find((t) => t.mesh === hitMesh);
       if (target) {
         target.hitTime = 0;
-        target.mesh.material = this.hitMat.clone();
+        target.mesh.material = this.hitMat;
       }
       return true;
     }
