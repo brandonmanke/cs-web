@@ -1,7 +1,7 @@
 import * as THREE from "three";
 
 /**
- * An in-world panel mounted on a wall that the player can shoot to reset stats.
+ * An in-world panel mounted on the floor that the player can shoot to reset stats.
  * Renders "RESET" text via canvas texture on a flat plane.
  */
 export class ResetBoard {

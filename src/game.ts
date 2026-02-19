@@ -90,17 +90,22 @@ export class Game {
     const overlay = document.getElementById("overlay")!;
     const canvas = this.renderer.domElement;
 
+    const requestPointerLockSafely = (): void => {
+      try {
+        // Handle browsers that return either void or a promise from requestPointerLock.
+        void Promise.resolve(canvas.requestPointerLock()).catch(() => {
+          overlay.style.display = "flex";
+        });
+      } catch {
+        overlay.style.display = "flex";
+      }
+    };
+
     // Click overlay or Resume button → request pointer lock (click = valid gesture)
-    overlay.addEventListener("click", () => canvas.requestPointerLock());
+    overlay.addEventListener("click", requestPointerLockSafely);
 
     // Resume button: request pointer lock directly (click gesture is valid)
-    this.menu.onClose(() => {
-      canvas.requestPointerLock().catch(() => {
-        // Browser rejected re-lock (e.g. Escape-initiated unlock).
-        // Fall back to showing the overlay so the user can click to re-enter.
-        overlay.style.display = "flex";
-      });
-    });
+    this.menu.onClose(requestPointerLockSafely);
 
     // Escape key: exit pointer lock (shows menu), or close menu (shows overlay)
     document.addEventListener("keydown", (e) => {
