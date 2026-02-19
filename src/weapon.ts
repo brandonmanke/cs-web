@@ -1,10 +1,16 @@
 import * as THREE from "three";
+import { Settings } from "./settings";
 import {
   FIRE_RATE,
   MAG_SIZE,
   RELOAD_TIME,
   RECOIL_AMOUNT,
   RECOIL_RECOVERY,
+  MUZZLE_FLASH_PEAK_INTENSITY,
+  MUZZLE_FLASH_DECAY_RATE,
+  MUZZLE_FLASH_DURATION,
+  MUZZLE_FLASH_LIGHT_DISTANCE,
+  MUZZLE_FLASH_LIGHT_DECAY,
 } from "./constants";
 
 export class Weapon {
@@ -13,27 +19,63 @@ export class Weapon {
   isReloading = false;
 
   private camera: THREE.PerspectiveCamera;
+  private settings: Settings;
   private model: THREE.Group;
   private fireTimer = 0;
   private reloadTimer = 0;
   private recoilOffset = 0;
   private bobPhase = 0;
   private muzzleFlash: THREE.PointLight;
+  private muzzleSprite: THREE.Sprite;
   private muzzleTimer = 0;
 
   // Base position of the viewmodel
   private basePos = new THREE.Vector3(0.36, -0.33, -0.62);
 
-  constructor(camera: THREE.PerspectiveCamera) {
+  constructor(camera: THREE.PerspectiveCamera, settings: Settings) {
     this.camera = camera;
+    this.settings = settings;
     this.model = this.buildModel();
     this.model.position.copy(this.basePos);
     camera.add(this.model);
 
     // Muzzle flash light
-    this.muzzleFlash = new THREE.PointLight(0xffaa00, 0, 3);
+    this.muzzleFlash = new THREE.PointLight(0xffaa00, 0, MUZZLE_FLASH_LIGHT_DISTANCE, MUZZLE_FLASH_LIGHT_DECAY);
     this.muzzleFlash.position.set(0, 0.035, -0.75);
     this.model.add(this.muzzleFlash);
+
+    // Muzzle flash sprite (additive billboard)
+    const flashMat = new THREE.SpriteMaterial({
+      map: Weapon.createFlashTexture(),
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      transparent: true,
+      color: 0xffcc44,
+    });
+    this.muzzleSprite = new THREE.Sprite(flashMat);
+    this.muzzleSprite.scale.set(0.35, 0.35, 1);
+    this.muzzleSprite.position.copy(this.muzzleFlash.position);
+    this.muzzleSprite.visible = false;
+    this.model.add(this.muzzleSprite);
+  }
+
+  private static createFlashTexture(): THREE.Texture {
+    const size = 64;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d")!;
+    const g = ctx.createRadialGradient(
+      size / 2, size / 2, 0,
+      size / 2, size / 2, size / 2
+    );
+    g.addColorStop(0, "rgba(255,255,200,1)");
+    g.addColorStop(0.3, "rgba(255,180,50,0.8)");
+    g.addColorStop(0.7, "rgba(255,100,0,0.3)");
+    g.addColorStop(1, "rgba(255,50,0,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+    return new THREE.CanvasTexture(canvas);
   }
 
   private buildModel(): THREE.Group {
@@ -259,17 +301,30 @@ export class Weapon {
   }
 
   canShoot(): boolean {
+    if (this.settings.unlimitedAmmo) {
+      return this.fireTimer <= 0 && !this.isReloading;
+    }
     return this.fireTimer <= 0 && this.ammo > 0 && !this.isReloading;
   }
 
   shoot(): void {
-    this.ammo--;
+    if (!this.settings.unlimitedAmmo) this.ammo--;
     this.fireTimer = FIRE_RATE;
     this.recoilOffset += RECOIL_AMOUNT;
 
     // Muzzle flash
-    this.muzzleFlash.intensity = 2;
-    this.muzzleTimer = 0.04;
+    this.muzzleFlash.intensity = MUZZLE_FLASH_PEAK_INTENSITY;
+    this.muzzleTimer = MUZZLE_FLASH_DURATION;
+    this.muzzleSprite.visible = true;
+    this.muzzleSprite.material.rotation = Math.random() * Math.PI * 2;
+    (this.muzzleSprite.material as THREE.SpriteMaterial).opacity = 1;
+  }
+
+  resetAmmo(): void {
+    this.ammo = MAG_SIZE;
+    this.reserveAmmo = 90;
+    this.isReloading = false;
+    this.reloadTimer = 0;
   }
 
   startReload(): void {
@@ -301,10 +356,17 @@ export class Weapon {
       if (this.recoilOffset < 0) this.recoilOffset = 0;
     }
 
-    // Muzzle flash decay
+    // Muzzle flash decay (smooth exponential)
     if (this.muzzleTimer > 0) {
       this.muzzleTimer -= dt;
-      if (this.muzzleTimer <= 0) this.muzzleFlash.intensity = 0;
+      const elapsed = MUZZLE_FLASH_DURATION - this.muzzleTimer;
+      const factor = Math.exp(-MUZZLE_FLASH_DECAY_RATE * elapsed);
+      this.muzzleFlash.intensity = MUZZLE_FLASH_PEAK_INTENSITY * factor;
+      (this.muzzleSprite.material as THREE.SpriteMaterial).opacity = factor;
+      if (this.muzzleTimer <= 0) {
+        this.muzzleFlash.intensity = 0;
+        this.muzzleSprite.visible = false;
+      }
     }
 
     // Weapon bob

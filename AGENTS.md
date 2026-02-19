@@ -4,9 +4,9 @@ Repository guidance for any coding agent (Codex, Claude, Cursor, etc.).
 
 ## Commands
 
-- `npm run dev` - start Vite dev server (hot reload)
-- `npm run build` - type-check with `tsc` then bundle with Vite
-- `npx tsc --noEmit` - type-check only
+- `bun run dev` (preferred) / `npm run dev` (fallback) - start Vite dev server (hot reload)
+- `bun run build` (preferred) / `npm run build` (fallback) - type-check with `tsc` then bundle with Vite
+- `bunx tsc --noEmit` (preferred) / `npx tsc --noEmit` (fallback) - type-check only
 
 ## Architecture
 
@@ -37,5 +37,5 @@ Data flow for shooting:
 
 - Think before coding: surface assumptions and tradeoffs if ambiguity matters
 - Define concrete success criteria before implementing
-- Verify with commands (at minimum `npm run build`) after changes
+- Verify with commands (at minimum `bun run build` or `npm run build`) after changes
 - If a change is unrelated to the user request, call it out instead of silently modifying it

@@ -95,6 +95,14 @@
         transform: translateX(-50%);
         font-size: 24px;
       }
+      #accuracy {
+        position: absolute;
+        top: 46px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 14px;
+        color: rgba(255, 255, 255, 0.55);
+      }
       #ammo {
         position: absolute;
         bottom: 32px;
@@ -121,6 +129,160 @@
         z-index: 11;
         display: none;
       }
+
+      /* ── Escape Menu (CS2-style) ── */
+      #escape-menu {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.65);
+        z-index: 200;
+        cursor: default;
+      }
+      #escape-menu .menu-panel {
+        background: rgba(24, 26, 30, 0.95);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 4px;
+        width: 420px;
+        padding: 0;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+      }
+      #escape-menu .menu-header {
+        padding: 18px 24px 14px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.5);
+      }
+      #escape-menu .menu-body {
+        padding: 16px 24px 24px;
+      }
+      #escape-menu .setting-row {
+        margin-bottom: 20px;
+      }
+      #escape-menu .setting-row:last-child {
+        margin-bottom: 0;
+      }
+      #escape-menu .setting-label {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-bottom: 8px;
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.75);
+      }
+      #escape-menu .setting-val {
+        font-size: 14px;
+        font-weight: 700;
+        color: #fff;
+        min-width: 40px;
+        text-align: right;
+      }
+
+      /* Slider track + thumb (CS2 orange accent) */
+      #escape-menu input[type="range"] {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 100%;
+        height: 4px;
+        border-radius: 2px;
+        background: rgba(255, 255, 255, 0.1);
+        outline: none;
+        cursor: pointer;
+      }
+      #escape-menu input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: #de9b35;
+        border: 2px solid #fff;
+        cursor: pointer;
+      }
+      #escape-menu input[type="range"]::-moz-range-thumb {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: #de9b35;
+        border: 2px solid #fff;
+        cursor: pointer;
+      }
+
+      /* Toggle switch */
+      #escape-menu .setting-toggle {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.75);
+      }
+      #escape-menu .toggle-switch {
+        position: relative;
+        width: 40px;
+        height: 20px;
+        flex-shrink: 0;
+      }
+      #escape-menu .toggle-switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+      #escape-menu .toggle-track {
+        position: absolute;
+        inset: 0;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      #escape-menu .toggle-track::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 16px;
+        height: 16px;
+        background: #888;
+        border-radius: 50%;
+        transition: transform 0.2s, background 0.2s;
+      }
+      #escape-menu .toggle-switch input:checked + .toggle-track {
+        background: rgba(222, 155, 53, 0.35);
+      }
+      #escape-menu .toggle-switch input:checked + .toggle-track::after {
+        transform: translateX(20px);
+        background: #de9b35;
+      }
+
+      /* Resume button */
+      #escape-menu .menu-footer {
+        padding: 0 24px 20px;
+      }
+      #menu-resume {
+        width: 100%;
+        padding: 10px 0;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 3px;
+        color: rgba(255, 255, 255, 0.8);
+        font-family: "Courier New", monospace;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      #menu-resume:hover {
+        background: rgba(222, 155, 53, 0.2);
+        border-color: rgba(222, 155, 53, 0.4);
+        color: #fff;
+      }
     </style>
   </head>
   <body>
@@ -138,11 +300,55 @@
 
     <div id="hud">
       <div id="score">Score: 0</div>
+      <div id="accuracy">0/0 (0%)</div>
       <div id="ammo">30 / 90</div>
       <div id="reload-msg">RELOAD [R]</div>
     </div>
 
     <div id="hitmarker">X</div>
+
+    <div id="escape-menu">
+      <div class="menu-panel">
+        <div class="menu-header">Settings</div>
+        <div class="menu-body">
+          <div class="setting-row">
+            <div class="setting-label">
+              <span>Field of View</span>
+              <span class="setting-val" id="fov-value">75</span>
+            </div>
+            <input type="range" id="fov-slider" />
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span>Mouse Sensitivity</span>
+              <span class="setting-val" id="sens-value">2.0</span>
+            </div>
+            <input type="range" id="sens-slider" />
+          </div>
+          <div class="setting-row">
+            <div class="setting-toggle">
+              <span>Unlimited Ammo</span>
+              <label class="toggle-switch">
+                <input type="checkbox" id="unlimited-ammo-toggle" />
+                <span class="toggle-track"></span>
+              </label>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-toggle">
+              <span>Muzzle Flash FX</span>
+              <label class="toggle-switch">
+                <input type="checkbox" id="muzzle-flash-toggle" />
+                <span class="toggle-track"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="menu-footer">
+          <button id="menu-resume">Resume</button>
+        </div>
+      </div>
+    </div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>
