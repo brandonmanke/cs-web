@@ -85,6 +85,11 @@ if(EMSCRIPTEN)
     DEPENDS "${CMAKE_SOURCE_DIR}/public/index.html"
   )
 else()
+  add_library(cs_server_security STATIC
+    server/src/server_security.cpp
+  )
+  target_include_directories(cs_server_security PUBLIC server/include)
+
   add_executable(cs_server_benchmark server/src/benchmark.cpp)
   target_link_libraries(cs_server_benchmark PRIVATE cs_server_core)
 
@@ -114,6 +119,7 @@ else()
     add_executable(cs_server server/src/webrtc_main.cpp)
     target_link_libraries(cs_server PRIVATE
       cs_server_core
+      cs_server_security
       LibDataChannel::LibDataChannelStatic
     )
   endif()
@@ -125,7 +131,7 @@ else()
     add_test(NAME cs_sim_tests COMMAND cs_sim_tests)
 
     add_executable(cs_server_tests server/tests/server_tests.cpp)
-    target_link_libraries(cs_server_tests PRIVATE cs_server_core)
+    target_link_libraries(cs_server_tests PRIVATE cs_server_core cs_server_security)
     add_test(NAME cs_server_tests COMMAND cs_server_tests)
   endif()
 endif()

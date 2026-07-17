@@ -1,6 +1,6 @@
 # PLAN.md — From Aim Trainer to a Real CS 1.6-Style Browser Shooter
 
-**Status:** Draft v5 — implementation-audited through M4 plus a playable local M5 slice (2026-07-17)
+**Status:** Draft v6 — M0–M4 complete and security-hardened; playable local M5 slice in progress (2026-07-17)
 **Scope:** Turn `cs-web` (originally a Three.js aim trainer) into a full Counter-Strike-1.6-derivative FPS that runs in the browser at native-like performance: authentic GoldSrc-style movement and gunplay, multiplayer on an authoritative server, and single player vs. bots. Original assets and names — derivative feel, not a rip.
 
 ---
@@ -210,17 +210,17 @@ cs-web/
 
 ## 6. Milestones (each with concrete success criteria)
 
-| # | Milestone | Success criteria (verify) |
-|---|---|---|
-| **M0** | **Scaffold + spike** (≈1 wk): CMake + Emscripten build of sim + raw WebGL2 C++ client; render a cube moved by the sim | `npm run dev` serves a dependency-free WASM build showing C++-driven motion; sim unit test runs natively |
-| **M1** | **Movement core** (2–3 wk): pm code (walk/air/friction/jump/duck/fatigue/bhop cap), Quake-style convex-brush plane trace, flat test room; C++ renderer drives it | 1.6 feel checklist §4.1 passes; determinism test (same inputs → same state hash) green |
-| **M2** | **Playable world** (2 wk): original code-built `aim_arena`, shared render/collision authoring data, convex boxes and true ramp brushes through one plane-offset hull trace, material tags, spawn markers | `aim_arena` loads immediately; automated routes cover ramps, stairs, doorways, jump and duck-jump fixtures with M1 movement intact; browser smoke test is clean and the small fixed draw list sustains 60 fps on the demo machine |
-| **M3** | **Gunplay** (2–3 wk): weapons table, spread/recoil/patterns, damage/hitgroups, penetration, original code-built debug viewmodels, cached procedural audio buffers, spray-lab debug view | Native tests prove deterministic continuous patterns, damage, and wallbang loss; spray patterns reproduce in spray lab without branches; a local playtest supports tapping, bursting, spraying, reloads, weapon switching, moving targets, and visible hit feedback |
-| **M4** | **Netcode + server** (3–4 wk): native server, libdatachannel transport, prediction/reconciliation, interpolation, lag comp, FFA DM | Local browsers join the native server over unordered/unreliable WebRTC; the 8-player harness at 150 ms simulated latency + 5% loss has bounded corrections; server tick ≤ 2 ms p95. Public-Internet ICE/TURN and rooms remain M7 deployment work. |
-| **M5** | **Bots** (2 wk): navmesh gen from the collision world, A*, combat FSM, difficulties; offline mode (WASM local server) | Bots navigate `aim_arena` end-to-end; bot wins vs. new player at max difficulty; offline page works with zero network |
-| **M6** | **Defuse mode + original map pipeline** (3–4 wk): rounds/economy/buy menu, bombsites, win conditions; TrenchBroom config + `mapc` (brush mesh, plane collision, lightmap v1) + first original defuse map | A full 5v5 bot match completes on the original defuse map; economy balances across 10-round sims; the map loads and plays through the same trace API |
-| **M7** | **Ship v1** (2 wk): lobby/rooms UX, deploy (Docker server on Hetzner/Fly + static client CDN), perf pass, bundle budget | Cold load < 20 MB / < 10 s on 50 Mbps; 60 fps min-spec; public playtest |
-| **M8+** | Options: WebGPU/sokol renderer backend, WebTransport backend, more maps/weapons, spectator, demos/replays (free from determinism), server browser | — |
+| # | Status | Milestone | Success criteria (verify) |
+|---|---|---|---|
+| **M0** | ✅ Complete | **Scaffold + spike** (≈1 wk): CMake + Emscripten build of sim + raw WebGL2 C++ client; render a cube moved by the sim | `npm run dev` serves a dependency-free WASM build showing C++-driven motion; sim unit test runs natively |
+| **M1** | ✅ Complete | **Movement core** (2–3 wk): pm code (walk/air/friction/jump/duck/fatigue/bhop cap), Quake-style convex-brush plane trace, flat test room; C++ renderer drives it | 1.6 feel checklist §4.1 passes; determinism test (same inputs → same state hash) green |
+| **M2** | ✅ Complete | **Playable world** (2 wk): original code-built `aim_arena`, shared render/collision authoring data, convex boxes and true ramp brushes through one plane-offset hull trace, material tags, spawn markers | `aim_arena` loads immediately; automated routes cover ramps, stairs, doorways, jump and duck-jump fixtures with M1 movement intact; browser smoke test is clean and the small fixed draw list sustains 60 fps on the demo machine |
+| **M3** | ✅ Complete | **Gunplay** (2–3 wk): weapons table, spread/recoil/patterns, damage/hitgroups, penetration, original code-built debug viewmodels, cached procedural audio buffers, spray-lab debug view | Native tests prove deterministic continuous patterns, damage, and wallbang loss; spray patterns reproduce in spray lab without branches; a local playtest supports tapping, bursting, spraying, reloads, weapon switching, moving targets, and visible hit feedback |
+| **M4** | ✅ Complete | **Netcode + server** (3–4 wk): native server, libdatachannel transport, prediction/reconciliation, interpolation, lag comp, FFA DM | Local browsers join the native server over unordered/unreliable WebRTC; the 8-player harness at 150 ms simulated latency + 5% loss has bounded corrections; server tick ≤ 2 ms p95. Signaling admission, hostile-packet validation, resource bounds, and deployment guidance are covered. Public-Internet ICE/TURN and rooms remain M7 deployment work. |
+| **M5** | 🚧 Playable slice | **Bots** (2 wk): navmesh gen from the collision world, A*, combat FSM, difficulties; offline mode (WASM local server) | Bots navigate `aim_arena` end-to-end; bot wins vs. new player at max difficulty; offline page works with zero network. Remaining: generated nav areas, path smoothing, jump/drop links, and difficulty presets. |
+| **M6** | ⬜ Not started | **Defuse mode + original map pipeline** (3–4 wk): rounds/economy/buy menu, bombsites, win conditions; TrenchBroom config + `mapc` (brush mesh, plane collision, lightmap v1) + first original defuse map | A full 5v5 bot match completes on the original defuse map; economy balances across 10-round sims; the map loads and plays through the same trace API |
+| **M7** | ⬜ Not started | **Ship v1** (2 wk): lobby/rooms UX, deploy (Docker server on Hetzner/Fly + static client CDN), perf and security pass, bundle budget | Cold load < 20 MB / < 10 s on 50 Mbps; 60 fps min-spec; WSS/Origin enforcement, short-lived room tokens, TURN credentials, sandboxed server deployment, protocol fuzzing, and a public playtest |
+| **M8+** | ⬜ Deferred | Options: WebGPU/sokol renderer backend, WebTransport backend, more maps/weapons, spectator, demos/replays (free from determinism), server browser | — |
 
 Rough total: ~4–5 months of focused part-time work. Milestones are sequenced so the game is *playable and fun* at the end of every one (M1 = movement playground, M3 = aim trainer++, M4 = real multiplayer DM).
 
@@ -230,7 +230,7 @@ Rough total: ~4–5 months of focused part-time work. Milestones are sequenced s
 
 - **Sim unit tests (native, fast):** acceleration curves, friction, jump heights, fatigue factors, spread determinism, penetration damage tables.
 - **Determinism/replay tests:** recorded input streams → state hash; run in CI on native and WASM (wasmtime) builds.
-- **Netcode harness:** loopback server with configurable latency/jitter/loss; scripted clients assert reconciliation error bounds.
+- **Netcode harness:** loopback server with configurable latency/jitter/loss; scripted clients assert reconciliation error bounds; adversarial fixtures reject malformed packets and sequence-window poisoning without mutating server state.
 - **Feel validation:** side-by-side manual comparison vs. CS 1.6 in browser Xash3D; capture and compare strafe-speed graphs.
 - **Perf budgets (regression-checked):** client frame ≤ 8 ms mid-spec; server tick ≤ 2 ms @ 10 players + 10 bots; snapshot ≤ 1.2 kB avg.
 
@@ -241,7 +241,7 @@ Rough total: ~4–5 months of focused part-time work. Milestones are sequenced s
 | Movement doesn't "feel right" despite correct constants | A/B against Xash3D CS with identical input scripts; keep frame-quirk toggles (e.g., jump-before-friction ordering) as tunables |
 | WebRTC server ops pain (ICE/STUN, certs) | libdatachannel handles ICE; single STUN (Google) suffices for client→server; document TURN fallback; keep WebSocket-TCP emergency transport |
 | Scope creep (engine-itis) | Milestone gates require *playable fun*; the raw renderer implements only what the current milestone visibly needs, with sokol/WebGPU deferred until concrete duplication or profiling justifies it |
-| Cheating in open browsers | Accept for v1; server authority + sanity checks; no client trust for hits |
+| Cheating and hostile multiplayer input | Treat every browser as untrusted; server owns movement/hits/damage/ammo/score; authenticate signaling, bound traffic and rewind, validate identity/schema/sequence before mutation, and complete the public deployment gate in `SECURITY.md` during M7 |
 | Asset quality/time sink | CC0 bootstrap, style guide (low-poly + lightmaps hides art weakness), art replaces gradually |
 | Legal | No Valve assets/names/code shipped; mechanics-as-facts reimplemented; GPL projects are references only; original map layouts "inspired by" not traced. The `assets/*_ref.glb` Valve derivatives are local dev placeholders (gitignored), swapped out by M7 public release |
 
@@ -262,6 +262,7 @@ Rough total: ~4–5 months of focused part-time work. Milestones are sequenced s
 6. **Playable local checkpoint — M4:** the native C++ server and browser clients exchange live FFA state over unordered/unreliable WebRTC DataChannels; prediction/reconciliation with visual error smoothing, interpolation, authoritative damage/respawn, lag compensation, 150 ms / 5% loss regression coverage, and the 8-player tick benchmark are working. Full eight-player snapshots are 346 B, redundant input packets are 64 B, and the server benchmark remains comfortably below the 2 ms p95 budget.
 7. **Complete — M4 art pass:** the CC0 692-triangle textured character fixture replaces the temporary remote-player debug meshes, loads from one embedded-texture GLB, scales to the authoritative standing/ducked hull, and rotates from interpolated yaw in the two-client demo. The audited police rig and clips remain the later animation path.
 8. **Playable slice — M5:** `?bots=1` runs a zero-network four-player FFA through the same authoritative C++ server core compiled into WASM. Three bots acquire opponents, follow a ten-node A* graph around the arena blockers, aim with deterministic error/reaction delay, fire, reload, score, die, and respawn. Eight separated inward-facing FFA spawns replace the old two-spawn lane offsets. Full M5 still requires generated nav areas, path smoothing, jump/drop links, and difficulty presets.
+9. **Complete — M4 security checkpoint:** signaling now requires a high-entropy session token and binds to loopback by default; incomplete handshakes, signaling/ICE floods, malformed or spoofed DataChannel messages, packet-rate abuse, partial packet mutation, and far-future sequence poisoning are bounded or rejected. `SECURITY.md` records the stricter WSS/Origin/room-token/TURN/container/fuzzing gate for M7 public deployment.
 
 ## 11. Reference Library
 

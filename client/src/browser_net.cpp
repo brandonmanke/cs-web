@@ -33,9 +33,12 @@ EM_JS(int, js_bots_requested, (), {
 EM_JS(void, js_net_start, (), {
   if (Module.csNet) return;
   const query = new URLSearchParams(window.location.search);
+  const fragment = new URLSearchParams(window.location.hash.slice(1));
   const slash = String.fromCharCode(47);
   const newline = String.fromCharCode(10);
-  const signalingUrl = query.get('signal') || 'ws:' + slash + slash + window.location.hostname + ':8000';
+  const signalingBase = query.get('signal') ||
+    (window.location.protocol === 'https:' ? 'wss:' : 'ws:') + slash + slash +
+      window.location.hostname + ':8000' + slash + 'game';
   const status = document.getElementById('status');
   const net = Module.csNet = {
     ws: null,
@@ -54,6 +57,24 @@ EM_JS(void, js_net_start, (), {
     setStatus(`NETWORK ERROR - ${message}`, true);
     Module._cs_net_set_connected(0);
   };
+  const token = fragment.get('token') || String();
+  if (!/^[A-Za-z0-9_-]{32,128}$/.test(token)) {
+    fail('missing or invalid #token (32-128 URL-safe characters)');
+    return;
+  }
+  let signalingUrl;
+  try {
+    const url = new URL(signalingBase);
+    if (url.protocol !== 'ws:' && url.protocol !== 'wss:') {
+      throw new Error('signaling URL must use ws: or wss:');
+    }
+    url.search = String();
+    url.searchParams.set('token', token);
+    signalingUrl = url.toString();
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+    return;
+  }
   const setupChannel = (channel) => {
     net.dc = channel;
     channel.binaryType = 'arraybuffer';
@@ -117,6 +138,8 @@ EM_JS(void, js_net_start, (), {
         else net.candidates.push(candidate);
       } else if (type === 'FULL') {
         fail('server is full');
+      } else if (type === 'UNAUTHORIZED') {
+        fail('signaling token rejected');
       }
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));

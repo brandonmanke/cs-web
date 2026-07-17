@@ -363,11 +363,20 @@ bool receive_input(Server& server, const net::InputPacket& packet) {
       std::fabs(command.input.forward) > 1.001F ||
       std::fabs(command.input.strafe) > 1.001F ||
       command.input.requested_weapon >= kWeaponCount ||
-      (command.input.buttons & ~0x0FU) != 0U
+      (command.input.buttons & ~0x0FU) != 0U ||
+      (
+        command.sequence >= player->next_input_sequence &&
+        command.sequence - player->next_input_sequence >= kCommandHistory
+      )
     ) {
       return false;
     }
     previous_sequence = command.sequence;
+  }
+  if (previous_sequence != packet.newest_sequence) return false;
+
+  for (std::uint32_t index = 0; index < packet.command_count; ++index) {
+    const net::Command& command = packet.commands[index];
     player->highest_received_sequence = std::max(
       player->highest_received_sequence,
       command.sequence
@@ -383,7 +392,7 @@ bool receive_input(Server& server, const net::InputPacket& packet) {
       .command = command,
     };
   }
-  return previous_sequence == packet.newest_sequence;
+  return true;
 }
 
 void step(Server& server) {

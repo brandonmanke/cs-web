@@ -1,6 +1,7 @@
 #include "cs/client_prediction.h"
 #include "cs/interpolation.h"
 #include "cs/server.h"
+#include "cs/server_security.h"
 
 #include <algorithm>
 #include <array>
@@ -126,6 +127,88 @@ void test_protocol_round_trip() {
     distance(decoded_snapshot.players[0].origin, snapshot.players[0].origin) < 0.01F,
     "snapshot position has eighth-unit precision"
   );
+}
+
+void test_signaling_admission() {
+  constexpr std::string_view token =
+    "0123456789abcdef0123456789abcdef";
+  check(cs::security::valid_signal_token(token), "32-character URL-safe token is valid");
+  check(
+    cs::security::authorized_signaling_path(
+      "/game?token=0123456789abcdef0123456789abcdef",
+      token
+    ),
+    "matching signaling token is authorized"
+  );
+  check(
+    !cs::security::authorized_signaling_path("/game", token),
+    "missing signaling token is rejected"
+  );
+  check(
+    !cs::security::authorized_signaling_path(
+      "/game?token=1123456789abcdef0123456789abcdef",
+      token
+    ),
+    "incorrect signaling token is rejected"
+  );
+  check(
+    !cs::security::valid_signal_token("short token with spaces"),
+    "short or non-URL-safe signaling token is rejected"
+  );
+}
+
+void test_input_sequence_abuse() {
+  cs::server::Server server{};
+  cs::server::initialize(server);
+  check(cs::server::connect(server) == 0, "sequence fixture connects a player");
+  cs::server::Player& player = server.players[0];
+
+  const cs::net::InputPacket future{
+    .player_id = 0,
+    .command_count = 1,
+    .newest_sequence = UINT32_MAX,
+    .commands = {{{.sequence = UINT32_MAX}}},
+  };
+  check(
+    !cs::server::receive_input(server, future),
+    "far-future input sequence is rejected"
+  );
+  check(
+    player.highest_received_sequence == 0 && player.next_input_sequence == 1,
+    "rejected future sequence cannot poison the receive cursor"
+  );
+
+  const cs::net::InputPacket partial{
+    .player_id = 0,
+    .command_count = 2,
+    .newest_sequence = 4,
+    .commands = {{
+      {.sequence = 1},
+      {.sequence = 2},
+    }},
+  };
+  check(
+    !cs::server::receive_input(server, partial),
+    "packet whose newest sequence does not match its commands is rejected"
+  );
+  check(
+    player.highest_received_sequence == 0 &&
+      !player.input_queue[1 % cs::server::kCommandHistory].valid,
+    "invalid packet cannot partially mutate the input queue"
+  );
+
+  const cs::net::InputPacket valid{
+    .player_id = 0,
+    .command_count = 1,
+    .newest_sequence = 1,
+    .commands = {{{.sequence = 1, .input = {.forward = 1.0F}}}},
+  };
+  check(
+    cs::server::receive_input(server, valid),
+    "valid input is accepted after sequence abuse"
+  );
+  cs::server::step(server);
+  check(player.last_processed_sequence == 1, "valid input still advances normally");
 }
 
 void test_server_authority_and_lag_compensation() {
@@ -372,6 +455,8 @@ void test_lossy_loopback() {
 
 int main() {
   test_protocol_round_trip();
+  test_signaling_admission();
+  test_input_sequence_abuse();
   test_server_authority_and_lag_compensation();
   test_remote_interpolation();
   test_bot_navigation_and_combat();

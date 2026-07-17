@@ -48,15 +48,23 @@ CC0 PSX-style model; the code-built humanoid remains only a load-failure fallbac
 To play the local multiplayer demo, start these in separate terminals:
 
 ```sh
-npm run server:run
+# Generate once per server session and keep this value private.
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+CS_SIGNAL_TOKEN=PASTE_TOKEN_HERE npm run server:run
 npm run dev
 ```
 
-Open `http://127.0.0.1:3100/?online=1` in two browser windows. The default page
+Open `http://127.0.0.1:3100/?online=1#token=PASTE_TOKEN_HERE` in two browser windows.
+The fragment keeps the token out of HTTP requests and referrers. The default page
 without `?online=1` remains the zero-network M3 gunplay demo. The first server
 build fetches the pinned libdatachannel source and its native dependencies, so it
 takes longer than later incremental builds. A non-default signaling endpoint can
-be supplied as `?online=1&signal=ws://host:port`.
+be supplied as `?online=1&signal=wss://host/game#token=PASTE_TOKEN_HERE`.
+
+The signaling server binds to loopback unless `CS_BIND_ADDRESS` is explicitly
+set. Do not expose its plaintext WebSocket directly to the Internet; terminate
+TLS and enforce an Origin allowlist at a reverse proxy. See [SECURITY.md](SECURITY.md)
+for the current threat model and public-deployment gate.
 
 For a zero-network solo FFA, run only `npm run dev` and open
 `http://127.0.0.1:3100/?bots=1`. Three server-authoritative C++ bots run inside
