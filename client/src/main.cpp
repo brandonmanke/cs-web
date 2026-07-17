@@ -1,4 +1,5 @@
 #include "cs/sim.h"
+#include "runtime_model.h"
 
 #include <AL/al.h>
 #include <AL/alc.h>
@@ -31,6 +32,8 @@ struct Vertex {
   float r;
   float g;
   float b;
+  float u;
+  float v;
 };
 
 struct InputState {
@@ -79,6 +82,13 @@ struct ClientState {
   GLuint ramp_index_buffer = 0;
   GLint mvp_uniform = -1;
   GLint tint_uniform = -1;
+  GLint textured_uniform = -1;
+  GLint texture_uniform = -1;
+  cs::client::RuntimeModel ak47_model{};
+  cs::client::RuntimeModel glock_model{};
+  cs::client::RuntimeModel knife_model{};
+  cs::client::RuntimeModel m4a1_model{};
+  cs::client::RuntimeModel mp5_model{};
   InputState input{};
   double previous_time = 0.0;
   double accumulator = 0.0;
@@ -260,6 +270,15 @@ void initialize_mesh(
     sizeof(Vertex),
     reinterpret_cast<const void*>(3 * sizeof(float))
   );
+  glEnableVertexAttribArray(2);
+  glVertexAttribPointer(
+    2,
+    2,
+    GL_FLOAT,
+    GL_FALSE,
+    sizeof(Vertex),
+    reinterpret_cast<const void*>(6 * sizeof(float))
+  );
 }
 
 template <std::size_t SampleCount>
@@ -409,20 +428,27 @@ bool initialize_renderer() {
   constexpr const char* vertex_source = R"(#version 300 es
     layout(location = 0) in vec3 a_position;
     layout(location = 1) in vec3 a_color;
+    layout(location = 2) in vec2 a_uv;
     uniform mat4 u_mvp;
     uniform vec3 u_tint;
     out vec3 v_color;
+    out vec2 v_uv;
     void main() {
       gl_Position = u_mvp * vec4(a_position, 1.0);
       v_color = a_color * u_tint;
+      v_uv = a_uv;
     }
   )";
   constexpr const char* fragment_source = R"(#version 300 es
     precision mediump float;
     in vec3 v_color;
+    in vec2 v_uv;
+    uniform sampler2D u_texture;
+    uniform int u_textured;
     out vec4 out_color;
     void main() {
-      out_color = vec4(v_color, 1.0);
+      vec4 texel = u_textured != 0 ? texture(u_texture, v_uv) : vec4(1.0);
+      out_color = vec4(v_color, 1.0) * texel;
     }
   )";
 
@@ -492,6 +518,17 @@ bool initialize_renderer() {
 
   client.mvp_uniform = glGetUniformLocation(client.program, "u_mvp");
   client.tint_uniform = glGetUniformLocation(client.program, "u_tint");
+  client.textured_uniform = glGetUniformLocation(client.program, "u_textured");
+  client.texture_uniform = glGetUniformLocation(client.program, "u_texture");
+  glUseProgram(client.program);
+  glUniform1i(client.texture_uniform, 0);
+  glActiveTexture(GL_TEXTURE0);
+
+  cs::client::load_glb_model("/assets/ak47.glb", client.ak47_model);
+  cs::client::load_glb_model("/assets/glock.glb", client.glock_model);
+  cs::client::load_glb_model("/assets/knife.glb", client.knife_model);
+  cs::client::load_glb_model("/assets/m4a1.glb", client.m4a1_model);
+  cs::client::load_glb_model("/assets/mp5.glb", client.mp5_model);
   glEnable(GL_DEPTH_TEST);
   glDisable(GL_CULL_FACE);
   return true;
@@ -512,6 +549,7 @@ void draw_cube(const Mat4& view_projection, Vec3 position, Vec3 scale, Vec3 tint
   const Mat4 mvp = multiply(view_projection, model_matrix(position, scale));
   glUniformMatrix4fv(client.mvp_uniform, 1, GL_FALSE, mvp.m.data());
   glUniform3f(client.tint_uniform, tint.x, tint.y, tint.z);
+  glUniform1i(client.textured_uniform, 0);
   glBindVertexArray(client.cube_vao);
   glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_SHORT, nullptr);
 }
@@ -531,6 +569,7 @@ void draw_oriented_cube(
   );
   glUniformMatrix4fv(client.mvp_uniform, 1, GL_FALSE, mvp.m.data());
   glUniform3f(client.tint_uniform, tint.x, tint.y, tint.z);
+  glUniform1i(client.textured_uniform, 0);
   glBindVertexArray(client.cube_vao);
   glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_SHORT, nullptr);
 }
@@ -539,8 +578,42 @@ void draw_ramp(const Mat4& view_projection, Vec3 position, Vec3 scale, Vec3 tint
   const Mat4 mvp = multiply(view_projection, model_matrix(position, scale));
   glUniformMatrix4fv(client.mvp_uniform, 1, GL_FALSE, mvp.m.data());
   glUniform3f(client.tint_uniform, tint.x, tint.y, tint.z);
+  glUniform1i(client.textured_uniform, 0);
   glBindVertexArray(client.ramp_vao);
   glDrawElements(GL_TRIANGLES, 24, GL_UNSIGNED_SHORT, nullptr);
+}
+
+void draw_imported_model(
+  const Mat4& view_projection,
+  const cs::client::RuntimeModel& model,
+  Vec3 center,
+  Vec3 axis_x,
+  Vec3 axis_y,
+  Vec3 axis_z,
+  float scale,
+  Vec3 tint
+) {
+  const Vec3 local_center{
+    (model.minimum[0] + model.maximum[0]) * 0.5F,
+    (model.minimum[1] + model.maximum[1]) * 0.5F,
+    (model.minimum[2] + model.maximum[2]) * 0.5F,
+  };
+  const Vec3 origin = center -
+    axis_x * (local_center.x * scale) -
+    axis_y * (local_center.y * scale) -
+    axis_z * (local_center.z * scale);
+  const Mat4 model_matrix = model_matrix_basis(
+    origin,
+    axis_x,
+    axis_y,
+    axis_z,
+    {scale, scale, scale}
+  );
+  const Mat4 mvp = multiply(view_projection, model_matrix);
+  glUniformMatrix4fv(client.mvp_uniform, 1, GL_FALSE, mvp.m.data());
+  glUniform3f(client.tint_uniform, tint.x, tint.y, tint.z);
+  glUniform1i(client.textured_uniform, 1);
+  cs::client::draw_model(model);
 }
 
 Vec3 material_tint(std::uint32_t material) {
@@ -640,14 +713,78 @@ void draw_viewmodel(
   float muzzle_distance = 0.0F;
 
   if (snapshot.weapon == cs::WeaponKnife) {
-    piece({9.0F, -10.0F, 18.0F}, {3.5F, 3.5F, 11.0F}, {0.20F, 0.18F, 0.14F});
-    piece({9.0F, -8.0F, 30.0F}, {2.0F, 4.5F, 18.0F}, {0.72F, 0.76F, 0.70F});
+    if (client.knife_model.index_count > 0) {
+      draw_imported_model(
+        view_projection,
+        client.knife_model,
+        position({9.0F, -8.0F, 28.0F}),
+        forward,
+        up,
+        right,
+        2.0F,
+        {1.0F, 1.0F, 1.0F}
+      );
+    } else {
+      piece({9.0F, -10.0F, 18.0F}, {3.5F, 3.5F, 11.0F}, {0.20F, 0.18F, 0.14F});
+      piece({9.0F, -8.0F, 30.0F}, {2.0F, 4.5F, 18.0F}, {0.72F, 0.76F, 0.70F});
+    }
     piece({5.0F, -12.0F, 12.0F}, {6.0F, 6.0F, 8.0F}, hand);
     return;
   }
 
   const bool pistol = snapshot.weapon == cs::WeaponUsp || snapshot.weapon == cs::WeaponGlock;
-  if (pistol) {
+  const bool imported_pistol = pistol && client.glock_model.index_count > 0;
+  const cs::client::RuntimeModel* imported_rifle = nullptr;
+  float imported_rifle_scale = 1.0F;
+  if (snapshot.weapon == cs::WeaponAk47 && client.ak47_model.index_count > 0) {
+    imported_rifle = &client.ak47_model;
+    imported_rifle_scale = 14.5F;
+  }
+  if (snapshot.weapon == cs::WeaponM4a1 && client.m4a1_model.index_count > 0) {
+    imported_rifle = &client.m4a1_model;
+    imported_rifle_scale = 1.28F;
+  }
+  const bool imported_mp5 = snapshot.weapon == cs::WeaponMp5 && client.mp5_model.index_count > 0;
+  if (imported_pistol) {
+    draw_imported_model(
+      view_projection,
+      client.glock_model,
+      position({9.0F, -8.0F, 24.0F}),
+      forward,
+      up,
+      right,
+      5.3F,
+      {1.0F, 1.0F, 1.0F}
+    );
+    piece({4.5F, -15.0F, 13.0F}, {7.0F, 7.0F, 9.0F}, hand);
+    muzzle_distance = 36.0F;
+  } else if (imported_rifle != nullptr) {
+    draw_imported_model(
+      view_projection,
+      *imported_rifle,
+      position({9.0F, -9.0F, 29.0F}),
+      right,
+      up,
+      forward,
+      imported_rifle_scale,
+      {1.0F, 1.0F, 1.0F}
+    );
+    piece({4.0F, -15.0F, 18.0F}, {7.0F, 7.0F, 10.0F}, hand);
+    muzzle_distance = 49.0F;
+  } else if (imported_mp5) {
+    draw_imported_model(
+      view_projection,
+      client.mp5_model,
+      position({9.0F, -9.0F, 29.0F}),
+      right,
+      up,
+      forward,
+      12.5F,
+      {1.0F, 1.0F, 1.0F}
+    );
+    piece({4.0F, -15.0F, 18.0F}, {7.0F, 7.0F, 10.0F}, hand);
+    muzzle_distance = 49.0F;
+  } else if (pistol) {
     piece({9.0F, -8.0F, 19.0F}, {6.0F, 5.0F, 13.0F}, tint);
     piece({9.0F, -7.0F, 29.0F}, {2.2F, 2.2F, 10.0F}, {0.30F, 0.31F, 0.29F});
     piece({9.0F, -14.0F, 16.0F}, {4.5F, 11.0F, 6.0F}, {0.18F, 0.19F, 0.18F});

@@ -31,7 +31,7 @@
         printErr(message) {
           console.error(message);
           const status = document.getElementById("status");
-          status.textContent = "WASM ERROR — SEE CONSOLE";
+          status.textContent = `WASM ERROR — ${message}`;
           status.className = "failed";
         }
       };

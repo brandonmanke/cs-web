@@ -14,7 +14,15 @@ target_include_directories(cs_sim_core PUBLIC sim/include)
 if(EMSCRIPTEN)
   file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/public")
 
-  add_executable(cs_game client/src/main.cpp)
+  add_executable(cs_game
+    client/src/main.cpp
+    client/src/runtime_model.cpp
+  )
+  target_include_directories(cs_game PRIVATE
+    client/src
+    third_party/cgltf
+    third_party/stb
+  )
   target_link_libraries(cs_game PRIVATE cs_sim_core openal)
   target_compile_options(cs_game PRIVATE -fno-exceptions -fno-rtti)
   target_compile_options(cs_sim_core PRIVATE -fno-exceptions -fno-rtti)
@@ -23,11 +31,16 @@ if(EMSCRIPTEN)
     "-sMAX_WEBGL_VERSION=2"
     "-sFULL_ES3=1"
     "-sENVIRONMENT=web"
-    "-sFILESYSTEM=0"
+    "-sFORCE_FILESYSTEM=1"
     "-sALLOW_MEMORY_GROWTH=0"
-    "-sINITIAL_MEMORY=16777216"
+    "-sINITIAL_MEMORY=67108864"
     "-sSTACK_SIZE=1048576"
     "-sASSERTIONS=1"
+    "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/assets/models/psx/weapons/ak47/ak47.glb@/assets/ak47.glb"
+    "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/assets/models/psx/weapons/glock/glock.glb@/assets/glock.glb"
+    "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/assets/models/psx/weapons/knife/knife.glb@/assets/knife.glb"
+    "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/assets/models/psx/weapons/m4a1/m4a1.glb@/assets/m4a1.glb"
+    "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/assets/models/psx/weapons/mp5/mp5.glb@/assets/mp5.glb"
   )
   set_target_properties(cs_game PROPERTIES
     OUTPUT_NAME game
