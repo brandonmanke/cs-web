@@ -15,6 +15,10 @@ npm run dev
 ```
 
 `npm run dev` builds `game.wasm` and serves `public/` at
-`http://127.0.0.1:3100`. Use WASD to move the green M0 simulation cube. There
-are no npm packages, renderer frameworks, or handwritten browser bindings in
-the frame loop.
+`http://127.0.0.1:3100`. Click the canvas, then use WASD + mouse, Space to jump,
+and Ctrl/C to duck. There are no npm packages or renderer frameworks; browser
+glue is limited to Emscripten callbacks and a tiny canvas-sizing shim.
+
+The M1 movement lab currently includes fixed 64 Hz simulation, Quake-style
+acceleration/slide movement, GoldSrc-style air acceleration, jump fatigue,
+mega-bhop slowdown, duck hulls, and swept-AABB collision with stair stepping.

@@ -131,7 +131,7 @@ Units: GoldSrc units (1u = 1 inch). Player hull 32×32×72 standing / 32×32×36
 **Acceptance tests ("1.6 feel checklist"), automated where possible:**
 - Strafe-turning in air gains speed; W-only air = no gain.
 - Bhop chain: second hop visibly lower (fatigue), speed caps around 1.7× and settles into rhythm.
-- Counter-strafe stops in ≤ ~2 ticks from full run (tap opposite key).
+- Counter-strafe stops in roughly 100–160 ms from full run when the opposite key is released at the velocity crossing (about 7–10 ticks at 64 Hz; verify feel again at 100 Hz).
 - Duck-jump reaches 55–60u ledges; run-jump crosses standard gaps.
 - Manual A/B feel comparison against CS 1.6 in [browser Xash3D](https://github.com/yohimik/webxash3d-fwgs) with same inputs.
 

@@ -4,6 +4,7 @@
 #include <emscripten.h>
 #include <emscripten/html5.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -35,6 +36,8 @@ struct InputState {
   bool back = false;
   bool left = false;
   bool right = false;
+  bool jump = false;
+  bool duck = false;
 };
 
 struct ClientState {
@@ -50,6 +53,9 @@ struct ClientState {
   double accumulator = 0.0;
   int canvas_width = 1;
   int canvas_height = 1;
+  float yaw = 0.0F;
+  float pitch = 0.0F;
+  bool pointer_locked = false;
 };
 
 ClientState client;
@@ -249,8 +255,7 @@ bool initialize_renderer() {
   client.mvp_uniform = glGetUniformLocation(client.program, "u_mvp");
   client.tint_uniform = glGetUniformLocation(client.program, "u_tint");
   glEnable(GL_DEPTH_TEST);
-  glEnable(GL_CULL_FACE);
-  glCullFace(GL_BACK);
+  glDisable(GL_CULL_FACE);
   return true;
 }
 
@@ -272,6 +277,22 @@ void draw_cube(const Mat4& view_projection, Vec3 position, Vec3 scale, Vec3 tint
   glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_SHORT, nullptr);
 }
 
+void draw_crosshair() {
+  const int center_x = client.canvas_width / 2;
+  const int center_y = client.canvas_height / 2;
+  glEnable(GL_SCISSOR_TEST);
+  glClearColor(0.18F, 0.95F, 0.3F, 1.0F);
+  glScissor(center_x - 12, center_y - 1, 8, 2);
+  glClear(GL_COLOR_BUFFER_BIT);
+  glScissor(center_x + 4, center_y - 1, 8, 2);
+  glClear(GL_COLOR_BUFFER_BIT);
+  glScissor(center_x - 1, center_y + 4, 2, 8);
+  glClear(GL_COLOR_BUFFER_BIT);
+  glScissor(center_x - 1, center_y - 12, 2, 8);
+  glClear(GL_COLOR_BUFFER_BIT);
+  glDisable(GL_SCISSOR_TEST);
+}
+
 void render() {
   resize_canvas();
   glViewport(0, 0, client.canvas_width, client.canvas_height);
@@ -280,8 +301,24 @@ void render() {
 
   const float aspect = static_cast<float>(client.canvas_width) /
     static_cast<float>(client.canvas_height);
-  const Mat4 projection = perspective(1.05F, aspect, 1.0F, 4000.0F);
-  const Mat4 view = look_at({0.0F, 330.0F, 560.0F}, {0.0F, 20.0F, 0.0F}, {0.0F, 1.0F, 0.0F});
+  const cs::SimSnapshot& snapshot = *sim_snapshot();
+  const Vec3 eye{
+    snapshot.player_origin.x,
+    snapshot.player_origin.y + snapshot.view_height,
+    snapshot.player_origin.z,
+  };
+  const float pitch_cosine = std::cos(client.pitch);
+  const Vec3 view_direction{
+    std::sin(client.yaw) * pitch_cosine,
+    std::sin(client.pitch),
+    -std::cos(client.yaw) * pitch_cosine,
+  };
+  const Mat4 projection = perspective(1.309F, aspect, 1.0F, 4000.0F);
+  const Mat4 view = look_at(
+    eye,
+    {eye.x + view_direction.x, eye.y + view_direction.y, eye.z + view_direction.z},
+    {0.0F, 1.0F, 0.0F}
+  );
   const Mat4 view_projection = multiply(projection, view);
 
   glUseProgram(client.program);
@@ -290,16 +327,11 @@ void render() {
   draw_cube(view_projection, {-344.0F, 64.0F, 0.0F}, {16.0F, 144.0F, 544.0F}, {0.48F, 0.50F, 0.44F});
   draw_cube(view_projection, {344.0F, 64.0F, 0.0F}, {16.0F, 144.0F, 544.0F}, {0.48F, 0.50F, 0.44F});
   draw_cube(view_projection, {0.0F, 64.0F, -264.0F}, {672.0F, 144.0F, 16.0F}, {0.43F, 0.46F, 0.41F});
+  draw_cube(view_projection, {0.0F, 64.0F, 264.0F}, {672.0F, 144.0F, 16.0F}, {0.43F, 0.46F, 0.41F});
+  draw_cube(view_projection, {0.0F, 8.0F, 8.0F}, {96.0F, 16.0F, 64.0F}, {0.52F, 0.50F, 0.42F});
   draw_cube(view_projection, {-128.0F, 24.0F, -64.0F}, {48.0F, 48.0F, 48.0F}, {0.72F, 0.48F, 0.25F});
   draw_cube(view_projection, {128.0F, 24.0F, 64.0F}, {48.0F, 48.0F, 48.0F}, {0.72F, 0.48F, 0.25F});
-
-  const cs::SimSnapshot& snapshot = *sim_snapshot();
-  draw_cube(
-    view_projection,
-    {snapshot.player_x, 18.0F, snapshot.player_z},
-    {40.0F, 48.0F, 40.0F},
-    {0.22F, 1.0F, 0.38F}
-  );
+  draw_crosshair();
 }
 
 EM_BOOL on_key(int event_type, const EmscriptenKeyboardEvent* event, void*) {
@@ -309,8 +341,38 @@ EM_BOOL on_key(int event_type, const EmscriptenKeyboardEvent* event, void*) {
   if (std::strcmp(event->code, "KeyS") == 0) key = &client.input.back;
   if (std::strcmp(event->code, "KeyA") == 0) key = &client.input.left;
   if (std::strcmp(event->code, "KeyD") == 0) key = &client.input.right;
+  if (std::strcmp(event->code, "Space") == 0) key = &client.input.jump;
+  if (
+    std::strcmp(event->code, "ControlLeft") == 0 ||
+    std::strcmp(event->code, "ControlRight") == 0 ||
+    std::strcmp(event->code, "KeyC") == 0
+  ) key = &client.input.duck;
   if (key == nullptr) return EM_FALSE;
   *key = down;
+  return EM_TRUE;
+}
+
+EM_BOOL on_click(int, const EmscriptenMouseEvent*, void*) {
+  emscripten_request_pointerlock("#canvas", EM_FALSE);
+  return EM_TRUE;
+}
+
+EM_BOOL on_pointer_lock(
+  int,
+  const EmscriptenPointerlockChangeEvent* event,
+  void*
+) {
+  client.pointer_locked = event->isActive;
+  if (!client.pointer_locked) client.input = {};
+  return EM_TRUE;
+}
+
+EM_BOOL on_mouse_move(int, const EmscriptenMouseEvent* event, void*) {
+  if (!client.pointer_locked) return EM_FALSE;
+  constexpr float sensitivity = 0.0022F;
+  client.yaw -= static_cast<float>(event->movementX) * sensitivity;
+  client.pitch -= static_cast<float>(event->movementY) * sensitivity;
+  client.pitch = std::clamp(client.pitch, -1.5533F, 1.5533F);
   return EM_TRUE;
 }
 
@@ -331,7 +393,16 @@ void frame() {
       forward /= length;
       strafe /= length;
     }
-    sim_step(forward, strafe);
+    std::uint32_t buttons = 0;
+    if (client.input.jump) buttons |= cs::ButtonJump;
+    if (client.input.duck) buttons |= cs::ButtonDuck;
+    const cs::InputCommand command{
+      .forward = forward,
+      .strafe = strafe,
+      .yaw = client.yaw,
+      .buttons = buttons,
+    };
+    sim_step(&command);
     client.accumulator -= cs::kTickSeconds;
   }
   render();
@@ -345,6 +416,9 @@ int main() {
 
   emscripten_set_keydown_callback(EMSCRIPTEN_EVENT_TARGET_DOCUMENT, nullptr, EM_TRUE, on_key);
   emscripten_set_keyup_callback(EMSCRIPTEN_EVENT_TARGET_DOCUMENT, nullptr, EM_TRUE, on_key);
+  emscripten_set_click_callback("#canvas", nullptr, EM_TRUE, on_click);
+  emscripten_set_mousemove_callback(EMSCRIPTEN_EVENT_TARGET_DOCUMENT, nullptr, EM_TRUE, on_mouse_move);
+  emscripten_set_pointerlockchange_callback(EMSCRIPTEN_EVENT_TARGET_DOCUMENT, nullptr, EM_TRUE, on_pointer_lock);
   client.previous_time = emscripten_get_now() * 0.001;
   emscripten_set_main_loop(frame, 0, EM_TRUE);
   return 0;

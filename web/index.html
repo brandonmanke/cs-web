@@ -18,13 +18,13 @@
   <body>
     <canvas id="canvas" tabindex="0"></canvas>
     <div id="status">LOADING C++ / WASM</div>
-    <div id="controls">WASD — MOVE THE SIM CUBE</div>
+    <div id="controls">CLICK TO CAPTURE — WASD MOVE — SPACE JUMP — CTRL/C DUCK — ESC RELEASE</div>
     <script>
       var Module = {
         canvas: document.getElementById("canvas"),
         onRuntimeInitialized() {
           const status = document.getElementById("status");
-          status.textContent = "SIM + WEBGL2: C++ / 64 HZ";
+          status.textContent = "M1 MOVEMENT LAB — C++ / 64 HZ";
           status.className = "ready";
           Module.canvas.focus();
         },
