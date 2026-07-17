@@ -16,6 +16,8 @@ void check(bool condition, const char* message) {
 cs::Simulation flat_world() {
   cs::Simulation simulation{};
   cs::initialize(simulation);
+  cs::select_weapon(simulation, cs::WeaponKnife, true);
+  cs::clear_targets(simulation);
   cs::clear_world(simulation);
   cs::add_solid(
     simulation,
@@ -23,6 +25,22 @@ cs::Simulation flat_world() {
     {4096.0F, 0.0F, 4096.0F}
   );
   cs::set_player(simulation, {0.0F, cs::kStandingHalfHeight, 0.0F});
+  return simulation;
+}
+
+cs::Simulation target_world(bool with_wood_wall) {
+  cs::Simulation simulation = flat_world();
+  cs::select_weapon(simulation, cs::WeaponAk47, true);
+  cs::clear_targets(simulation);
+  cs::add_target(simulation, {0.0F, 0.0F, -200.0F}, 0.0F, 0.0F, 0.0F);
+  if (with_wood_wall) {
+    cs::add_solid(
+      simulation,
+      {-48.0F, 0.0F, -100.0F},
+      {48.0F, 96.0F, -92.0F},
+      cs::MaterialWood
+    );
+  }
   return simulation;
 }
 
@@ -219,6 +237,102 @@ void test_aim_arena_layout_and_traversal() {
   check(doorway_sim.player.origin.z < -350.0F, "player hull traverses the arena gate opening");
 }
 
+void test_weapon_table_patterns_and_speed() {
+  const std::span<const cs::WeaponDefinition> weapons = cs::weapon_definitions();
+  check(weapons.size() == cs::kWeaponCount, "weapon table contains knife plus six firearms");
+  check(
+    weapons[cs::WeaponAk47].magazine_capacity == 30 &&
+    weapons[cs::WeaponAwp].base_damage > 100.0F,
+    "weapon table exposes firearm-specific magazine and damage values"
+  );
+  const cs::Vec2 first = cs::weapon_pattern_offset(cs::WeaponAk47, 0);
+  const cs::Vec2 ak_tenth = cs::weapon_pattern_offset(cs::WeaponAk47, 10);
+  const cs::Vec2 mp5_tenth = cs::weapon_pattern_offset(cs::WeaponMp5, 10);
+  check(first.x == 0.0F && first.y == 0.0F, "first recoil-pattern sample is centered");
+  check(
+    std::fabs(ak_tenth.y) > std::fabs(mp5_tenth.y),
+    "AK pattern climbs more strongly than the MP5 pattern"
+  );
+
+  cs::Simulation ak_move = flat_world();
+  cs::select_weapon(ak_move, cs::WeaponAk47, true);
+  run_ticks(ak_move, 128, {.forward = 1.0F});
+  check(
+    std::fabs(horizontal_speed(ak_move) - cs::weapon_definition(cs::WeaponAk47).max_move_speed) < 0.1F,
+    "selected weapon controls the movement-speed cap"
+  );
+}
+
+void test_damage_penetration_and_deterministic_fire() {
+  cs::Simulation direct = target_world(false);
+  cs::step(direct, {.buttons = cs::ButtonFire});
+  check(direct.last_shot.result == cs::ShotKill, "stationary first shot hits the target head");
+  check(direct.last_shot.hit_group == cs::HitHead, "target ray reports the head hitgroup");
+  check(direct.weapon.magazine[cs::WeaponAk47] == 29, "firing consumes one cartridge");
+  check(
+    std::fabs(direct.last_shot.damage /
+      (cs::weapon_definition(cs::WeaponAk47).base_damage *
+       std::pow(cs::weapon_definition(cs::WeaponAk47).range_modifier, 200.0F / 500.0F)) -
+      cs::hit_group_multiplier(cs::HitHead)) < 0.1F,
+    "headshot damage applies range falloff then the hitgroup multiplier"
+  );
+
+  cs::Simulation repeated = target_world(false);
+  cs::step(repeated, {.buttons = cs::ButtonFire});
+  check(
+    repeated.last_shot.result == direct.last_shot.result &&
+    repeated.last_shot.damage == direct.last_shot.damage &&
+    repeated.last_shot.end.x == direct.last_shot.end.x &&
+    repeated.last_shot.end.y == direct.last_shot.end.y,
+    "identical shot state produces an identical result and direction"
+  );
+
+  cs::Simulation wallbang = target_world(true);
+  cs::step(wallbang, {.buttons = cs::ButtonFire});
+  check(
+    wallbang.last_shot.result == cs::ShotKill || wallbang.last_shot.result == cs::ShotHit,
+    "AK penetrates a thin wood panel"
+  );
+  check(wallbang.last_shot.penetrations == 1, "wallbang reports one penetrated surface");
+  check(
+    wallbang.last_shot.damage < direct.last_shot.damage,
+    "wood penetration reduces delivered damage"
+  );
+}
+
+void test_fire_cadence_reload_and_target_motion() {
+  cs::Simulation automatic = flat_world();
+  cs::select_weapon(automatic, cs::WeaponAk47, true);
+  const std::uint32_t starting_ammo = automatic.weapon.magazine[cs::WeaponAk47];
+  run_ticks(automatic, 18, {.buttons = cs::ButtonFire});
+  const std::uint32_t rounds_fired = starting_ammo - automatic.weapon.magazine[cs::WeaponAk47];
+  check(rounds_fired == 3, "automatic fire obeys the six-tick AK cadence");
+
+  cs::Simulation reload = flat_world();
+  cs::select_weapon(reload, cs::WeaponUsp, true);
+  reload.weapon.magazine[cs::WeaponUsp] = 1;
+  reload.weapon.reserve[cs::WeaponUsp] = 5;
+  cs::step(reload, {.buttons = cs::ButtonFire});
+  cs::step(reload, {});
+  cs::step(reload, {.buttons = cs::ButtonReload});
+  check(reload.weapon.reload_ticks > 0, "reload input starts the weapon reload timer");
+  run_ticks(reload, cs::weapon_definition(cs::WeaponUsp).reload_ticks, {});
+  check(
+    reload.weapon.magazine[cs::WeaponUsp] == 5 &&
+    reload.weapon.reserve[cs::WeaponUsp] == 0,
+    "completed reload transfers available reserve ammunition"
+  );
+
+  cs::Simulation moving{};
+  cs::initialize(moving);
+  const float target_start = moving.targets[0].origin.x;
+  run_ticks(moving, 32, {});
+  check(
+    moving.targets[0].origin.x > target_start + 20.0F,
+    "aim_arena target motion advances in the fixed-tick simulation"
+  );
+}
+
 void test_determinism() {
   cs::Simulation first = flat_world();
   cs::Simulation second = flat_world();
@@ -227,7 +341,12 @@ void test_determinism() {
       .forward = tick % 90 < 55 ? 1.0F : 0.0F,
       .strafe = tick % 120 < 60 ? 0.5F : -0.5F,
       .yaw = static_cast<float>(tick) * 0.004F,
-      .buttons = tick % 80 == 0 ? cs::ButtonJump : 0U,
+      .pitch = std::sin(static_cast<float>(tick) * 0.01F) * 0.05F,
+      .buttons =
+        (tick % 80 == 0 ? cs::ButtonJump : 0U) |
+        (tick % 48 < 18 ? cs::ButtonFire : 0U) |
+        (tick == 220 ? cs::ButtonReload : 0U),
+      .requested_weapon = tick == 300 ? cs::WeaponMp5 : cs::WeaponNone,
     };
     cs::step(first, command);
     cs::step(second, command);
@@ -243,8 +362,11 @@ int main() {
   test_jump_fatigue_and_bhop_cap();
   test_duck_wall_and_step_collision();
   test_aim_arena_layout_and_traversal();
+  test_weapon_table_patterns_and_speed();
+  test_damage_penetration_and_deterministic_fire();
+  test_fire_cadence_reload_and_target_motion();
   test_determinism();
   if (failures != 0) return 1;
-  std::puts("cs_sim M1 movement and M2 arena tests passed");
+  std::puts("cs_sim M1 movement, M2 arena, and M3 gunplay tests passed");
   return 0;
 }
