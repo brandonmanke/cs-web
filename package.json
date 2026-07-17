@@ -2,16 +2,14 @@
   "name": "cs-web",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build"
-  },
-  "dependencies": {
-    "three": "^0.182.0"
-  },
-  "devDependencies": {
-    "@types/three": "^0.182.0",
-    "typescript": "^5.9.0",
-    "vite": "^7.0.0"
+    "sim:native": "cmake --preset native && cmake --build --preset native",
+    "sim:test": "npm run sim:native && ctest --preset native",
+    "game:wasm": "EM_CACHE=$PWD/.cache/emscripten emcmake cmake --preset wasm && EM_CACHE=$PWD/.cache/emscripten cmake --build --preset wasm",
+    "build": "npm run game:wasm",
+    "dev": "npm run game:wasm && node tools/serve.mjs"
   }
 }

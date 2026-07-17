@@ -1,7 +1,9 @@
 node_modules/
 dist/
-package-lock.json
 .codex
+build/
+.cache/
+public/
 
 # Valve-derived reference assets, dev-only (see assets/README.md)
 assets/**/*_ref.glb

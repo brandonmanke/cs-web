@@ -5,35 +5,31 @@ Repository guidance for any coding agent (Codex, Claude, Cursor, etc.).
 ## Roadmap
 
 **`PLAN.md` is the spec.** This repo is evolving from an aim trainer into a full
-CS 1.6-derivative shooter: shared C++20 sim core (compiled to WASM for the client,
-native for the authoritative server), Three.js kept as the renderer, WebRTC
-DataChannels for netcode, bots server-side. Read PLAN.md before starting work that
-touches movement, shooting, maps, or networking — milestones M0–M8 define what gets
-built in which order and the success criteria for each. The current TypeScript game
-is the reference harness until PLAN.md M1 lands; don't build new gameplay systems
-in TS that the plan assigns to the C++ sim core.
+CS 1.6-derivative shooter: shared C++20 sim core, C++ WebGL2 browser client via
+Emscripten, native authoritative server, WebRTC DataChannels, and server-side bots.
+Read PLAN.md before starting work that touches movement, shooting, maps, rendering,
+or networking — milestones M0–M8 define what gets built in which order and the
+success criteria for each. JavaScript is limited to generated browser glue and the
+dependency-free local static server; do not move gameplay or rendering out of C++.
 
 ## Commands
 
-- `bun run dev` (preferred) / `npm run dev` (fallback) - start Vite dev server (hot reload)
-- `bun run build` (preferred) / `npm run build` (fallback) - type-check with `tsc` then bundle with Vite
-- `bunx tsc --noEmit` (preferred) / `npx tsc --noEmit` (fallback) - type-check only
+- `npm run dev` - build the C++ WebAssembly client, then serve it on port 3100
+- `npm run build` - build the C++ WebAssembly client
+- `npm run sim:test` - build and run the native C++ simulation tests
 
 ## Architecture (current state)
 
-Browser-based CS 1.6-style aim trainer built with vanilla TypeScript + Three.js.
+Browser-based CS 1.6-style shooter built in C++20 and compiled with Emscripten.
 
-- Game loop: `src/main.ts` creates `Game`; `src/game.ts` owns scene/camera/renderer and runs `requestAnimationFrame`
-- Viewmodel: weapon mesh is attached with `camera.add(model)` for classic FPS behavior
-- Movement: acceleration toward wish direction + friction + hard speed cap; tune in `src/constants.ts`
-- Hit detection: center-screen raycast against target meshes (`THREE.Raycaster`)
-- Bounds: player clamped to room AABB each frame (no collision mesh/physics engine)
-- HUD: CSS/DOM overlay (crosshair, score, ammo, hitmarker), not a 3D UI
-- Audio: Web Audio API synthesis (no external assets)
-- Frame timing: use `THREE.Timer`; call `timer.update()` before `timer.getDelta()`
+- Game loop and raw WebGL2 renderer: `client/src/main.cpp`
+- Portable gameplay simulation and C ABI: `sim/`
+- Native verification: `sim/tests/`
+- Browser shell: `web/index.html` (canvas/loading text only)
+- Local server: `tools/serve.mjs` (Node built-ins only)
 
-Data flow for shooting:
-`input.mouseDown -> weapon.canShoot() -> weapon.shoot() -> targets.checkHit(camera) -> hud/audio updates`
+The client and sim link into one WASM executable, so gameplay calls cross an
+ordinary C++ boundary rather than marshalling state through JavaScript.
 
 ## Assets
 
@@ -50,17 +46,17 @@ Data flow for shooting:
 
 ## Conventions
 
-- Keep gameplay tuning values in `src/constants.ts`
+- Keep gameplay tuning values in the C++ sim, not the renderer
 - Prefer simple, surgical changes over broad refactors
 - Match existing code style and structure
 - Do not add speculative systems/features — PLAN.md milestones define scope
-- Audio stays synthesized (Web Audio) until PLAN.md M3 introduces sampled sounds
-- Geometry: primitive meshes or `assets/` GLBs; `MeshStandardMaterial` with flat
-  colors unless a change explicitly needs otherwise
+- Audio stays C++-generated until PLAN.md M3 introduces sampled sounds
+- Geometry: simple original primitives first; optional glTF imports stay outside
+  the sim and are normalized into the same runtime mesh format
 
 ## Agent Workflow Expectations
 
 - Think before coding: surface assumptions and tradeoffs if ambiguity matters
 - Define concrete success criteria before implementing
-- Verify with commands (at minimum `bun run build` or `npm run build`) after changes
+- Verify with commands (at minimum `npm run build`) after changes
 - If a change is unrelated to the user request, call it out instead of silently modifying it

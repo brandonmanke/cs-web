@@ -1,7 +1,7 @@
 # PLAN.md — From Aim Trainer to a Real CS 1.6-Style Browser Shooter
 
 **Status:** Draft v2 — implementation-audited (2026-07-17)
-**Scope:** Turn `cs-web` (Three.js aim trainer) into a full Counter-Strike-1.6-derivative FPS that runs in the browser at native-like performance: authentic GoldSrc-style movement and gunplay, multiplayer on an authoritative server, and single player vs. bots. Original assets and names — derivative feel, not a rip.
+**Scope:** Turn `cs-web` (originally a Three.js aim trainer) into a full Counter-Strike-1.6-derivative FPS that runs in the browser at native-like performance: authentic GoldSrc-style movement and gunplay, multiplayer on an authoritative server, and single player vs. bots. Original assets and names — derivative feel, not a rip.
 
 ---
 
@@ -57,12 +57,12 @@ A modern reference reimplementation exists ([QMovement, UE5](https://github.com/
   - WebSocket (TCP) — fine for signaling, lobby, chat; unacceptable for game state (head-of-line blocking).
 - Precedent check: **Krunker.io** proved browser CS-likes work commercially, but its JS server ran at **10 tick** with 6–8 player lobbies ([history](https://ioground.com/blog/the-history-behind-krunker-io)) — our native C++ server at 64–100 tick is the differentiator.
 
-### 2.4 WASM + rendering stack: C++ where it counts, proven renderer where it doesn't
+### 2.4 WASM + rendering stack: one C++ browser executable
 
-- WASM runs game logic at 60–90% of native; **rendering is bounded by WebGL/WebGPU, not by WASM vs JS** ([WASM engines guide](https://simplified.media/guides/wasm-game-engines)). WebGPU now ships in all major browsers (~82% global support in 2026), and Three.js has a WebGPU renderer with automatic WebGL2 fallback since r171 ([caniuse](https://caniuse.com/webgpu), [status](https://github.com/gpuweb/gpuweb/wiki/Implementation-Status)).
-- Full-C++ renderer options: **sokol_gfx** has solid WebGL2 + WebGPU (via `emdawnwebgpu`) backends and treats WASM as first-class ([sokol WebGPU](https://floooh.github.io/2023/10/16/sokol-webgpu.html)); **bgfx**'s WebGPU/Emscripten story is currently messy ([author's post](https://bkaradzic.github.io/posts/webgpu/)) — avoid.
+- WASM runs game logic at 60–90% of native; **rendering is bounded by WebGL/WebGPU, not by WASM vs JS** ([WASM engines guide](https://simplified.media/guides/wasm-game-engines)). WebGPU now ships broadly, but WebGL2 remains the simplest universal baseline ([caniuse](https://caniuse.com/webgpu), [status](https://github.com/gpuweb/gpuweb/wiki/Implementation-Status)).
+- **Decision: raw WebGL2 through Emscripten's GLES3 surface.** The low-poly/lightmapped target does not need an engine renderer. A small C++ renderer keeps the frame loop, input, camera, visibility, viewmodels, debug drawing, and HUD in one executable with no per-frame JS/WASM marshalling. `sokol_gfx` remains a possible later abstraction if a WebGPU backend becomes valuable ([sokol WebGPU](https://floooh.github.io/2023/10/16/sokol-webgpu.html)).
 - **Existence proof:** the actual GoldSrc engine reimplementation Xash3D-FWGS runs CS 1.6 in-browser via Emscripten ([webxash3d-fwgs](https://github.com/yohimik/webxash3d-fwgs), [cs1.6-browser](https://github.com/modesage/cs1.6-browser)). GPL + requires owned game assets, so not our base — but it's the benchmark for "1.6 in a browser is absolutely feasible" and a behavior-comparison tool.
-- Off-the-shelf engines (Godot web export, Bevy/WASM) were considered and rejected: larger bundles, less control over the sim loop and netcode, and the user preference is low-level. Three.js is kept *only* as a rendering library, not an engine.
+- Off-the-shelf engines and renderer frameworks (Godot, Bevy, Three.js) were considered and rejected: larger bundles, split-language ownership, and less control over the sim/render/netcode loop than this small GoldSrc-scale game needs.
 
 ### 2.5 Bots: nav mesh + state machine, per Mike Booth's official CS bot
 
@@ -73,7 +73,7 @@ A modern reference reimplementation exists ([QMovement, UE5](https://github.com/
 ### 2.6 Maps & models: TrenchBroom brushes + glTF props — the 1.6 aesthetic is a pipeline choice
 
 - **TrenchBroom** (free, actively maintained, supports custom game configs) edits Quake `.map` files — brush-based CSG geometry, the exact workflow that made 1.6 maps look and play like 1.6 maps ([manual](https://trenchbroom.github.io/manual/latest/), [.map format](https://book.leveldesignbook.com/appendix/resources/formats/map), [parsing walkthrough](https://dev.to/mcharytoniuk/loading-quake-engine-maps-in-three-js-part-1-parsing-55mp)). The format is simple to parse; brushes give us **render geometry and collision volumes from one source**.
-- Models: **Blockbench** (low-poly, animation, glTF export) and/or Blender; CC0 sources ([poly.pizza](https://poly.pizza/explore/Weapons), Kenney, AmbientCG for textures) to bootstrap. The existing Three.js `GLTFLoader` handles render assets. Development-world geometry crosses the sim boundary as a canonical triangle/material stream; later `mapc` packs provide the same data to browser and native server without adding a glTF dependency to the sim.
+- Models: **Blockbench** (low-poly, animation, glTF export) and/or Blender; CC0 sources ([poly.pizza](https://poly.pizza/explore/Weapons), Kenney, AmbientCG for textures) to bootstrap. Optional glTF import belongs to a C++ client/tooling layer (for example `cgltf`), which converts assets into the same compact runtime structures emitted by `mapc`; the sim itself stays independent of asset formats.
 
 ---
 
@@ -84,15 +84,14 @@ A modern reference reimplementation exists ([QMovement, UE5](https://github.com/
 │  player movement (pm) · brush collision/trace · weapons/spread/recoil · damage   │
 │  rules/rounds/economy · entities · deterministic fixed-tick step(input[]) → state│
 └──────────────┬──────────────────────────────────────────────┬────────────────────┘
-               │ emscripten → .wasm                            │ clang → native
+               │ linked into Emscripten client                  │ clang → native
 ┌──────────────▼──────────────┐                 ┌──────────────▼──────────────┐
 │ CLIENT (browser)            │  WebRTC DC      │ SERVER (linux, docker)      │
-│ TS shell (Vite, existing)   │  unreliable+    │ authoritative sim @ 64–100  │
-│ Three.js renderer (WebGPU/  │  unordered      │ tick · lag compensation ·   │
-│  WebGL2 fallback)           │◄───────────────►│ snapshot delta encode ·     │
-│ DOM HUD/menus (existing)    │  + reliable ch. │ bots (navmesh + FSM) ·      │
-│ prediction + reconciliation │  + WS signaling │ libdatachannel              │
-│ interpolation buffer        │                 │                             │
+│ C++20 → WASM                │  unreliable+    │ authoritative sim @ 64–100  │
+│ raw WebGL2 renderer         │  unordered      │ tick · lag compensation ·   │
+│ input · audio · HUD/menus   │◄───────────────►│ snapshot delta encode ·     │
+│ prediction + reconciliation │  + reliable ch. │ bots (navmesh + FSM) ·      │
+│ interpolation buffer        │  + WS signaling │ libdatachannel              │
 └─────────────────────────────┘                 └─────────────────────────────┘
         offline single-player: same WASM sim acts as a local server (bots included)
 ```
@@ -100,11 +99,11 @@ A modern reference reimplementation exists ([QMovement, UE5](https://github.com/
 **Key decisions & rationale:**
 
 1. **C++20 sim core, zero external runtime dependencies, compiled twice** (WASM for client prediction + offline play; native for the server). Written "C-style with benefits": POD structs + free functions, flat contiguous game state (rollback = `memcpy`, snapshot delta = byte diff), `-fno-exceptions -fno-rtti`, no iostream, no deep class hierarchies; small standard-library containers are allowed during world load, while the per-tick path stays allocation-free. Tooling, render importers, and transports may have their own dependencies outside the sim. This is the GoldSrc "shared pm code" trick modernized, and it's non-negotiable for prediction correctness. Bit-identical float determinism across native/WASM is *not* required (server is authoritative; client reconciles), but same-build determinism is, for replays and tests.
-2. **Keep the TS + Three.js shell as the renderer** (hybrid model), talking to the sim through a flat snapshot/interop buffer. Rationale: at 1.6 poly counts the renderer is nowhere near the bottleneck (Krunker scaled on Three.js; our sim/netcode in C++ fixes what actually limited Krunker). This preserves the existing codebase, HUD, menus, and iteration speed. The interop boundary is designed so a full sokol_gfx C++ renderer can replace Three.js later without touching the sim (kept as an explicit M8 option if profiling ever demands it).
+2. **The browser client is C++20 compiled as one WASM executable.** It owns raw WebGL2 rendering, input callbacks, audio, HUD/menus, prediction, and interpolation. The only JavaScript is Emscripten's generated loader plus a tiny static development server. This deliberately replaces the TypeScript/Three.js prototype instead of maintaining two client architectures.
 3. **Transport = interface with a WebRTC DataChannel implementation first** (libdatachannel server-side, datachannel-wasm or browser API client-side; one unreliable+unordered channel for inputs/snapshots, one reliable for events/chat). WebTransport backend added when support justifies it. WebSocket only for signaling/lobby.
 4. **Fixed tick simulation** (start at 64 Hz, evaluate 100 Hz): client samples input per tick, predicts locally, server sends delta-compressed snapshots (20–30/s) against last-acked; interpolation delay ~100 ms for remote entities; lag-compensated hitscan rewind on server.
 5. **Single-threaded WASM to start** (no SharedArrayBuffer/COOP/COEP headaches); the sim at this scale fits comfortably in one thread. Revisit only with profiler evidence.
-6. **DOM stays the UI layer** (HUD, menus, buy menu, scoreboard) — it already works in this repo, it's fast to build, and it's how shipped Emscripten games do UI.
+6. **HUD and in-game menus render in WebGL.** The HTML shell is limited to the canvas, loading/failure text, and accessibility-friendly launch instructions. If a browser API lacks a practical C/C++ binding, isolate the smallest possible `EM_JS` shim rather than moving game state into JavaScript.
 
 ---
 
@@ -151,7 +150,7 @@ Units: GoldSrc units (1u = 1 inch). Player hull 32×32×72 standing / 32×32×36
 The sim traces a player AABB through an abstract collision world; three authoring/import paths feed it:
 
 - **(a) Original code-built worlds (required demo path, M1–M3):** ship a compact `aim_arena` made from simple convex boxes/ramps: two spawn ends, short lanes, wood crates, a wallbang panel, stairs, and jump/duck-jump test geometry. Render meshes and collision primitives come from the same authored data. This guarantees a redistributable, fast-loading demo with no external asset dependency and deliberately echoes the small `aim_`/`fy_` maps of early community shooters without copying a layout.
-- **(b) Imported glTF worlds (optional comparison path, M2):** when a local reference GLB is available, Three.js loads and normalizes its render geometry (×39.37 for meter-authored assets), then sends a canonical triangle/material stream to the sim. The sim builds a static BVH and runs **swept-AABB vs triangle** traces through the same clip-velocity solver as the primitive path. `assets/maps/de_dust2_ref.glb` remains a private, gitignored feel-testing aid, never a milestone dependency or public asset.
+- **(b) Imported glTF worlds (optional comparison path, M2):** when a local reference GLB is available, the C++ client/tooling layer loads and normalizes it (×39.37 for meter-authored assets), then emits a canonical triangle/material stream. The sim builds a static BVH and runs **swept-AABB vs triangle** traces through the same clip-velocity solver as the primitive path. `assets/maps/de_dust2_ref.glb` remains a private, gitignored feel-testing aid, never a milestone dependency or public asset.
 - **(c) TrenchBroom brush maps (original/shippable path, M6):** TrenchBroom with a custom game config (spawns, buyzones, bombsites, ladders, lights) → `mapc` compiler (C++): Valve-220 `.map` → CSG brush polygons → render mesh with per-material batching + baked **lightmaps** (direct+ambient raycaster first), collision brush planes with material tags, entity list. Quake-style hull tracing via plane offsetting (Minkowski expansion) — the classic 1.6 feel path (surf ramps come free). Output: one binary pack file.
 - **Nav mesh** generation is collision-source-agnostic (flood-fill "can I stand here" sampling over the trace API, à la the official CS bot) — so bots work on `aim_arena` and any optional imported comparison world before the brush pipeline exists.
 - **Maps plan:** `aim_lab` movement fixture (M1) → original `aim_arena` playable demo (M2 onward) → optional local reference GLBs for comparison only → original defuse layout via TrenchBroom (M6). Mid/long sightlines, readable chokepoints, crates, and height changes carry the 1.6/Quake design language.
@@ -192,17 +191,19 @@ The sim traces a player AABB through an abstract collision world; three authorin
 cs-web/
 ├── sim/            # C++20 shared core (no runtime deps): pm, trace, weapons, rules, snapshot
 │   └── tests/      # small native test executable + determinism/replay tests
-├── src/            # current Vite+TS renderer, HUD, input, and WASM interop (keep in place)
+├── client/         # C++ WebGL2 renderer, input, audio, HUD, WASM entry point
 ├── server/         # native C++: tick loop, libdatachannel transport, bots, rooms
 ├── tools/mapc/     # .map compiler → pack (mesh, lightmap, collision, navmesh)
+├── tools/serve.mjs # dependency-free Node static server for local browser testing only
+├── web/            # minimal HTML canvas/loading shell copied into public/
 ├── assets/         # maps/ + models/ (dev ref GLBs, gitignored + audited in assets/README.md;
 │                   #   .map sources, original models, textures, sounds — original/CC0 only)
-└── CMakeLists.txt  # native + emscripten toolchains; bun/vite unchanged for shell
+└── CMakeLists.txt  # native + Emscripten client/server builds
 ```
 
-- Build: CMake presets (`native`, `wasm` via Emscripten). CI: build both + run sim tests headless. Generated WASM is copied to Vite's `public/` directory so `bun run dev` remains the one-command demo loop.
-- Interop: C ABI exports (`sim_create/step/snapshot`), flat typed-array views into WASM heap for the renderer (no per-frame JSON/marshalling).
-- Dev loop stays `bun run dev`; WASM artifact hot-swapped by Vite.
+- Build: CMake presets (`native`, `wasm` via Emscripten). CI builds both and runs native sim tests headless. Emscripten links sim + client into `game.wasm` and generated `game.js`, then copies the minimal shell into `public/`.
+- Client/sim boundary: ordinary C++ calls in the same executable; the C ABI remains for native tests, server reuse, replay tooling, and possible future module separation.
+- Dev loop: `npm run dev` builds the C++ WASM client and starts the dependency-free Node static server. Node/npm is local build plumbing only; gameplay and the authoritative server remain C++.
 
 ---
 
@@ -210,15 +211,15 @@ cs-web/
 
 | # | Milestone | Success criteria (verify) |
 |---|---|---|
-| **M0** | **Scaffold + spike** (≈1 wk): CMake + Emscripten build of a hello-sim; interop buffer renders a cube moved by C++ | `bun run dev` shows WASM-driven motion; sim unit test runs natively |
-| **M1** | **Movement core** (2–3 wk): pm code (walk/air/friction/jump/duck/fatigue/bhop cap), AABB-vs-brush trace, flat test room; existing renderer drives it | 1.6 feel checklist §4.1 passes; determinism test (same inputs → same state hash) green |
+| **M0** | **Scaffold + spike** (≈1 wk): CMake + Emscripten build of sim + raw WebGL2 C++ client; render a cube moved by the sim | `npm run dev` serves a dependency-free WASM build showing C++-driven motion; sim unit test runs natively |
+| **M1** | **Movement core** (2–3 wk): pm code (walk/air/friction/jump/duck/fatigue/bhop cap), AABB-vs-brush trace, flat test room; C++ renderer drives it | 1.6 feel checklist §4.1 passes; determinism test (same inputs → same state hash) green |
 | **M2** | **Playable world** (2 wk): original code-built `aim_arena`, shared render/collision authoring data, triangle BVH + swept-AABB trace for ramps/imports, material tags, spawn markers; optional private GLB comparison loader | `aim_arena` loads immediately; full traversal of crates, ramps, stairs, doorways, jump and duck-jump fixtures with M1 movement intact; 60 fps on integrated GPU |
 | **M3** | **Gunplay** (2–3 wk): weapons table, spread/recoil/patterns, damage/hitgroups, penetration, original code-built viewmodels, sampled/cached audio buffers, spray-lab debug view | Native tests prove deterministic patterns, damage, and wallbang loss; spray patterns reproduce in spray lab; a local playtest supports tapping, bursting, spraying, reloads, weapon switching, moving targets, and visible hit feedback |
 | **M4** | **Netcode + server** (3–4 wk): native server, libdatachannel transport, prediction/reconciliation, interpolation, lag comp, FFA DM | 8 players + 150 ms simulated latency + 5% loss: hit reg feels fair, no visible warping; server tick ≤ 2 ms p95 |
 | **M5** | **Bots** (2 wk): navmesh gen from the collision world, A*, combat FSM, difficulties; offline mode (WASM local server) | Bots navigate `aim_arena` end-to-end; bot wins vs. new player at max difficulty; offline page works with zero network |
 | **M6** | **Defuse mode + original map pipeline** (3–4 wk): rounds/economy/buy menu, bombsites, win conditions; TrenchBroom config + `mapc` (brush mesh, plane collision, lightmap v1) + first original defuse map | A full 5v5 bot match completes on the original defuse map; economy balances across 10-round sims; the map loads and plays through the same trace API |
 | **M7** | **Ship v1** (2 wk): lobby/rooms UX, deploy (Docker server on Hetzner/Fly + static client CDN), perf pass, bundle budget | Cold load < 20 MB / < 10 s on 50 Mbps; 60 fps min-spec; public playtest |
-| **M8+** | Options: WebGPU-first renderer or sokol C++ renderer, WebTransport backend, more maps/weapons, spectator, demos/replays (free from determinism), server browser | — |
+| **M8+** | Options: WebGPU/sokol renderer backend, WebTransport backend, more maps/weapons, spectator, demos/replays (free from determinism), server browser | — |
 
 Rough total: ~4–5 months of focused part-time work. Milestones are sequenced so the game is *playable and fun* at the end of every one (M1 = movement playground, M3 = aim trainer++, M4 = real multiplayer DM).
 
@@ -238,7 +239,7 @@ Rough total: ~4–5 months of focused part-time work. Milestones are sequenced s
 |---|---|
 | Movement doesn't "feel right" despite correct constants | A/B against Xash3D CS with identical input scripts; keep frame-quirk toggles (e.g., jump-before-friction ordering) as tunables |
 | WebRTC server ops pain (ICE/STUN, certs) | libdatachannel handles ICE; single STUN (Google) suffices for client→server; document TURN fallback; keep WebSocket-TCP emergency transport |
-| Scope creep (engine-itis) | Milestone gates require *playable fun*; renderer stays Three.js until profiling proves otherwise |
+| Scope creep (engine-itis) | Milestone gates require *playable fun*; the raw renderer implements only what the current milestone visibly needs, with sokol/WebGPU deferred until concrete duplication or profiling justifies it |
 | Cheating in open browsers | Accept for v1; server authority + sanity checks; no client trust for hits |
 | Asset quality/time sink | CC0 bootstrap, style guide (low-poly + lightmaps hides art weakness), art replaces gradually |
 | Legal | No Valve assets/names/code shipped; mechanics-as-facts reimplemented; GPL projects are references only; original map layouts "inspired by" not traced. The `assets/*_ref.glb` Valve derivatives are local dev placeholders (gitignored), swapped out by M7 public release |
@@ -252,7 +253,7 @@ Rough total: ~4–5 months of focused part-time work. Milestones are sequenced s
 
 ## 10. Immediate Next Steps
 
-1. M0 scaffold: `sim/` + CMake + Emscripten toolchain, C-ABI interop, wire into the existing Vite app with a visible WASM health/status readout and native test.
+1. M0 scaffold: `sim/` + CMake + Emscripten toolchain, one C++ WebGL2 browser executable with a visible sim-driven cube, minimal HTML shell, and native test.
 2. M1: port movement into `sim/`, drive it at 64 fixed ticks/s, and validate movement/collision in the code-built `aim_lab` fixture before deleting the TS reference path.
 3. M2: expand the same original authoring data into `aim_arena`; add ramp/triangle collision and material tags. Treat local reference GLBs as optional A/B inputs only.
 4. M3: move shot authority into the sim, add the full MVP weapon data table and deterministic tests, then layer viewmodel/audio/HUD feedback over the verified mechanics.
