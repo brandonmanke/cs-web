@@ -1,4 +1,7 @@
 #include "cs/sim.h"
+#include "cs/client_prediction.h"
+#include "cs/interpolation.h"
+#include "browser_net.h"
 #include "runtime_model.h"
 
 #include <AL/al.h>
@@ -104,6 +107,13 @@ struct ClientState {
   std::array<ImpactMark, 64> impacts{};
   std::uint32_t next_impact = 0;
   AudioState audio{};
+  bool online_requested = false;
+  bool prediction_ready = false;
+  std::uint32_t latest_server_tick = 0;
+  cs::net::Prediction prediction{};
+  cs::net::InterpolationBuffer interpolation{};
+  cs::net::SnapshotPacket authoritative{};
+  Vec3 visual_error{};
 };
 
 ClientState client;
@@ -660,6 +670,56 @@ void draw_targets(const Mat4& view_projection, const cs::SimSnapshot& snapshot) 
   }
 }
 
+void draw_remote_players(const Mat4& view_projection) {
+  if (!client.prediction_ready) return;
+  const float render_tick = static_cast<float>(
+    client.latest_server_tick > 6U ? client.latest_server_tick - 6U : 0U
+  );
+  for (std::uint8_t id = 0; id < cs::net::kMaxPlayers; ++id) {
+    if (id == client.prediction.player_id) continue;
+    cs::net::SnapshotPlayer player{};
+    if (
+      !cs::net::sample_player(client.interpolation, id, render_tick, player) ||
+      (player.flags & cs::net::SnapshotActive) == 0U ||
+      (player.flags & cs::net::SnapshotAlive) == 0U
+    ) {
+      continue;
+    }
+    const float half_height = (player.flags & cs::net::SnapshotDucked) != 0U ?
+      cs::kDuckedHalfHeight : cs::kStandingHalfHeight;
+    const Vec3 base{
+      player.origin.x,
+      player.origin.y - half_height,
+      player.origin.z,
+    };
+    const float tint_offset = static_cast<float>(id % 3U) * 0.08F;
+    draw_cube(
+      view_projection,
+      base + Vec3{0.0F, half_height + 7.0F, 0.0F},
+      {22.0F, half_height * 1.25F, 13.0F},
+      {0.20F + tint_offset, 0.38F, 0.54F - tint_offset}
+    );
+    draw_cube(
+      view_projection,
+      base + Vec3{0.0F, half_height * 2.0F - 7.0F, 0.0F},
+      {12.0F, 14.0F, 12.0F},
+      {0.72F, 0.58F, 0.40F}
+    );
+    draw_cube(
+      view_projection,
+      base + Vec3{-6.0F, 13.0F, 0.0F},
+      {8.0F, 26.0F, 10.0F},
+      {0.17F, 0.22F, 0.30F}
+    );
+    draw_cube(
+      view_projection,
+      base + Vec3{6.0F, 13.0F, 0.0F},
+      {8.0F, 26.0F, 10.0F},
+      {0.17F, 0.22F, 0.30F}
+    );
+  }
+}
+
 void draw_impacts(const Mat4& view_projection) {
   for (const ImpactMark& impact : client.impacts) {
     if (!impact.active) continue;
@@ -847,7 +907,7 @@ int draw_number_right(int value, int right, int y, int scale_value, Vec3 color) 
   return right;
 }
 
-void draw_hud(const cs::SimSnapshot& snapshot) {
+void draw_hud(const cs::SimSnapshot& snapshot, int health) {
   const int scale_value = std::max(2, client.canvas_height / 220);
   const int bottom = 5 * scale_value;
   const Vec3 green{0.18F, 0.95F, 0.30F};
@@ -858,6 +918,7 @@ void draw_hud(const cs::SimSnapshot& snapshot) {
   draw_rect(right - scale_value, bottom, scale_value, 5 * scale_value, {0.35F, 0.48F, 0.33F});
   draw_number_right(static_cast<int>(snapshot.magazine), right - 3 * scale_value, bottom, scale_value, ammo_color);
   draw_digit(4 * scale_value, bottom, scale_value, static_cast<int>(snapshot.weapon), amber);
+  draw_number_right(health, 30 * scale_value, bottom, scale_value, green);
   draw_number_right(
     static_cast<int>(snapshot.kills),
     client.canvas_width - 4 * scale_value,
@@ -901,11 +962,23 @@ void render() {
 
   const float aspect = static_cast<float>(client.canvas_width) /
     static_cast<float>(client.canvas_height);
-  const cs::SimSnapshot& snapshot = *sim_snapshot();
+  cs::SimSnapshot snapshot = client.prediction_ready ?
+    client.prediction.simulation.snapshot : *sim_snapshot();
+  int health = 100;
+  if (client.prediction_ready) {
+    const cs::net::SnapshotPlayer* authoritative = cs::net::find_player(
+      client.authoritative,
+      client.prediction.player_id
+    );
+    if (authoritative != nullptr) {
+      snapshot.kills = authoritative->kills;
+      health = authoritative->health;
+    }
+  }
   const Vec3 eye{
-    snapshot.player_origin.x,
-    snapshot.player_origin.y + snapshot.view_height,
-    snapshot.player_origin.z,
+    snapshot.player_origin.x + client.visual_error.x,
+    snapshot.player_origin.y + snapshot.view_height + client.visual_error.y,
+    snapshot.player_origin.z + client.visual_error.z,
   };
   const float view_pitch = std::clamp(
     client.pitch + snapshot.punch_pitch,
@@ -960,7 +1033,8 @@ void render() {
     );
   }
   draw_impacts(view_projection);
-  draw_targets(view_projection, snapshot);
+  if (client.prediction_ready) draw_remote_players(view_projection);
+  else draw_targets(view_projection, snapshot);
   draw_viewmodel(
     view_projection,
     eye,
@@ -970,9 +1044,10 @@ void render() {
     snapshot
   );
   draw_crosshair();
-  draw_hud(snapshot);
+  draw_hud(snapshot, health);
   if (client.muzzle_frames > 0) --client.muzzle_frames;
   if (client.hitmarker_frames > 0) --client.hitmarker_frames;
+  client.visual_error = client.visual_error * 0.86F;
 }
 
 EM_BOOL on_key(int event_type, const EmscriptenKeyboardEvent* event, void*) {
@@ -1045,7 +1120,77 @@ EM_BOOL on_mouse_move(int, const EmscriptenMouseEvent* event, void*) {
   return EM_TRUE;
 }
 
+void poll_network() {
+  std::array<std::uint8_t, cs::net::kMaxPacketBytes> bytes{};
+  std::size_t size = 0;
+  while (cs::client::browser_net_receive(bytes, size)) {
+    cs::net::SnapshotPacket snapshot{};
+    if (!cs::net::decode_snapshot(std::span(bytes.data(), size), snapshot)) continue;
+    client.latest_server_tick = std::max(client.latest_server_tick, snapshot.server_tick);
+    cs::net::push_snapshot(client.interpolation, snapshot);
+    client.authoritative = snapshot;
+    const cs::net::SnapshotPlayer* local = cs::net::find_player(
+      snapshot,
+      snapshot.recipient_id
+    );
+    if (local == nullptr) continue;
+    cs::client::browser_net_game_status(
+      snapshot.recipient_id,
+      snapshot.player_count,
+      snapshot.server_tick,
+      snapshot.ack_input,
+      local->origin
+    );
+    if (!client.prediction_ready) {
+      cs::net::initialize_prediction(
+        client.prediction,
+        snapshot.recipient_id,
+        *local,
+        snapshot.server_tick
+      );
+      client.yaw = local->yaw;
+      client.prediction_ready = true;
+    } else {
+      const cs::Vec3 before = client.prediction.simulation.player.origin;
+      cs::net::reconcile(client.prediction, snapshot);
+      const cs::Vec3 after = client.prediction.simulation.player.origin;
+      const Vec3 correction{
+        before.x - after.x,
+        before.y - after.y,
+        before.z - after.z,
+      };
+      const float correction_length = std::sqrt(dot(correction, correction));
+      if (correction_length < 64.0F) {
+        client.visual_error = client.visual_error + correction;
+      } else {
+        client.visual_error = {};
+      }
+    }
+  }
+}
+
+void step_online(const cs::InputCommand& input) {
+  const std::uint32_t view_tick = client.latest_server_tick > 6U ?
+    client.latest_server_tick - 6U : client.latest_server_tick;
+  const cs::net::SnapshotPlayer* authoritative = cs::net::find_player(
+    client.authoritative,
+    client.prediction.player_id
+  );
+  const bool alive = authoritative != nullptr &&
+    (authoritative->flags & cs::net::SnapshotAlive) != 0U;
+  if (alive) cs::net::predict(client.prediction, input, view_tick);
+  else cs::net::queue_input(client.prediction, input, view_tick);
+  const cs::net::InputPacket packet = cs::net::input_packet(client.prediction);
+  std::array<std::uint8_t, cs::net::kMaxPacketBytes> bytes{};
+  std::size_t written = 0;
+  if (cs::net::encode_input(packet, bytes, written)) {
+    cs::client::browser_net_send(std::span(bytes.data(), written));
+  }
+  if (alive) process_sim_events(client.prediction.simulation.snapshot);
+}
+
 void frame() {
+  if (client.online_requested) poll_network();
   const double now = emscripten_get_now() * 0.001;
   double elapsed = now - client.previous_time;
   client.previous_time = now;
@@ -1075,8 +1220,14 @@ void frame() {
       .buttons = buttons,
       .requested_weapon = client.input.requested_weapon,
     };
-    sim_step(&command);
-    process_sim_events(*sim_snapshot());
+    if (client.online_requested) {
+      if (client.prediction_ready && cs::client::browser_net_connected()) {
+        step_online(command);
+      }
+    } else {
+      sim_step(&command);
+      process_sim_events(*sim_snapshot());
+    }
     client.input.fire_pulse = false;
     client.input.reload_pulse = false;
     client.input.requested_weapon = cs::WeaponNone;
@@ -1090,6 +1241,8 @@ void frame() {
 int main() {
   sim_create();
   if (!initialize_renderer()) return 1;
+  client.online_requested = cs::client::browser_online_requested();
+  if (client.online_requested) cs::client::browser_net_start();
 
   emscripten_set_keydown_callback(EMSCRIPTEN_EVENT_TARGET_DOCUMENT, nullptr, EM_TRUE, on_key);
   emscripten_set_keyup_callback(EMSCRIPTEN_EVENT_TARGET_DOCUMENT, nullptr, EM_TRUE, on_key);

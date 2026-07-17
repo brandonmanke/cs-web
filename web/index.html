@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>CS-Web — M3 Gunplay Demo</title>
+    <title>CS-Web — M4 FFA Demo</title>
     <style>
       * { box-sizing: border-box; }
       html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #090c0a; }
@@ -24,8 +24,11 @@
         canvas: document.getElementById("canvas"),
         onRuntimeInitialized() {
           const status = document.getElementById("status");
-          status.textContent = "M3 GUNPLAY LAB — C++ / 64 HZ";
-          status.className = "ready";
+          const online = new URLSearchParams(location.search).get("online") === "1";
+          status.textContent = online
+            ? "M4 CONNECTING — WEBRTC"
+            : "M3 GUNPLAY LAB — C++ / 64 HZ";
+          status.className = online ? "" : "ready";
           Module.canvas.focus();
         },
         printErr(message) {

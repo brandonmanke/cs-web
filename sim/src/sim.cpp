@@ -832,8 +832,9 @@ void update_weapon(Simulation& simulation, const InputCommand& command) {
   }
   if (fired) {
     state.recovery_ticks = 0;
-  } else if (++state.recovery_ticks > 20) {
-    state.shot_index = 0;
+  } else {
+    state.recovery_ticks = std::min(state.recovery_ticks + 1U, 21U);
+    if (state.recovery_ticks > 20) state.shot_index = 0;
   }
   state.fire_held = fire_pressed;
 }
@@ -1067,6 +1068,10 @@ void set_player(Simulation& simulation, Vec3 origin, Vec3 velocity) {
     .jump_held = false,
   };
   categorize_ground(simulation);
+  update_snapshot(simulation);
+}
+
+void refresh_snapshot(Simulation& simulation) {
   update_snapshot(simulation);
 }
 

@@ -25,15 +25,16 @@ void apply_authoritative(
     simulation.weapon.magazine[weapon] = authoritative.magazine;
     simulation.weapon.reserve[weapon] = authoritative.reserve;
   }
-  simulation.weapon.cooldown_ticks = 0;
-  simulation.weapon.reload_ticks = 0;
-  simulation.weapon.shot_index = 0;
-  simulation.weapon.recovery_ticks = 0;
-  simulation.weapon.punch_pitch = 0.0F;
-  simulation.weapon.punch_yaw = 0.0F;
-  simulation.weapon.fire_held = false;
+  simulation.weapon.cooldown_ticks = authoritative.cooldown_ticks;
+  simulation.weapon.reload_ticks = authoritative.reload_ticks;
+  simulation.weapon.shot_index = authoritative.shot_index;
+  simulation.weapon.recovery_ticks = authoritative.recovery_ticks;
+  simulation.weapon.shot_sequence = authoritative.shot_sequence;
+  simulation.weapon.punch_pitch = authoritative.punch_pitch;
+  simulation.weapon.punch_yaw = authoritative.punch_yaw;
+  simulation.weapon.fire_held = (authoritative.flags & SnapshotFireHeld) != 0U;
   clear_targets(simulation);
-  select_weapon(simulation, simulation.weapon.selected, true);
+  refresh_snapshot(simulation);
 }
 
 float distance(Vec3 first, Vec3 second) {
@@ -64,7 +65,7 @@ void initialize_prediction(
   apply_authoritative(prediction, authoritative, server_tick);
 }
 
-Command predict(Prediction& prediction, const InputCommand& input, std::uint32_t view_tick) {
+Command queue_input(Prediction& prediction, const InputCommand& input, std::uint32_t view_tick) {
   const Command command{
     .sequence = prediction.next_sequence++,
     .view_tick = view_tick,
@@ -74,6 +75,11 @@ Command predict(Prediction& prediction, const InputCommand& input, std::uint32_t
     .valid = true,
     .command = command,
   };
+  return command;
+}
+
+Command predict(Prediction& prediction, const InputCommand& input, std::uint32_t view_tick) {
+  const Command command = queue_input(prediction, input, view_tick);
   cs::step(prediction.simulation, input);
   return command;
 }
@@ -109,14 +115,16 @@ float reconcile(Prediction& prediction, const SnapshotPacket& snapshot) {
   prediction.last_ack_input = snapshot.ack_input;
   apply_authoritative(prediction, *authoritative, snapshot.server_tick);
 
-  for (
-    std::uint32_t sequence = snapshot.ack_input + 1U;
-    sequence < prediction.next_sequence;
-    ++sequence
-  ) {
-    PredictionEntry& entry = prediction.history[sequence % kPredictionHistory];
-    if (!entry.valid || entry.command.sequence != sequence) continue;
-    cs::step(prediction.simulation, entry.command.input);
+  if ((authoritative->flags & SnapshotAlive) != 0U) {
+    for (
+      std::uint32_t sequence = snapshot.ack_input + 1U;
+      sequence < prediction.next_sequence;
+      ++sequence
+    ) {
+      PredictionEntry& entry = prediction.history[sequence % kPredictionHistory];
+      if (!entry.valid || entry.command.sequence != sequence) continue;
+      cs::step(prediction.simulation, entry.command.input);
+    }
   }
 
   for (PredictionEntry& entry : prediction.history) {

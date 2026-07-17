@@ -14,8 +14,8 @@ npm run sim:test
 npm run dev
 ```
 
-After `npm run sim:test`, `./build/native/cs_server` runs the eight-player tick
-benchmark used by M4.
+After `npm run sim:test`, `./build/native/cs_server_benchmark` runs the
+eight-player tick benchmark used by M4.
 
 `npm run dev` builds `game.wasm` and serves `public/` at
 `http://127.0.0.1:3100`. Click the canvas, then use WASD + mouse, Space to jump,
@@ -36,9 +36,23 @@ targets, cached procedural OpenAL audio, a WebGL HUD, and temporary code-built
 fallback silhouettes. The runtime now draws the audited textured PSX-style CC0
 knife, pistol, AK, M4, and MP5 models listed in `assets/README.md`.
 
-The first M4 checkpoint adds a versioned binary input/snapshot protocol, three-
-command input redundancy, eighth-unit snapshot quantization, client prediction
-and replay reconciliation, remote interpolation, a native eight-player
-authoritative FFA loop, bounded hitscan rewind, death/respawn, and a deterministic
-150 ms RTT / 5% packet-loss harness. Browser/server WebRTC transport is the next
-checkpoint; M4 is not yet a network-playable browser mode.
+M4 adds a versioned binary input/snapshot protocol, three-command input
+redundancy, eighth-unit snapshot quantization, client prediction and replay
+reconciliation, remote interpolation, a native eight-player authoritative FFA
+loop, bounded hitscan rewind, death/respawn, and a deterministic 150 ms RTT / 5%
+packet-loss harness. The browser and native C++ server exchange those packets on
+an unordered, unreliable WebRTC DataChannel; WebSocket is used only for the
+small signaling exchange.
+
+To play the local multiplayer demo, start these in separate terminals:
+
+```sh
+npm run server:run
+npm run dev
+```
+
+Open `http://127.0.0.1:3100/?online=1` in two browser windows. The default page
+without `?online=1` remains the zero-network M3 gunplay demo. The first server
+build fetches the pinned libdatachannel source and its native dependencies, so it
+takes longer than later incremental builds. A non-default signaling endpoint can
+be supplied as `?online=1&signal=ws://host:port`.

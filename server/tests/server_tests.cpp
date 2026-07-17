@@ -81,7 +81,8 @@ void test_protocol_round_trip() {
     .players = {{
       {
         .id = 2,
-        .flags = cs::net::SnapshotActive | cs::net::SnapshotAlive,
+        .flags = cs::net::SnapshotActive | cs::net::SnapshotAlive |
+          cs::net::SnapshotFireHeld,
         .health = 93,
         .kills = 2,
         .deaths = 1,
@@ -91,17 +92,36 @@ void test_protocol_round_trip() {
         .weapon = cs::WeaponAk47,
         .magazine = 23,
         .reserve = 90,
+        .cooldown_ticks = 6,
+        .reload_ticks = 0,
+        .shot_index = 7,
+        .recovery_ticks = 10,
+        .shot_sequence = 99,
+        .punch_pitch = -0.15F,
+        .punch_yaw = 0.08F,
       },
     }},
   };
   check(cs::net::encode_snapshot(snapshot, bytes, written), "snapshot packet encodes");
-  check(written == 45, "single-player snapshot stays 45 bytes");
+  check(written == 59, "single-player snapshot stays 59 bytes");
   cs::net::SnapshotPacket decoded_snapshot{};
   check(
     cs::net::decode_snapshot(std::span(bytes.data(), written), decoded_snapshot),
     "snapshot packet decodes"
   );
   check(decoded_snapshot.players[0].health == 93, "snapshot state round-trips");
+  check(
+    decoded_snapshot.players[0].cooldown_ticks == 6 &&
+      decoded_snapshot.players[0].shot_index == 7 &&
+      decoded_snapshot.players[0].shot_sequence == 99,
+    "snapshot weapon state round-trips"
+  );
+  check(
+    (decoded_snapshot.players[0].flags & cs::net::SnapshotFireHeld) != 0U &&
+      std::fabs(decoded_snapshot.players[0].punch_pitch + 0.15F) < 0.001F &&
+      std::fabs(decoded_snapshot.players[0].punch_yaw - 0.08F) < 0.001F,
+    "snapshot recoil state round-trips"
+  );
   check(
     distance(decoded_snapshot.players[0].origin, snapshot.players[0].origin) < 0.01F,
     "snapshot position has eighth-unit precision"

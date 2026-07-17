@@ -9,7 +9,7 @@
 
 namespace cs::net {
 
-inline constexpr std::uint8_t kProtocolVersion = 1;
+inline constexpr std::uint8_t kProtocolVersion = 2;
 inline constexpr std::uint32_t kMaxPlayers = 8;
 inline constexpr std::uint32_t kInputRedundancy = 3;
 inline constexpr std::size_t kMaxPacketBytes = 512;
@@ -25,6 +25,7 @@ enum SnapshotPlayerFlag : std::uint8_t {
   SnapshotOnGround = 1U << 2U,
   SnapshotDucked = 1U << 3U,
   SnapshotJumpHeld = 1U << 4U,
+  SnapshotFireHeld = 1U << 5U,
 };
 
 struct Command {
@@ -54,6 +55,13 @@ struct SnapshotPlayer {
   std::uint32_t weapon = WeaponNone;
   std::uint32_t magazine = 0;
   std::uint32_t reserve = 0;
+  std::uint32_t cooldown_ticks = 0;
+  std::uint32_t reload_ticks = 0;
+  std::uint32_t shot_index = 0;
+  std::uint32_t recovery_ticks = 0;
+  std::uint32_t shot_sequence = 0;
+  float punch_pitch = 0.0F;
+  float punch_yaw = 0.0F;
 };
 
 struct SnapshotPacket {

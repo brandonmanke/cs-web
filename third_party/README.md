@@ -13,3 +13,10 @@ single-header libraries are client-side asset-decoding implementation details:
 
 Do not update either file without recording the new tag/commit here and running
 the native simulation tests plus the WebAssembly browser smoke test.
+
+The optional native multiplayer server uses `libdatachannel` v0.24.5 from
+<https://github.com/paullouisageneau/libdatachannel>, MPL-2.0. CMake FetchContent
+downloads that pinned tag only when `CS_ENABLE_WEBRTC_SERVER=ON`; it is not
+vendored into this repository and is not linked into the shared simulation or
+browser client. Media support, examples, and upstream tests are disabled for the
+smallest server-only build.

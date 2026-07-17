@@ -19,6 +19,17 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "native-webrtc",
+      "displayName": "Native WebRTC server",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/native-webrtc",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_TESTING": "OFF",
+        "CS_ENABLE_WEBRTC_SERVER": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -29,6 +40,11 @@
     {
       "name": "wasm",
       "configurePreset": "wasm"
+    },
+    {
+      "name": "native-webrtc",
+      "configurePreset": "native-webrtc",
+      "targets": ["cs_server"]
     }
   ],
   "testPresets": [

@@ -20,6 +20,7 @@ void reset_simulation(Player& player) {
   player.health = 100;
   player.alive = true;
   player.respawn_ticks = 0;
+  player.last_command = {};
 }
 
 void record_history(Server& server) {
@@ -116,6 +117,7 @@ std::uint8_t player_flags(const Player& player) {
   if (player.simulation.player.on_ground) flags |= net::SnapshotOnGround;
   if (player.simulation.player.ducked) flags |= net::SnapshotDucked;
   if (player.simulation.player.jump_held) flags |= net::SnapshotJumpHeld;
+  if (player.simulation.weapon.fire_held) flags |= net::SnapshotFireHeld;
   return flags;
 }
 
@@ -197,6 +199,8 @@ void step(Server& server) {
   for (Player& player : server.players) {
     if (!player.connected) continue;
     if (!player.alive) {
+      std::uint32_t ignored_view_tick = server.tick;
+      (void)command_for_tick(player, ignored_view_tick);
       if (player.respawn_ticks > 0) --player.respawn_ticks;
       if (player.respawn_ticks == 0) reset_simulation(player);
       continue;
@@ -238,6 +242,13 @@ net::SnapshotPacket snapshot(Server& server, std::uint8_t recipient_id) {
       .weapon = static_cast<std::uint32_t>(weapon),
       .magazine = player.simulation.weapon.magazine[weapon],
       .reserve = player.simulation.weapon.reserve[weapon],
+      .cooldown_ticks = player.simulation.weapon.cooldown_ticks,
+      .reload_ticks = player.simulation.weapon.reload_ticks,
+      .shot_index = player.simulation.weapon.shot_index,
+      .recovery_ticks = player.simulation.weapon.recovery_ticks,
+      .shot_sequence = player.simulation.weapon.shot_sequence,
+      .punch_pitch = player.simulation.weapon.punch_pitch,
+      .punch_yaw = player.simulation.weapon.punch_yaw,
     };
   }
   return packet;

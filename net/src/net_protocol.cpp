@@ -220,10 +220,14 @@ bool write_player(Writer& writer, const SnapshotPlayer& player) {
   if (
     player.id >= kMaxPlayers ||
     player.weapon >= kWeaponCount ||
-    (player.flags & ~0x1FU) != 0U ||
+    (player.flags & ~0x3FU) != 0U ||
     player.health > 255 ||
     player.magazine > 255 ||
     player.reserve > 65535 ||
+    player.cooldown_ticks > 65535 ||
+    player.reload_ticks > 65535 ||
+    player.shot_index > 255 ||
+    player.recovery_ticks > 255 ||
     !std::isfinite(player.origin.x) ||
     !std::isfinite(player.origin.y) ||
     !std::isfinite(player.origin.z) ||
@@ -231,7 +235,9 @@ bool write_player(Writer& writer, const SnapshotPlayer& player) {
     !std::isfinite(player.velocity.y) ||
     !std::isfinite(player.velocity.z) ||
     !std::isfinite(player.yaw) ||
-    !std::isfinite(player.stamina)
+    !std::isfinite(player.stamina) ||
+    !std::isfinite(player.punch_pitch) ||
+    !std::isfinite(player.punch_yaw)
   ) {
     return false;
   }
@@ -252,7 +258,14 @@ bool write_player(Writer& writer, const SnapshotPlayer& player) {
       std::clamp(player.stamina, 0.0F, 4095.0F) * 16.0F
     ))) &&
     writer.byte(static_cast<std::uint8_t>(player.magazine)) &&
-    writer.word(static_cast<std::uint16_t>(player.reserve));
+    writer.word(static_cast<std::uint16_t>(player.reserve)) &&
+    writer.word(static_cast<std::uint16_t>(player.cooldown_ticks)) &&
+    writer.word(static_cast<std::uint16_t>(player.reload_ticks)) &&
+    writer.byte(static_cast<std::uint8_t>(player.shot_index)) &&
+    writer.byte(static_cast<std::uint8_t>(player.recovery_ticks)) &&
+    writer.dword(player.shot_sequence) &&
+    writer.word(quantize_angle(player.punch_pitch)) &&
+    writer.word(quantize_angle(player.punch_yaw));
 }
 
 bool read_player(Reader& reader, SnapshotPlayer& player) {
@@ -268,6 +281,12 @@ bool read_player(Reader& reader, SnapshotPlayer& player) {
   std::uint16_t yaw = 0;
   std::uint16_t stamina = 0;
   std::uint16_t reserve = 0;
+  std::uint16_t cooldown_ticks = 0;
+  std::uint16_t reload_ticks = 0;
+  std::uint8_t shot_index = 0;
+  std::uint8_t recovery_ticks = 0;
+  std::uint16_t punch_pitch = 0;
+  std::uint16_t punch_yaw = 0;
   if (
     !reader.byte(player.id) ||
     !reader.byte(player.flags) ||
@@ -284,14 +303,21 @@ bool read_player(Reader& reader, SnapshotPlayer& player) {
     !reader.word(yaw) ||
     !reader.word(stamina) ||
     !reader.byte(magazine) ||
-    !reader.word(reserve)
+    !reader.word(reserve) ||
+    !reader.word(cooldown_ticks) ||
+    !reader.word(reload_ticks) ||
+    !reader.byte(shot_index) ||
+    !reader.byte(recovery_ticks) ||
+    !reader.dword(player.shot_sequence) ||
+    !reader.word(punch_pitch) ||
+    !reader.word(punch_yaw)
   ) {
     return false;
   }
   if (
     player.id >= kMaxPlayers ||
     weapon >= kWeaponCount ||
-    (player.flags & ~0x1FU) != 0U
+    (player.flags & ~0x3FU) != 0U
   ) {
     return false;
   }
@@ -311,6 +337,12 @@ bool read_player(Reader& reader, SnapshotPlayer& player) {
   player.stamina = static_cast<float>(stamina) / 16.0F;
   player.magazine = magazine;
   player.reserve = reserve;
+  player.cooldown_ticks = cooldown_ticks;
+  player.reload_ticks = reload_ticks;
+  player.shot_index = shot_index;
+  player.recovery_ticks = recovery_ticks;
+  player.punch_pitch = dequantize_angle(punch_pitch);
+  player.punch_yaw = dequantize_angle(punch_yaw);
   return true;
 }
 

@@ -8,6 +8,8 @@
   "scripts": {
     "sim:native": "cmake --preset native && cmake --build --preset native",
     "sim:test": "npm run sim:native && ctest --preset native",
+    "server:build": "cmake --preset native-webrtc && cmake --build --preset native-webrtc",
+    "server:run": "npm run server:build && ./build/native-webrtc/cs_server",
     "game:wasm": "EM_CACHE=$PWD/.cache/emscripten emcmake cmake --preset wasm && EM_CACHE=$PWD/.cache/emscripten cmake --build --preset wasm",
     "build": "npm run game:wasm",
     "dev": "npm run game:wasm && node tools/serve.mjs"

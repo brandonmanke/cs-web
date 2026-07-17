@@ -1,6 +1,6 @@
 # PLAN.md — From Aim Trainer to a Real CS 1.6-Style Browser Shooter
 
-**Status:** Draft v3 — implementation-audited and in progress (2026-07-17)
+**Status:** Draft v4 — implementation-audited through the local M4 demo (2026-07-17)
 **Scope:** Turn `cs-web` (originally a Three.js aim trainer) into a full Counter-Strike-1.6-derivative FPS that runs in the browser at native-like performance: authentic GoldSrc-style movement and gunplay, multiplayer on an authoritative server, and single player vs. bots. Original assets and names — derivative feel, not a rip.
 
 ---
@@ -215,7 +215,7 @@ cs-web/
 | **M1** | **Movement core** (2–3 wk): pm code (walk/air/friction/jump/duck/fatigue/bhop cap), Quake-style convex-brush plane trace, flat test room; C++ renderer drives it | 1.6 feel checklist §4.1 passes; determinism test (same inputs → same state hash) green |
 | **M2** | **Playable world** (2 wk): original code-built `aim_arena`, shared render/collision authoring data, convex boxes and true ramp brushes through one plane-offset hull trace, material tags, spawn markers | `aim_arena` loads immediately; automated routes cover ramps, stairs, doorways, jump and duck-jump fixtures with M1 movement intact; browser smoke test is clean and the small fixed draw list sustains 60 fps on the demo machine |
 | **M3** | **Gunplay** (2–3 wk): weapons table, spread/recoil/patterns, damage/hitgroups, penetration, original code-built debug viewmodels, cached procedural audio buffers, spray-lab debug view | Native tests prove deterministic continuous patterns, damage, and wallbang loss; spray patterns reproduce in spray lab without branches; a local playtest supports tapping, bursting, spraying, reloads, weapon switching, moving targets, and visible hit feedback |
-| **M4** | **Netcode + server** (3–4 wk): native server, libdatachannel transport, prediction/reconciliation, interpolation, lag comp, FFA DM | 8 players + 150 ms simulated latency + 5% loss: hit reg feels fair, no visible warping; server tick ≤ 2 ms p95 |
+| **M4** | **Netcode + server** (3–4 wk): native server, libdatachannel transport, prediction/reconciliation, interpolation, lag comp, FFA DM | Local browsers join the native server over unordered/unreliable WebRTC; the 8-player harness at 150 ms simulated latency + 5% loss has bounded corrections; server tick ≤ 2 ms p95. Public-Internet ICE/TURN and rooms remain M7 deployment work. |
 | **M5** | **Bots** (2 wk): navmesh gen from the collision world, A*, combat FSM, difficulties; offline mode (WASM local server) | Bots navigate `aim_arena` end-to-end; bot wins vs. new player at max difficulty; offline page works with zero network |
 | **M6** | **Defuse mode + original map pipeline** (3–4 wk): rounds/economy/buy menu, bombsites, win conditions; TrenchBroom config + `mapc` (brush mesh, plane collision, lightmap v1) + first original defuse map | A full 5v5 bot match completes on the original defuse map; economy balances across 10-round sims; the map loads and plays through the same trace API |
 | **M7** | **Ship v1** (2 wk): lobby/rooms UX, deploy (Docker server on Hetzner/Fly + static client CDN), perf pass, bundle budget | Cold load < 20 MB / < 10 s on 50 Mbps; 60 fps min-spec; public playtest |
@@ -258,8 +258,9 @@ Rough total: ~4–5 months of focused part-time work. Milestones are sequenced s
 3. **Complete — M2:** shared-data `aim_arena` with boxes, ramp, stairs, materials, spawns, automated traversal, and a clean browser smoke test.
 4. **Complete — M3:** shot authority, weapon table, deterministic tests, moving targets, penetration, viewmodel/audio/HUD feedback, persistent spray-wall impacts, and live browser fire/reload/switch loops.
 5. **Complete — art bridge:** selected PSX-style CC0 weapon, arms, and character packs are fetched, vendored, and audited; the C++ GLB path draws textured knife, pistol, AK, M4, and MP5 viewmodels with multi-material support.
-6. **Complete — M4 foundation:** versioned bounded input/snapshot packets, three-command redundancy, quantized eight-player snapshots, client prediction/replay reconciliation, remote interpolation, authoritative FFA health/score/death/respawn, and a 13-tick hitscan rewind window. The deterministic 150 ms RTT / 5% loss harness converges below one unit after settling; full snapshots are 234 B, redundant input packets are 64 B, and the local eight-player server benchmark is comfortably below the 2 ms p95 budget.
-7. **Next — M4 transport:** put the proven packet API behind unreliable/unordered WebRTC DataChannels, connect the browser client to the native server, render the audited rigged player fixture, and add visual error smoothing before calling M4 complete.
+6. **Playable local checkpoint — M4:** the native C++ server and browser clients exchange live FFA state over unordered/unreliable WebRTC DataChannels; prediction/reconciliation with visual error smoothing, interpolation, authoritative damage/respawn, lag compensation, 150 ms / 5% loss regression coverage, and the 8-player tick benchmark are working. Full eight-player snapshots are 346 B, redundant input packets are 64 B, and the server benchmark remains comfortably below the 2 ms p95 budget.
+7. **Next — M4 art pass:** replace the temporary remote-player debug meshes with the audited textured PSX character fixture and verify its scale/orientation in a two-client playtest.
+8. **Then — M5:** add the smallest useful navigation graph, A*, and combat FSM for offline bots after the visible M4 character pass is stable.
 
 ## 11. Reference Library
 

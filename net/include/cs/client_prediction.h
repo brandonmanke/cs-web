@@ -31,6 +31,7 @@ void initialize_prediction(
   std::uint32_t server_tick
 );
 Command predict(Prediction& prediction, const InputCommand& input, std::uint32_t view_tick);
+Command queue_input(Prediction& prediction, const InputCommand& input, std::uint32_t view_tick);
 InputPacket input_packet(const Prediction& prediction);
 float reconcile(Prediction& prediction, const SnapshotPacket& snapshot);
 

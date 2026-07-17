@@ -6,7 +6,7 @@
 
 namespace cs {
 
-inline constexpr std::uint32_t kSimApiVersion = 3;
+inline constexpr std::uint32_t kSimApiVersion = 4;
 inline constexpr float kTickSeconds = 1.0F / 64.0F;
 inline constexpr float kGravity = 800.0F;
 inline constexpr float kGroundAccelerate = 5.0F;
@@ -254,6 +254,7 @@ bool add_target(
 );
 void select_weapon(Simulation& simulation, WeaponId weapon, bool immediate = false);
 void set_player(Simulation& simulation, Vec3 origin, Vec3 velocity = {0.0F, 0.0F, 0.0F});
+void refresh_snapshot(Simulation& simulation);
 void step(Simulation& simulation, const InputCommand& command);
 std::uint64_t state_hash(const Simulation& simulation);
 
