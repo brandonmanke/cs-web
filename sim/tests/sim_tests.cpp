@@ -1,5 +1,6 @@
 #include "cs/sim.h"
 #include "../src/state.h"
+#include "../src/world.h"
 
 #include <cmath>
 #include <cstdio>
@@ -142,6 +143,37 @@ void test_duck_lowers_hull_and_blocks_unduck() {
   CHECK((sim_snapshot()->flags & cs::SnapDucked) == 0U);
 }
 
+void test_air_unduck_blocked_by_roof() {
+  // Ducked and airborne under the low roof (underside y=50): the standing hull
+  // (top y+36) would overlap it, so releasing duck must keep us ducked instead
+  // of unducking into the roof and getting stuck.
+  sim_spawn(-350.0F, 20.0F, 0.0F, 0.0F);
+  cs::state().player.ducked = true;
+  cs::state().player.on_ground = false;
+  cs::state().player.velocity = {0.0F, 200.0F, 0.0F};
+  sim_step(0.0F, 0.0F, 0.0F, 0.0F, 0, 0); // no duck button: wants to unduck
+  CHECK((sim_snapshot()->flags & cs::SnapDucked) != 0U);
+  const cs::PlayerState& p = cs::state().player;
+  const cs::Vec3 half = {cs::kHullHalfWidth,
+                         p.ducked ? cs::kHullHalfHeightDuck : cs::kHullHalfHeightStand,
+                         cs::kHullHalfWidth};
+  CHECK(!cs::world_overlap_hull(p.origin, half));
+}
+
+void test_unstick_resolves_embedded_hull() {
+  // Force the hull 6u into the floor; the unstick pass must pop it free and
+  // the player must settle on the ground instead of freezing in place.
+  sim_spawn(0.0F, 30.0F, 0.0F, 0.0F);
+  for (int i = 0; i < 16; ++i) {
+    sim_step(0.0F, 0.0F, 0.0F, 0.0F, 0, 0);
+  }
+  CHECK_NEAR(sim_snapshot()->origin.y, cs::kHullHalfHeightStand, 1.0F);
+  CHECK((sim_snapshot()->flags & cs::SnapOnGround) != 0U);
+  const cs::PlayerState& p = cs::state().player;
+  CHECK(!cs::world_overlap_hull(
+      p.origin, {cs::kHullHalfWidth, cs::kHullHalfHeightStand, cs::kHullHalfWidth}));
+}
+
 void test_shooting_hits_target() {
   spawn_at_origin();
   sim_add_target(0.0F, 0.0F, -300.0F, 0.0F, 0.0F, 0.0F);
@@ -196,6 +228,8 @@ int main() {
   test_air_wishcap_no_gain();
   test_step_up_and_wall_block();
   test_duck_lowers_hull_and_blocks_unduck();
+  test_air_unduck_blocked_by_roof();
+  test_unstick_resolves_embedded_hull();
   test_shooting_hits_target();
   test_determinism();
 

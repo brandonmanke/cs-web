@@ -218,6 +218,35 @@ void step_slide_move(PlayerState& p, float dt) {
   }
 }
 
+// If the hull ended up embedded in geometry (stance transitions near edges,
+// residual overlap after landing on lips), nudge it out. Trying the duck hull
+// as a last resort mirrors GoldSrc's hull-switch unstick.
+void unstick(SimState& s) {
+  PlayerState& p = s.player;
+  const Vec3 half = hull_half(p);
+  if (!world_overlap_hull(p.origin, half)) {
+    return;
+  }
+  constexpr Vec3 kNudges[] = {
+      {0.0F, 1.0F, 0.0F},  {0.0F, 4.0F, 0.0F},  {0.0F, 9.0F, 0.0F},
+      {0.0F, 18.0F, 0.0F}, {2.0F, 0.0F, 0.0F},  {-2.0F, 0.0F, 0.0F},
+      {0.0F, 0.0F, 2.0F},  {0.0F, 0.0F, -2.0F}, {0.0F, -2.0F, 0.0F},
+  };
+  for (const Vec3& nudge : kNudges) {
+    const Vec3 candidate = add(p.origin, nudge);
+    if (!world_overlap_hull(candidate, half)) {
+      p.origin = candidate;
+      return;
+    }
+  }
+  if (!p.ducked) {
+    const Vec3 duck_half = {kHullHalfWidth, kHullHalfHeightDuck, kHullHalfWidth};
+    if (!world_overlap_hull(p.origin, duck_half)) {
+      p.ducked = true;
+    }
+  }
+}
+
 void categorize_position(SimState& s) {
   PlayerState& p = s.player;
   const bool was_on_ground = p.on_ground;
@@ -255,15 +284,14 @@ void update_duck(SimState& s, bool wants_duck) {
       p.origin.y -= kHullHalfHeightStand - kHullHalfHeightDuck;
     }
   } else if (!wants_duck && p.ducked) {
-    // Need standing headroom to unduck.
+    // Unduck only if the standing hull actually fits; a swept trace can't see
+    // geometry it already starts inside, so use a real overlap test.
     Vec3 stand_origin = p.origin;
     if (p.on_ground) {
       stand_origin.y += kHullHalfHeightStand - kHullHalfHeightDuck;
     }
     const Vec3 stand_half = {kHullHalfWidth, kHullHalfHeightStand, kHullHalfWidth};
-    const Vec3 nudge = {stand_origin.x, stand_origin.y + 0.1F, stand_origin.z};
-    const TraceResult trace = world_trace_hull(stand_origin, nudge, stand_half);
-    if (!trace.hit) {
+    if (!world_overlap_hull(stand_origin, stand_half)) {
       p.ducked = false;
       p.origin = stand_origin;
     }
@@ -329,6 +357,7 @@ void pmove_run(SimState& s, const InputCommand& cmd) {
     }
   }
 
+  unstick(s);
   categorize_position(s);
   update_duck(s, (cmd.buttons & ButtonDuck) != 0U);
   try_jump(s, (cmd.buttons & ButtonJump) != 0U);

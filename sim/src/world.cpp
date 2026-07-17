@@ -153,6 +153,30 @@ TraceResult world_trace_hull(Vec3 start, Vec3 end, Vec3 half) {
   return result;
 }
 
+namespace {
+bool overlap_found_callback(b3ShapeId, void* context) {
+  *static_cast<bool*>(context) = true;
+  return false; // first overlap is enough
+}
+} // namespace
+
+bool world_overlap_hull(Vec3 center, Vec3 half) {
+  if (!b3World_IsValid(g_world)) {
+    return false;
+  }
+  const b3Vec3 points[8] = {
+      {-half.x, -half.y, -half.z}, {half.x, -half.y, -half.z},
+      {-half.x, half.y, -half.z},  {half.x, half.y, -half.z},
+      {-half.x, -half.y, half.z},  {half.x, -half.y, half.z},
+      {-half.x, half.y, half.z},   {half.x, half.y, half.z},
+  };
+  const b3ShapeProxy proxy = {points, 8, 0.0F};
+  bool found = false;
+  b3World_OverlapShape(g_world, to_pos(center), &proxy, b3DefaultQueryFilter(),
+                       overlap_found_callback, &found);
+  return found;
+}
+
 TraceResult world_trace_ray(Vec3 start, Vec3 end) {
   TraceResult result = {1.0F, end, {0.0F, 0.0F, 0.0F}, 0, false};
   if (!b3World_IsValid(g_world)) {

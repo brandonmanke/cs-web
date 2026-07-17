@@ -28,5 +28,7 @@ void world_finalize();
 // Sweep an axis-aligned box of half extents `half` from start to end.
 TraceResult world_trace_hull(Vec3 start, Vec3 end, Vec3 half);
 TraceResult world_trace_ray(Vec3 start, Vec3 end);
+// True if a box of half extents `half` centered at `center` intersects the world.
+bool world_overlap_hull(Vec3 center, Vec3 half);
 
 } // namespace cs
