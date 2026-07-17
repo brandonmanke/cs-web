@@ -1,6 +1,7 @@
 node_modules/
 dist/
-package-lock.json
+build/
+client/src/generated/
 .codex
 
 # Valve-derived reference assets, dev-only (see assets/README.md)

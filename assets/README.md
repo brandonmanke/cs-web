@@ -1,6 +1,6 @@
 # assets/
 
-Reference assets for development. See `PLAN.md` §4.7 for the asset strategy.
+Reference assets for development. See `PLAN.md` §7 for the asset rules.
 
 > **Licensing:** the `*_ref.glb` files are Sketchfab-sourced models derived from
 > Valve's CS 1.6 content. They are **dev/reference placeholders only** — fine for
@@ -16,19 +16,28 @@ Reference assets for development. See `PLAN.md` §4.7 for the asset strategy.
 | `models/ak47_ref.glb` | 1,836 | **none** (untextured) | — | 1.96 × 8.46 × 29.1 | 8 flat-color materials split by part (barrel, forearm, handle, magazine, …) — good for viewmodel anims. Scale/pivot are arbitrary (29 units long, AABB offset from origin) → must be recentered + rescaled on import. |
 | `models/hazmat/` (.blend/.fbx/.png/.psd) | — | 1 PNG (+ PSD source) | **rigged** (27 skin clusters, 76 bones, Blender-standard names), no animations | — | Chosen dev player model. Author idle/run/crouch/jump/die in Blender, export glTF. Source: [mcsteeg's Hazmat Character](https://mcsteeg.itch.io/hazmat-character). |
 
-## Chosen external packs (pull in M3, see PLAN.md §4.7)
+## Committed PSX packs (`models/psx/`, CC0)
 
-- [Modern Weapons PS1 Style](https://ace-spectre.itch.io/modern-weapons-ps1-style) — CC0 (textures via texturer.com terms; one reported missing pistol texture)
-- [PS1 Heavy and Light Weapons Pack](https://ace-spectre.itch.io/ps1-heavy-and-light-weapons-pack) — CC0 (same texture caveat)
-- [Low Poly Glock](https://mextie.itch.io/low-poly-glock) — CC0, includes GLB
+In-repo and used by the game (the AK GLB is the current viewmodel):
+
+- `weapons/` (ak47, m4a1, mp5, glock, knife, double-barrel, arms) — from
+  [Modern Weapons PS1 Style](https://ace-spectre.itch.io/modern-weapons-ps1-style)
+  and [PS1 Heavy and Light Weapons Pack](https://ace-spectre.itch.io/ps1-heavy-and-light-weapons-pack)
+  (ace-spectre, CC0; textures via texturer.com terms) and
+  [Low Poly Glock](https://mextie.itch.io/low-poly-glock) (mextie, CC0).
+- `characters/` (police-set rigged + animations, anime-character, cartoon-woman,
+  ordinary-man) — PSX-style CC0 packs indexed via
+  [Retro3DGraphicsCollection](https://github.com/Miziziziz/Retro3DGraphicsCollection).
+- AK-47 GLB orientation: barrel points −Z (camera-forward), ~3.6 units long at
+  meter-ish scale; the client scales ×8 for the viewmodel.
 
 ## Conventions
 
 - **Art direction: PSX/GoldSrc-era low-poly with textures** — no modern
   flat-shaded stylized low-poly. Index for more:
   [Retro3DGraphicsCollection](https://github.com/Miziziziz/Retro3DGraphicsCollection).
-- Canonical sim unit is the **GoldSrc unit** (1u = 1 inch). These meter-scale
-  assets get scaled ×39.37 at import time (asset-normalization step, see PLAN.md M2).
+- Canonical sim unit is the **GoldSrc unit** (1u = 1 inch). Meter-scale assets
+  get scaled ×39.37 at import time (dust2 in `renderer.loadDust2`).
 - Subdirs: `maps/` (world geometry), `models/` (weapons, characters, props).
   TrenchBroom `.map` sources for original maps will live in `maps/` too.
 - New assets must be original or CC0; record provenance in this file.
