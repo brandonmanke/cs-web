@@ -258,7 +258,8 @@ Rough total: ~4–5 months of focused part-time work. Milestones are sequenced s
 3. **Complete — M2:** shared-data `aim_arena` with boxes, ramp, stairs, materials, spawns, automated traversal, and a clean browser smoke test.
 4. **Complete — M3:** shot authority, weapon table, deterministic tests, moving targets, penetration, viewmodel/audio/HUD feedback, persistent spray-wall impacts, and live browser fire/reload/switch loops.
 5. **Complete — art bridge:** selected PSX-style CC0 weapon, arms, and character packs are fetched, vendored, and audited; the C++ GLB path draws textured knife, pistol, AK, M4, and MP5 viewmodels with multi-material support.
-6. **Next — M4 foundation:** define the versioned input/snapshot protocol and native authoritative server loop, then prove prediction/reconciliation and simulated-loss behavior in a deterministic loopback harness before adding WebRTC transport.
+6. **Complete — M4 foundation:** versioned bounded input/snapshot packets, three-command redundancy, quantized eight-player snapshots, client prediction/replay reconciliation, remote interpolation, authoritative FFA health/score/death/respawn, and a 13-tick hitscan rewind window. The deterministic 150 ms RTT / 5% loss harness converges below one unit after settling; full snapshots are 234 B, redundant input packets are 64 B, and the local eight-player server benchmark is comfortably below the 2 ms p95 budget.
+7. **Next — M4 transport:** put the proven packet API behind unreliable/unordered WebRTC DataChannels, connect the browser client to the native server, render the audited rigged player fixture, and add visual error smoothing before calling M4 complete.
 
 ## 11. Reference Library
 

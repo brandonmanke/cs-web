@@ -11,6 +11,14 @@ add_library(cs_sim_core STATIC
 )
 target_include_directories(cs_sim_core PUBLIC sim/include)
 
+add_library(cs_net_core STATIC
+  net/src/net_protocol.cpp
+  net/src/client_prediction.cpp
+  net/src/interpolation.cpp
+)
+target_include_directories(cs_net_core PUBLIC net/include)
+target_link_libraries(cs_net_core PUBLIC cs_sim_core)
+
 if(EMSCRIPTEN)
   file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/public")
 
@@ -58,10 +66,23 @@ if(EMSCRIPTEN)
     DEPENDS "${CMAKE_SOURCE_DIR}/public/index.html"
   )
 else()
+  add_library(cs_server_core STATIC
+    server/src/server.cpp
+  )
+  target_include_directories(cs_server_core PUBLIC server/include)
+  target_link_libraries(cs_server_core PUBLIC cs_net_core)
+
+  add_executable(cs_server server/src/main.cpp)
+  target_link_libraries(cs_server PRIVATE cs_server_core)
+
   include(CTest)
   if(BUILD_TESTING)
     add_executable(cs_sim_tests sim/tests/sim_tests.cpp)
     target_link_libraries(cs_sim_tests PRIVATE cs_sim_core)
     add_test(NAME cs_sim_tests COMMAND cs_sim_tests)
+
+    add_executable(cs_server_tests server/tests/server_tests.cpp)
+    target_link_libraries(cs_server_tests PRIVATE cs_server_core)
+    add_test(NAME cs_server_tests COMMAND cs_server_tests)
   endif()
 endif()
