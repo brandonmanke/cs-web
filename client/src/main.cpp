@@ -92,6 +92,7 @@ struct ClientState {
   cs::client::RuntimeModel knife_model{};
   cs::client::RuntimeModel m4a1_model{};
   cs::client::RuntimeModel mp5_model{};
+  cs::client::RuntimeModel player_model{};
   InputState input{};
   double previous_time = 0.0;
   double accumulator = 0.0;
@@ -539,6 +540,7 @@ bool initialize_renderer() {
   cs::client::load_glb_model("/assets/knife.glb", client.knife_model);
   cs::client::load_glb_model("/assets/m4a1.glb", client.m4a1_model);
   cs::client::load_glb_model("/assets/mp5.glb", client.mp5_model);
+  cs::client::load_glb_model("/assets/player.glb", client.player_model);
   glEnable(GL_DEPTH_TEST);
   glDisable(GL_CULL_FACE);
   return true;
@@ -687,6 +689,32 @@ void draw_remote_players(const Mat4& view_projection) {
     }
     const float half_height = (player.flags & cs::net::SnapshotDucked) != 0U ?
       cs::kDuckedHalfHeight : cs::kStandingHalfHeight;
+    if (client.player_model.index_count > 0) {
+      const float model_height =
+        client.player_model.maximum[1] - client.player_model.minimum[1];
+      const float scale = (half_height * 2.0F - 2.0F) / model_height;
+      const Vec3 forward{
+        std::sin(player.yaw),
+        0.0F,
+        -std::cos(player.yaw),
+      };
+      const Vec3 right{
+        std::cos(player.yaw),
+        0.0F,
+        std::sin(player.yaw),
+      };
+      draw_imported_model(
+        view_projection,
+        client.player_model,
+        {player.origin.x, player.origin.y, player.origin.z},
+        right,
+        {0.0F, 1.0F, 0.0F},
+        forward,
+        scale,
+        {1.0F, 1.0F, 1.0F}
+      );
+      continue;
+    }
     const Vec3 base{
       player.origin.x,
       player.origin.y - half_height,

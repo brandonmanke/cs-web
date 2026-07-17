@@ -53,6 +53,15 @@ if(EMSCRIPTEN)
     "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/assets/models/psx/weapons/knife/knife.glb@/assets/knife.glb"
     "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/assets/models/psx/weapons/m4a1/m4a1.glb@/assets/m4a1.glb"
     "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/assets/models/psx/weapons/mp5/mp5.glb@/assets/mp5.glb"
+    "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/assets/models/psx/characters/cartoon-woman/cartoon_woman.glb@/assets/player.glb"
+  )
+  set_property(TARGET cs_game APPEND PROPERTY LINK_DEPENDS
+    "${CMAKE_SOURCE_DIR}/assets/models/psx/weapons/ak47/ak47.glb"
+    "${CMAKE_SOURCE_DIR}/assets/models/psx/weapons/glock/glock.glb"
+    "${CMAKE_SOURCE_DIR}/assets/models/psx/weapons/knife/knife.glb"
+    "${CMAKE_SOURCE_DIR}/assets/models/psx/weapons/m4a1/m4a1.glb"
+    "${CMAKE_SOURCE_DIR}/assets/models/psx/weapons/mp5/mp5.glb"
+    "${CMAKE_SOURCE_DIR}/assets/models/psx/characters/cartoon-woman/cartoon_woman.glb"
   )
   set_target_properties(cs_game PROPERTIES
     OUTPUT_NAME game

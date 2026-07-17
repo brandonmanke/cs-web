@@ -42,7 +42,8 @@ reconciliation, remote interpolation, a native eight-player authoritative FFA
 loop, bounded hitscan rewind, death/respawn, and a deterministic 150 ms RTT / 5%
 packet-loss harness. The browser and native C++ server exchange those packets on
 an unordered, unreliable WebRTC DataChannel; WebSocket is used only for the
-small signaling exchange.
+small signaling exchange. Remote players use an audited, textured 692-triangle
+CC0 PSX-style model; the code-built humanoid remains only a load-failure fallback.
 
 To play the local multiplayer demo, start these in separate terminals:
 

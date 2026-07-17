@@ -259,7 +259,7 @@ Rough total: ~4–5 months of focused part-time work. Milestones are sequenced s
 4. **Complete — M3:** shot authority, weapon table, deterministic tests, moving targets, penetration, viewmodel/audio/HUD feedback, persistent spray-wall impacts, and live browser fire/reload/switch loops.
 5. **Complete — art bridge:** selected PSX-style CC0 weapon, arms, and character packs are fetched, vendored, and audited; the C++ GLB path draws textured knife, pistol, AK, M4, and MP5 viewmodels with multi-material support.
 6. **Playable local checkpoint — M4:** the native C++ server and browser clients exchange live FFA state over unordered/unreliable WebRTC DataChannels; prediction/reconciliation with visual error smoothing, interpolation, authoritative damage/respawn, lag compensation, 150 ms / 5% loss regression coverage, and the 8-player tick benchmark are working. Full eight-player snapshots are 346 B, redundant input packets are 64 B, and the server benchmark remains comfortably below the 2 ms p95 budget.
-7. **Next — M4 art pass:** replace the temporary remote-player debug meshes with the audited textured PSX character fixture and verify its scale/orientation in a two-client playtest.
+7. **Complete — M4 art pass:** the CC0 692-triangle textured character fixture replaces the temporary remote-player debug meshes, loads from one embedded-texture GLB, scales to the authoritative standing/ducked hull, and rotates from interpolated yaw in the two-client demo. The audited police rig and clips remain the later animation path.
 8. **Then — M5:** add the smallest useful navigation graph, A*, and combat FSM for offline bots after the visible M4 character pass is stable.
 
 ## 11. Reference Library

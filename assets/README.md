@@ -37,7 +37,7 @@ source files remain the provenance anchor.
 | `models/psx/characters/police-set/` | [German Police Officer Set](https://stephrobertgames.itch.io/german-police-officer-set) | Entire pack CC0; ~650 tris; rigged FBX plus idle/walk/run/holster/aim/shoot clips and 128–256 px textures | Primary M4/M5 remote-player and bot art fixture |
 | `models/psx/characters/ordinary-man/` | [Lofi Ordinary Man](https://stephrobertgames.itch.io/lofi-ordinary-man) | CC0; textured, rigged, Mixamo-ready FBX; 256 px texture retained | Alternate player silhouette |
 | `models/psx/characters/anime-character/` | [80s Anime Character](https://stephrobertgames.itch.io/anime-character-low-poly-psx) | CC0; textured, rigged, Mixamo-ready FBX; 256 px texture retained | Alternate player silhouette |
-| `models/psx/characters/cartoon-woman/` | [Cartoon Woman](https://stephrobertgames.itch.io/cartoon-woman-retro-psx-low-poly) | CC0; textured FBX, explicitly unrigged | Art/reference source; rig before gameplay use |
+| `models/psx/characters/cartoon-woman/` | [Cartoon Woman](https://stephrobertgames.itch.io/cartoon-woman-retro-psx-low-poly) | CC0; textured FBX, explicitly unrigged; runtime GLB generated with Assimp 5.4 has 692 tris and one embedded 256 px texture | Static M4 remote-player fixture while the police rig animation path is built |
 
 The collection's [submission rules](https://github.com/Miziziziz/Retro3DGraphicsCollection)
 require commercial-use and redistribution rights for every component. We still
