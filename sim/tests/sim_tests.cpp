@@ -253,6 +253,22 @@ void test_weapon_table_patterns_and_speed() {
     std::fabs(ak_tenth.y) > std::fabs(mp5_tenth.y),
     "AK pattern climbs more strongly than the MP5 pattern"
   );
+  float largest_pattern_step = 0.0F;
+  cs::Vec2 previous = first;
+  for (std::uint32_t shot = 1; shot < 30; ++shot) {
+    const cs::Vec2 current = cs::weapon_pattern_offset(cs::WeaponAk47, shot);
+    const float delta_x = current.x - previous.x;
+    const float delta_y = current.y - previous.y;
+    largest_pattern_step = std::max(
+      largest_pattern_step,
+      std::sqrt(delta_x * delta_x + delta_y * delta_y)
+    );
+    previous = current;
+  }
+  check(
+    largest_pattern_step < 0.02F,
+    "rifle spray follows one continuous trajectory without branching jumps"
+  );
   check(
     cs::hit_group_multiplier(cs::HitHead) == 4.0F &&
     cs::hit_group_multiplier(cs::HitChest) == 1.0F &&
