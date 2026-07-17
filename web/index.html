@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>CS-Web — aim_arena</title>
+    <title>CS-Web — M3 Gunplay Demo</title>
     <style>
       * { box-sizing: border-box; }
       html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #090c0a; }
@@ -18,13 +18,13 @@
   <body>
     <canvas id="canvas" tabindex="0"></canvas>
     <div id="status">LOADING C++ / WASM</div>
-    <div id="controls">CLICK TO CAPTURE — WASD MOVE — SPACE JUMP — CTRL/C DUCK — ESC RELEASE</div>
+    <div id="controls">MOUSE1/F FIRE — R RELOAD — 1–7 WEAPONS — WASD — SPACE — CTRL/C — ESC</div>
     <script>
       var Module = {
         canvas: document.getElementById("canvas"),
         onRuntimeInitialized() {
           const status = document.getElementById("status");
-          status.textContent = "M2 AIM_ARENA — C++ / 64 HZ";
+          status.textContent = "M3 GUNPLAY LAB — C++ / 64 HZ";
           status.className = "ready";
           Module.canvas.focus();
         },

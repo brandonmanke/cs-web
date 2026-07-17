@@ -15,7 +15,7 @@ if(EMSCRIPTEN)
   file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/public")
 
   add_executable(cs_game client/src/main.cpp)
-  target_link_libraries(cs_game PRIVATE cs_sim_core)
+  target_link_libraries(cs_game PRIVATE cs_sim_core openal)
   target_compile_options(cs_game PRIVATE -fno-exceptions -fno-rtti)
   target_compile_options(cs_sim_core PRIVATE -fno-exceptions -fno-rtti)
   target_link_options(cs_game PRIVATE

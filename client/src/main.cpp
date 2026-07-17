@@ -1,5 +1,7 @@
 #include "cs/sim.h"
 
+#include <AL/al.h>
+#include <AL/alc.h>
 #include <GLES3/gl3.h>
 #include <emscripten.h>
 #include <emscripten/html5.h>
@@ -38,6 +40,32 @@ struct InputState {
   bool right = false;
   bool jump = false;
   bool duck = false;
+  bool fire = false;
+  bool fire_pulse = false;
+  bool reload = false;
+  bool reload_pulse = false;
+  std::uint32_t requested_weapon = cs::WeaponNone;
+};
+
+enum Sound : std::uint32_t {
+  SoundShot = 0,
+  SoundHit = 1,
+  SoundDry = 2,
+  SoundReload = 3,
+  SoundCount = 4,
+};
+
+struct AudioState {
+  ALCdevice* device = nullptr;
+  ALCcontext* context = nullptr;
+  std::array<ALuint, SoundCount> buffers{};
+  std::array<ALuint, SoundCount> sources{};
+  bool initialized = false;
+};
+
+struct ImpactMark {
+  Vec3 position{};
+  bool active = false;
 };
 
 struct ClientState {
@@ -59,6 +87,13 @@ struct ClientState {
   float yaw = 0.0F;
   float pitch = 0.0F;
   bool pointer_locked = false;
+  std::uint32_t last_shot_sequence = 0;
+  std::uint32_t previous_reload_ticks = 0;
+  int muzzle_frames = 0;
+  int hitmarker_frames = 0;
+  std::array<ImpactMark, 64> impacts{};
+  std::uint32_t next_impact = 0;
+  AudioState audio{};
 };
 
 ClientState client;
@@ -73,6 +108,14 @@ EM_JS(int, browser_canvas_height, (), {
 
 Vec3 operator-(Vec3 a, Vec3 b) {
   return {a.x - b.x, a.y - b.y, a.z - b.z};
+}
+
+Vec3 operator+(Vec3 a, Vec3 b) {
+  return {a.x + b.x, a.y + b.y, a.z + b.z};
+}
+
+Vec3 operator*(Vec3 value, float amount) {
+  return {value.x * amount, value.y * amount, value.z * amount};
 }
 
 float dot(Vec3 a, Vec3 b) {
@@ -150,6 +193,30 @@ Mat4 model_matrix(Vec3 position, Vec3 scale) {
   return result;
 }
 
+Mat4 model_matrix_basis(
+  Vec3 position,
+  Vec3 right,
+  Vec3 up,
+  Vec3 forward,
+  Vec3 scale
+) {
+  Mat4 result{};
+  result.m[0] = right.x * scale.x;
+  result.m[1] = right.y * scale.x;
+  result.m[2] = right.z * scale.x;
+  result.m[4] = up.x * scale.y;
+  result.m[5] = up.y * scale.y;
+  result.m[6] = up.z * scale.y;
+  result.m[8] = forward.x * scale.z;
+  result.m[9] = forward.y * scale.z;
+  result.m[10] = forward.z * scale.z;
+  result.m[12] = position.x;
+  result.m[13] = position.y;
+  result.m[14] = position.z;
+  result.m[15] = 1.0F;
+  return result;
+}
+
 GLuint compile_shader(GLenum type, const char* source) {
   const GLuint shader = glCreateShader(type);
   glShaderSource(shader, 1, &source, nullptr);
@@ -193,6 +260,136 @@ void initialize_mesh(
     sizeof(Vertex),
     reinterpret_cast<const void*>(3 * sizeof(float))
   );
+}
+
+template <std::size_t SampleCount>
+void upload_audio_buffer(
+  ALuint buffer,
+  const std::array<std::int16_t, SampleCount>& samples
+) {
+  alBufferData(
+    buffer,
+    AL_FORMAT_MONO16,
+    samples.data(),
+    static_cast<ALsizei>(samples.size() * sizeof(std::int16_t)),
+    44100
+  );
+}
+
+std::int16_t audio_sample(float value) {
+  const float clamped = std::clamp(value, -1.0F, 1.0F);
+  return static_cast<std::int16_t>(clamped * 32767.0F);
+}
+
+bool initialize_audio() {
+  AudioState& audio = client.audio;
+  if (audio.initialized) return true;
+  audio.device = alcOpenDevice(nullptr);
+  if (audio.device == nullptr) return false;
+  audio.context = alcCreateContext(audio.device, nullptr);
+  if (audio.context == nullptr || alcMakeContextCurrent(audio.context) == ALC_FALSE) {
+    return false;
+  }
+
+  alGenBuffers(SoundCount, audio.buffers.data());
+  alGenSources(SoundCount, audio.sources.data());
+  constexpr float pi = 3.14159265358979323846F;
+  std::uint32_t noise_state = 0xC0FFEEU;
+  const auto noise = [&noise_state]() {
+    noise_state ^= noise_state << 13U;
+    noise_state ^= noise_state >> 17U;
+    noise_state ^= noise_state << 5U;
+    return static_cast<float>(noise_state & 0xFFFFU) / 32767.5F - 1.0F;
+  };
+
+  std::array<std::int16_t, 6000> shot{};
+  for (std::size_t index = 0; index < shot.size(); ++index) {
+    const float time = static_cast<float>(index) / 44100.0F;
+    const float envelope = std::exp(-time * 25.0F);
+    const float body = std::sin(2.0F * pi * (105.0F - time * 260.0F) * time);
+    shot[index] = audio_sample((noise() * 0.72F + body * 0.28F) * envelope * 0.82F);
+  }
+  upload_audio_buffer(audio.buffers[SoundShot], shot);
+
+  std::array<std::int16_t, 1800> hit{};
+  for (std::size_t index = 0; index < hit.size(); ++index) {
+    const float time = static_cast<float>(index) / 44100.0F;
+    const float envelope = std::exp(-time * 75.0F);
+    hit[index] = audio_sample(
+      std::sin(2.0F * pi * 920.0F * time) * envelope * 0.42F
+    );
+  }
+  upload_audio_buffer(audio.buffers[SoundHit], hit);
+
+  std::array<std::int16_t, 1200> dry{};
+  for (std::size_t index = 0; index < dry.size(); ++index) {
+    const float time = static_cast<float>(index) / 44100.0F;
+    const float envelope = std::exp(-time * 110.0F);
+    dry[index] = audio_sample(
+      (std::sin(2.0F * pi * 520.0F * time) + noise() * 0.15F) *
+      envelope * 0.28F
+    );
+  }
+  upload_audio_buffer(audio.buffers[SoundDry], dry);
+
+  std::array<std::int16_t, 5000> reload{};
+  for (std::size_t index = 0; index < reload.size(); ++index) {
+    const float time = static_cast<float>(index) / 44100.0F;
+    const float first = std::exp(-time * 95.0F);
+    const float second_time = std::max(0.0F, time - 0.075F);
+    const float second = time >= 0.075F ? std::exp(-second_time * 100.0F) : 0.0F;
+    reload[index] = audio_sample(noise() * (first + second) * 0.32F);
+  }
+  upload_audio_buffer(audio.buffers[SoundReload], reload);
+
+  for (std::uint32_t index = 0; index < SoundCount; ++index) {
+    alSourcei(audio.sources[index], AL_BUFFER, audio.buffers[index]);
+    alSourcef(audio.sources[index], AL_GAIN, 0.65F);
+  }
+  audio.initialized = true;
+  return true;
+}
+
+void play_sound(Sound sound, float pitch = 1.0F) {
+  if (!client.audio.initialized) return;
+  const ALuint source = client.audio.sources[sound];
+  alSourceStop(source);
+  alSourcef(source, AL_PITCH, pitch);
+  alSourcePlay(source);
+}
+
+void process_sim_events(const cs::SimSnapshot& snapshot) {
+  if (snapshot.last_shot.sequence != client.last_shot_sequence) {
+    client.last_shot_sequence = snapshot.last_shot.sequence;
+    if (snapshot.last_shot.result == cs::ShotDry) {
+      play_sound(SoundDry);
+    } else {
+      play_sound(SoundShot, 0.88F + static_cast<float>(snapshot.weapon) * 0.035F);
+      client.muzzle_frames = 3;
+      if (
+        snapshot.last_shot.result == cs::ShotHit ||
+        snapshot.last_shot.result == cs::ShotKill
+      ) {
+        play_sound(SoundHit, snapshot.last_shot.result == cs::ShotKill ? 1.3F : 1.0F);
+        client.hitmarker_frames = 9;
+      }
+      if (snapshot.last_shot.result == cs::ShotWorld) {
+        ImpactMark& impact = client.impacts[
+          client.next_impact++ % client.impacts.size()
+        ];
+        impact.position = {
+          snapshot.last_shot.end.x,
+          snapshot.last_shot.end.y,
+          snapshot.last_shot.end.z,
+        };
+        impact.active = true;
+      }
+    }
+  }
+  if (snapshot.reload_ticks > 0 && client.previous_reload_ticks == 0) {
+    play_sound(SoundReload);
+  }
+  client.previous_reload_ticks = snapshot.reload_ticks;
 }
 
 bool initialize_renderer() {
@@ -319,6 +516,25 @@ void draw_cube(const Mat4& view_projection, Vec3 position, Vec3 scale, Vec3 tint
   glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_SHORT, nullptr);
 }
 
+void draw_oriented_cube(
+  const Mat4& view_projection,
+  Vec3 position,
+  Vec3 right,
+  Vec3 up,
+  Vec3 forward,
+  Vec3 scale,
+  Vec3 tint
+) {
+  const Mat4 mvp = multiply(
+    view_projection,
+    model_matrix_basis(position, right, up, forward, scale)
+  );
+  glUniformMatrix4fv(client.mvp_uniform, 1, GL_FALSE, mvp.m.data());
+  glUniform3f(client.tint_uniform, tint.x, tint.y, tint.z);
+  glBindVertexArray(client.cube_vao);
+  glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_SHORT, nullptr);
+}
+
 void draw_ramp(const Mat4& view_projection, Vec3 position, Vec3 scale, Vec3 tint) {
   const Mat4 mvp = multiply(view_projection, model_matrix(position, scale));
   glUniformMatrix4fv(client.mvp_uniform, 1, GL_FALSE, mvp.m.data());
@@ -333,6 +549,194 @@ Vec3 material_tint(std::uint32_t material) {
     case cs::MaterialMetal: return {0.52F, 0.60F, 0.62F};
     case cs::MaterialSand: return {0.70F, 0.62F, 0.42F};
     default: return {0.64F, 0.66F, 0.58F};
+  }
+}
+
+void draw_targets(const Mat4& view_projection, const cs::SimSnapshot& snapshot) {
+  for (std::uint32_t index = 0; index < snapshot.target_count; ++index) {
+    const cs::TargetSnapshot& target = snapshot.targets[index];
+    if (target.alive == 0U) continue;
+    const Vec3 base{target.origin.x, target.origin.y, target.origin.z};
+    const Vec3 body_tint = target.hit_flash_ticks > 0
+      ? Vec3{1.0F, 0.22F, 0.12F}
+      : Vec3{0.28F, 0.48F, 0.72F};
+    draw_cube(
+      view_projection,
+      base + Vec3{0.0F, 43.0F, 0.0F},
+      {22.0F, 30.0F, 13.0F},
+      body_tint
+    );
+    draw_cube(
+      view_projection,
+      base + Vec3{0.0F, 65.0F, 0.0F},
+      {12.0F, 14.0F, 12.0F},
+      target.hit_flash_ticks > 0 ? Vec3{1.0F, 0.52F, 0.16F} : Vec3{0.78F, 0.62F, 0.43F}
+    );
+    draw_cube(
+      view_projection,
+      base + Vec3{-6.0F, 13.0F, 0.0F},
+      {8.0F, 26.0F, 10.0F},
+      {0.20F, 0.28F, 0.42F}
+    );
+    draw_cube(
+      view_projection,
+      base + Vec3{6.0F, 13.0F, 0.0F},
+      {8.0F, 26.0F, 10.0F},
+      {0.20F, 0.28F, 0.42F}
+    );
+  }
+}
+
+void draw_impacts(const Mat4& view_projection) {
+  for (const ImpactMark& impact : client.impacts) {
+    if (!impact.active) continue;
+    draw_cube(
+      view_projection,
+      impact.position,
+      {2.2F, 2.2F, 2.2F},
+      {0.05F, 0.045F, 0.035F}
+    );
+  }
+}
+
+Vec3 weapon_tint(std::uint32_t weapon) {
+  switch (weapon) {
+    case cs::WeaponUsp: return {0.42F, 0.44F, 0.40F};
+    case cs::WeaponGlock: return {0.34F, 0.38F, 0.36F};
+    case cs::WeaponAk47: return {0.56F, 0.31F, 0.16F};
+    case cs::WeaponM4a1: return {0.32F, 0.38F, 0.34F};
+    case cs::WeaponAwp: return {0.30F, 0.43F, 0.25F};
+    case cs::WeaponMp5: return {0.28F, 0.31F, 0.30F};
+    default: return {0.64F, 0.66F, 0.62F};
+  }
+}
+
+void draw_viewmodel(
+  const Mat4& view_projection,
+  Vec3 eye,
+  Vec3 forward,
+  Vec3 right,
+  Vec3 up,
+  const cs::SimSnapshot& snapshot
+) {
+  glClear(GL_DEPTH_BUFFER_BIT);
+  const float kick = snapshot.punch_pitch * 42.0F;
+  const auto position = [eye, forward, right, up, kick](Vec3 offset) {
+    return eye + right * offset.x + up * (offset.y - kick) + forward * offset.z;
+  };
+  const auto piece = [&](Vec3 offset, Vec3 size, Vec3 tint) {
+    draw_oriented_cube(
+      view_projection,
+      position(offset),
+      right,
+      up,
+      forward,
+      size,
+      tint
+    );
+  };
+  const Vec3 hand{0.66F, 0.46F, 0.30F};
+  const Vec3 tint = weapon_tint(snapshot.weapon);
+  float muzzle_distance = 0.0F;
+
+  if (snapshot.weapon == cs::WeaponKnife) {
+    piece({9.0F, -10.0F, 18.0F}, {3.5F, 3.5F, 11.0F}, {0.20F, 0.18F, 0.14F});
+    piece({9.0F, -8.0F, 30.0F}, {2.0F, 4.5F, 18.0F}, {0.72F, 0.76F, 0.70F});
+    piece({5.0F, -12.0F, 12.0F}, {6.0F, 6.0F, 8.0F}, hand);
+    return;
+  }
+
+  const bool pistol = snapshot.weapon == cs::WeaponUsp || snapshot.weapon == cs::WeaponGlock;
+  if (pistol) {
+    piece({9.0F, -8.0F, 19.0F}, {6.0F, 5.0F, 13.0F}, tint);
+    piece({9.0F, -7.0F, 29.0F}, {2.2F, 2.2F, 10.0F}, {0.30F, 0.31F, 0.29F});
+    piece({9.0F, -14.0F, 16.0F}, {4.5F, 11.0F, 6.0F}, {0.18F, 0.19F, 0.18F});
+    piece({5.0F, -15.0F, 12.0F}, {7.0F, 7.0F, 9.0F}, hand);
+    muzzle_distance = 35.0F;
+  } else {
+    const float barrel_length = snapshot.weapon == cs::WeaponAwp ? 25.0F : 18.0F;
+    piece({10.0F, -9.0F, 22.0F}, {8.0F, 6.0F, 20.0F}, tint);
+    piece({10.0F, -7.0F, 39.0F}, {2.5F, 2.5F, barrel_length}, {0.23F, 0.24F, 0.22F});
+    piece({9.0F, -16.0F, 21.0F}, {4.5F, 11.0F, 7.0F}, {0.18F, 0.19F, 0.17F});
+    piece({10.0F, -9.0F, 8.0F}, {7.0F, 7.0F, 10.0F}, tint * 0.78F);
+    if (snapshot.weapon == cs::WeaponAwp) {
+      piece({10.0F, -3.0F, 24.0F}, {5.0F, 4.5F, 13.0F}, {0.16F, 0.18F, 0.15F});
+    }
+    piece({4.0F, -15.0F, 18.0F}, {7.0F, 7.0F, 10.0F}, hand);
+    muzzle_distance = snapshot.weapon == cs::WeaponAwp ? 54.0F : 49.0F;
+  }
+
+  if (client.muzzle_frames > 0) {
+    piece(
+      {10.0F, -7.0F, muzzle_distance},
+      {7.0F, 7.0F, 5.0F},
+      {1.0F, 0.72F, 0.14F}
+    );
+  }
+}
+
+void draw_rect(int x, int y, int width, int height, Vec3 color) {
+  if (width <= 0 || height <= 0) return;
+  glEnable(GL_SCISSOR_TEST);
+  glClearColor(color.x, color.y, color.z, 1.0F);
+  glScissor(x, y, width, height);
+  glClear(GL_COLOR_BUFFER_BIT);
+  glDisable(GL_SCISSOR_TEST);
+}
+
+void draw_digit(int x, int y, int scale_value, int digit, Vec3 color) {
+  constexpr std::array<std::uint8_t, 10> masks{{
+    0x3FU, 0x06U, 0x5BU, 0x4FU, 0x66U,
+    0x6DU, 0x7DU, 0x07U, 0x7FU, 0x6FU,
+  }};
+  const std::uint8_t mask = masks[std::clamp(digit, 0, 9)];
+  if ((mask & 0x01U) != 0U) draw_rect(x + scale_value, y + 4 * scale_value, 3 * scale_value, scale_value, color);
+  if ((mask & 0x02U) != 0U) draw_rect(x + 4 * scale_value, y + 2 * scale_value, scale_value, 2 * scale_value, color);
+  if ((mask & 0x04U) != 0U) draw_rect(x + 4 * scale_value, y, scale_value, 2 * scale_value, color);
+  if ((mask & 0x08U) != 0U) draw_rect(x + scale_value, y, 3 * scale_value, scale_value, color);
+  if ((mask & 0x10U) != 0U) draw_rect(x, y, scale_value, 2 * scale_value, color);
+  if ((mask & 0x20U) != 0U) draw_rect(x, y + 2 * scale_value, scale_value, 2 * scale_value, color);
+  if ((mask & 0x40U) != 0U) draw_rect(x + scale_value, y + 2 * scale_value, 3 * scale_value, scale_value, color);
+}
+
+int draw_number_right(int value, int right, int y, int scale_value, Vec3 color) {
+  value = std::max(0, value);
+  do {
+    right -= 5 * scale_value;
+    draw_digit(right, y, scale_value, value % 10, color);
+    right -= scale_value;
+    value /= 10;
+  } while (value > 0);
+  return right;
+}
+
+void draw_hud(const cs::SimSnapshot& snapshot) {
+  const int scale_value = std::max(2, client.canvas_height / 220);
+  const int bottom = 5 * scale_value;
+  const Vec3 green{0.18F, 0.95F, 0.30F};
+  const Vec3 amber{1.0F, 0.62F, 0.18F};
+  const Vec3 ammo_color = snapshot.reload_ticks > 0 ? amber : green;
+  int right = client.canvas_width - 4 * scale_value;
+  right = draw_number_right(static_cast<int>(snapshot.reserve), right, bottom, scale_value, {0.54F, 0.70F, 0.48F});
+  draw_rect(right - scale_value, bottom, scale_value, 5 * scale_value, {0.35F, 0.48F, 0.33F});
+  draw_number_right(static_cast<int>(snapshot.magazine), right - 3 * scale_value, bottom, scale_value, ammo_color);
+  draw_digit(4 * scale_value, bottom, scale_value, static_cast<int>(snapshot.weapon), amber);
+  draw_number_right(
+    static_cast<int>(snapshot.kills),
+    client.canvas_width - 4 * scale_value,
+    client.canvas_height - 8 * scale_value,
+    scale_value,
+    amber
+  );
+
+  if (client.hitmarker_frames > 0) {
+    const int center_x = client.canvas_width / 2;
+    const int center_y = client.canvas_height / 2;
+    const Vec3 hit_color{1.0F, 0.84F, 0.22F};
+    draw_rect(center_x - 11, center_y - 11, 4, 4, hit_color);
+    draw_rect(center_x + 7, center_y - 11, 4, 4, hit_color);
+    draw_rect(center_x - 11, center_y + 7, 4, 4, hit_color);
+    draw_rect(center_x + 7, center_y + 7, 4, 4, hit_color);
   }
 }
 
@@ -366,12 +770,20 @@ void render() {
     snapshot.player_origin.y + snapshot.view_height,
     snapshot.player_origin.z,
   };
-  const float pitch_cosine = std::cos(client.pitch);
+  const float view_pitch = std::clamp(
+    client.pitch + snapshot.punch_pitch,
+    -1.5533F,
+    1.5533F
+  );
+  const float view_yaw = client.yaw + snapshot.punch_yaw;
+  const float pitch_cosine = std::cos(view_pitch);
   const Vec3 view_direction{
-    std::sin(client.yaw) * pitch_cosine,
-    std::sin(client.pitch),
-    -std::cos(client.yaw) * pitch_cosine,
+    std::sin(view_yaw) * pitch_cosine,
+    std::sin(view_pitch),
+    -std::cos(view_yaw) * pitch_cosine,
   };
+  const Vec3 camera_right = normalize(cross(view_direction, {0.0F, 1.0F, 0.0F}));
+  const Vec3 camera_up = cross(camera_right, view_direction);
   const Mat4 projection = perspective(1.309F, aspect, 1.0F, 4000.0F);
   const Mat4 view = look_at(
     eye,
@@ -410,17 +822,45 @@ void render() {
       material_tint(ramp.material)
     );
   }
+  draw_impacts(view_projection);
+  draw_targets(view_projection, snapshot);
+  draw_viewmodel(
+    view_projection,
+    eye,
+    view_direction,
+    camera_right,
+    camera_up,
+    snapshot
+  );
   draw_crosshair();
+  draw_hud(snapshot);
+  if (client.muzzle_frames > 0) --client.muzzle_frames;
+  if (client.hitmarker_frames > 0) --client.hitmarker_frames;
 }
 
 EM_BOOL on_key(int event_type, const EmscriptenKeyboardEvent* event, void*) {
   const bool down = event_type == EMSCRIPTEN_EVENT_KEYDOWN;
+  if (down && std::strncmp(event->code, "Digit", 5) == 0) {
+    const int slot = event->code[5] - '0';
+    if (slot >= cs::WeaponKnife && slot <= cs::WeaponMp5) {
+      client.input.requested_weapon = static_cast<std::uint32_t>(slot);
+      return EM_TRUE;
+    }
+  }
   bool* key = nullptr;
   if (std::strcmp(event->code, "KeyW") == 0) key = &client.input.forward;
   if (std::strcmp(event->code, "KeyS") == 0) key = &client.input.back;
   if (std::strcmp(event->code, "KeyA") == 0) key = &client.input.left;
   if (std::strcmp(event->code, "KeyD") == 0) key = &client.input.right;
   if (std::strcmp(event->code, "Space") == 0) key = &client.input.jump;
+  if (std::strcmp(event->code, "KeyF") == 0) {
+    key = &client.input.fire;
+    if (down) client.input.fire_pulse = true;
+  }
+  if (std::strcmp(event->code, "KeyR") == 0) {
+    key = &client.input.reload;
+    if (down) client.input.reload_pulse = true;
+  }
   if (
     std::strcmp(event->code, "ControlLeft") == 0 ||
     std::strcmp(event->code, "ControlRight") == 0 ||
@@ -431,8 +871,21 @@ EM_BOOL on_key(int event_type, const EmscriptenKeyboardEvent* event, void*) {
   return EM_TRUE;
 }
 
-EM_BOOL on_click(int, const EmscriptenMouseEvent*, void*) {
-  emscripten_request_pointerlock("#canvas", EM_FALSE);
+EM_BOOL on_mouse_button(
+  int event_type,
+  const EmscriptenMouseEvent* event,
+  void*
+) {
+  if (event->button != 0) return EM_FALSE;
+  const bool down = event_type == EMSCRIPTEN_EVENT_MOUSEDOWN;
+  if (down) {
+    initialize_audio();
+    client.input.fire_pulse = true;
+    if (!client.pointer_locked) {
+      emscripten_request_pointerlock("#canvas", EM_FALSE);
+    }
+  }
+  client.input.fire = down;
   return EM_TRUE;
 }
 
@@ -449,7 +902,7 @@ EM_BOOL on_pointer_lock(
 EM_BOOL on_mouse_move(int, const EmscriptenMouseEvent* event, void*) {
   if (!client.pointer_locked) return EM_FALSE;
   constexpr float sensitivity = 0.0022F;
-  client.yaw -= static_cast<float>(event->movementX) * sensitivity;
+  client.yaw += static_cast<float>(event->movementX) * sensitivity;
   client.pitch -= static_cast<float>(event->movementY) * sensitivity;
   client.pitch = std::clamp(client.pitch, -1.5533F, 1.5533F);
   return EM_TRUE;
@@ -475,13 +928,21 @@ void frame() {
     std::uint32_t buttons = 0;
     if (client.input.jump) buttons |= cs::ButtonJump;
     if (client.input.duck) buttons |= cs::ButtonDuck;
+    if (client.input.fire || client.input.fire_pulse) buttons |= cs::ButtonFire;
+    if (client.input.reload || client.input.reload_pulse) buttons |= cs::ButtonReload;
     const cs::InputCommand command{
       .forward = forward,
       .strafe = strafe,
       .yaw = client.yaw,
+      .pitch = client.pitch,
       .buttons = buttons,
+      .requested_weapon = client.input.requested_weapon,
     };
     sim_step(&command);
+    process_sim_events(*sim_snapshot());
+    client.input.fire_pulse = false;
+    client.input.reload_pulse = false;
+    client.input.requested_weapon = cs::WeaponNone;
     client.accumulator -= cs::kTickSeconds;
   }
   render();
@@ -495,7 +956,8 @@ int main() {
 
   emscripten_set_keydown_callback(EMSCRIPTEN_EVENT_TARGET_DOCUMENT, nullptr, EM_TRUE, on_key);
   emscripten_set_keyup_callback(EMSCRIPTEN_EVENT_TARGET_DOCUMENT, nullptr, EM_TRUE, on_key);
-  emscripten_set_click_callback("#canvas", nullptr, EM_TRUE, on_click);
+  emscripten_set_mousedown_callback("#canvas", nullptr, EM_TRUE, on_mouse_button);
+  emscripten_set_mouseup_callback(EMSCRIPTEN_EVENT_TARGET_DOCUMENT, nullptr, EM_TRUE, on_mouse_button);
   emscripten_set_mousemove_callback(EMSCRIPTEN_EVENT_TARGET_DOCUMENT, nullptr, EM_TRUE, on_mouse_move);
   emscripten_set_pointerlockchange_callback(EMSCRIPTEN_EVENT_TARGET_DOCUMENT, nullptr, EM_TRUE, on_pointer_lock);
   client.previous_time = emscripten_get_now() * 0.001;

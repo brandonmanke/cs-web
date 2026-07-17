@@ -253,6 +253,13 @@ void test_weapon_table_patterns_and_speed() {
     std::fabs(ak_tenth.y) > std::fabs(mp5_tenth.y),
     "AK pattern climbs more strongly than the MP5 pattern"
   );
+  check(
+    cs::hit_group_multiplier(cs::HitHead) == 4.0F &&
+    cs::hit_group_multiplier(cs::HitChest) == 1.0F &&
+    cs::hit_group_multiplier(cs::HitStomach) == 1.25F &&
+    cs::hit_group_multiplier(cs::HitLimbs) == 0.75F,
+    "all target hitgroups expose the intended damage multipliers"
+  );
 
   cs::Simulation ak_move = flat_world();
   cs::select_weapon(ak_move, cs::WeaponAk47, true);
