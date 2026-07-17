@@ -41,11 +41,18 @@ async function boot(): Promise<void> {
       }
       // Safety floor far below in case of walking off the mesh edge.
       sim.addBox([-16384, -2048, -16384], [16384, -2032, 16384], 0);
-      // T-spawn plateau (probed: solid ground y 255-336 across x -1500..-400
-      // at z -2400 in this GLB's coords), facing toward mid.
-      spawn = [-1330, 320, -2400];
-      spawnYaw = -2.53;
-      sim.addTarget(-870, 323, -2400, -960, -775, 60);
+      // B site ground (probed: y=42 at x -1305, z -1550..-1700). Override with
+      // ?spawn=x,y,z to scout new spots (HUD shows current coords).
+      spawn = [-1305, 90, -1600];
+      spawnYaw = Math.PI;
+      sim.addTarget(-1305, 42, -1700, -1380, -1230, 50);
+      const spawnParam = new URLSearchParams(location.search).get("spawn");
+      if (spawnParam) {
+        const parts = spawnParam.split(",").map(Number);
+        if (parts.length === 3 && parts.every((n) => Number.isFinite(n))) {
+          spawn = [parts[0]!, parts[1]!, parts[2]!];
+        }
+      }
     } else {
       // GLB missing (assets/ ref models are gitignored): fall back to the arena.
       useArena = true;

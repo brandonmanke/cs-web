@@ -24,6 +24,7 @@ b3ShapeDef make_shape_def(std::uint32_t material) {
 }
 
 struct CastContext {
+  b3Vec3 dir = {0.0F, 0.0F, 0.0F}; // cast translation, for backface rejection
   float fraction = 1.0F;
   b3Vec3 normal = {0.0F, 0.0F, 0.0F};
   std::uint64_t material = 0;
@@ -33,6 +34,14 @@ struct CastContext {
 float closest_cast_callback(b3ShapeId, b3Pos, b3Vec3 normal, float fraction,
                             std::uint64_t material, int, int, void* context) {
   auto* ctx = static_cast<CastContext*>(context);
+  // Only surfaces opposing the motion can block it. The dust2 ref GLB is a
+  // one-sided display mesh, so grazing/backface triangle hits are common and
+  // must not wedge the hull.
+  const float facing =
+      normal.x * ctx->dir.x + normal.y * ctx->dir.y + normal.z * ctx->dir.z;
+  if (facing >= 0.0F) {
+    return -1.0F; // ignore and continue
+  }
   ctx->hit = true;
   ctx->fraction = fraction;
   ctx->normal = normal;
@@ -135,6 +144,7 @@ TraceResult world_trace_hull(Vec3 start, Vec3 end, Vec3 half) {
   };
   const b3ShapeProxy proxy = {points, 8, 0.0F};
   CastContext ctx;
+  ctx.dir = delta;
   b3World_CastShape(g_world, to_pos(start), &proxy, delta, b3DefaultQueryFilter(),
                     closest_cast_callback, &ctx);
   if (!ctx.hit) {
@@ -183,16 +193,18 @@ TraceResult world_trace_ray(Vec3 start, Vec3 end) {
     return result;
   }
   const b3Vec3 delta = {end.x - start.x, end.y - start.y, end.z - start.z};
-  const b3RayResult ray =
-      b3World_CastRayClosest(g_world, to_pos(start), delta, b3DefaultQueryFilter());
-  if (!ray.hit) {
+  CastContext ctx;
+  ctx.dir = delta;
+  b3World_CastRay(g_world, to_pos(start), delta, b3DefaultQueryFilter(),
+                  closest_cast_callback, &ctx);
+  if (!ctx.hit) {
     return result;
   }
-  result.fraction = ray.fraction;
-  result.end = {static_cast<float>(ray.point.x), static_cast<float>(ray.point.y),
-                static_cast<float>(ray.point.z)};
-  result.normal = {ray.normal.x, ray.normal.y, ray.normal.z};
-  result.material = static_cast<std::uint32_t>(ray.userMaterialId);
+  result.fraction = ctx.fraction;
+  result.end = {start.x + delta.x * ctx.fraction, start.y + delta.y * ctx.fraction,
+                start.z + delta.z * ctx.fraction};
+  result.normal = {ctx.normal.x, ctx.normal.y, ctx.normal.z};
+  result.material = static_cast<std::uint32_t>(ctx.material);
   result.hit = true;
   return result;
 }

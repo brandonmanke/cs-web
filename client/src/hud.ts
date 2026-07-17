@@ -34,7 +34,9 @@ export class Hud {
     this.ammo.textContent = snapshot.reload > 0
       ? `${name} ...`
       : `${name} ${snapshot.magazine}/${snapshot.reserve}`;
-    this.speed.textContent = `${snapshot.speedH.toFixed(0)} u/s`;
+    this.speed.textContent =
+      `${snapshot.speedH.toFixed(0)} u/s  ` +
+      `(${snapshot.origin[0].toFixed(0)}, ${snapshot.origin[1].toFixed(0)}, ${snapshot.origin[2].toFixed(0)})`;
     const accuracy = snapshot.shots > 0
       ? ((snapshot.hits / snapshot.shots) * 100).toFixed(0)
       : "--";

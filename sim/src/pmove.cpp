@@ -114,14 +114,18 @@ void clamp_velocity(PlayerState& p) {
   }
 }
 
-// PM_FlyMove: move the hull, sliding along up to kMaxClipPlanes contact planes.
+// PM_FlyMove/Q3 PM_SlideMove hybrid: move the hull, sliding along contact
+// planes. Overclip + duplicate-plane nudges keep it robust on irregular
+// trimeshes where near-parallel grazing hits repeat at fraction ~0.
 void slide_move(PlayerState& p, float dt) {
+  constexpr float kOverclip = 1.001F;
   Vec3 planes[kMaxClipPlanes];
   int num_planes = 0;
   const Vec3 primal_velocity = p.velocity;
   Vec3 original_velocity = p.velocity;
   float time_left = dt;
   const Vec3 half = hull_half(p);
+  const Vec3 start_origin = p.origin;
 
   for (int bump = 0; bump < kMaxBumps; ++bump) {
     if (p.velocity.x == 0.0F && p.velocity.y == 0.0F && p.velocity.z == 0.0F) {
@@ -140,6 +144,20 @@ void slide_move(PlayerState& p, float dt) {
     }
     time_left -= time_left * trace.fraction;
 
+    // Same plane again (fraction-0 graze): nudge velocity off it instead of
+    // burning a plane slot — Q3's anti-stick trick.
+    bool duplicate = false;
+    for (int k = 0; k < num_planes; ++k) {
+      if (dot(trace.normal, planes[k]) > 0.99F) {
+        p.velocity = add(p.velocity, trace.normal);
+        duplicate = true;
+        break;
+      }
+    }
+    if (duplicate) {
+      continue;
+    }
+
     if (num_planes >= kMaxClipPlanes) {
       p.velocity = {0.0F, 0.0F, 0.0F};
       break;
@@ -151,7 +169,7 @@ void slide_move(PlayerState& p, float dt) {
     // along the seam.
     int i = 0;
     for (; i < num_planes; ++i) {
-      p.velocity = clip_velocity(original_velocity, planes[i], 1.0F);
+      p.velocity = clip_velocity(original_velocity, planes[i], kOverclip);
       int j = 0;
       for (; j < num_planes; ++j) {
         if (j != i && dot(p.velocity, planes[j]) < 0.0F) {
@@ -175,6 +193,20 @@ void slide_move(PlayerState& p, float dt) {
     if (dot(p.velocity, primal_velocity) <= 0.0F) {
       p.velocity = {0.0F, 0.0F, 0.0F};
       break;
+    }
+  }
+
+  // Wedged in a crevice: no movement at all but we wanted some. Pull off along
+  // the contact normals so next tick can recover (bounded, overlap-checked).
+  if (num_planes > 0 && p.origin.x == start_origin.x &&
+      p.origin.y == start_origin.y && p.origin.z == start_origin.z) {
+    Vec3 push = {0.0F, 0.0F, 0.0F};
+    for (int k = 0; k < num_planes; ++k) {
+      push = add(push, planes[k]);
+    }
+    const Vec3 candidate = add(p.origin, scale(push, 0.125F));
+    if (!world_overlap_hull(candidate, half)) {
+      p.origin = candidate;
     }
   }
 }
