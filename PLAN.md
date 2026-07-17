@@ -1,6 +1,6 @@
 # PLAN.md — From Aim Trainer to a Real CS 1.6-Style Browser Shooter
 
-**Status:** Draft v2 — implementation-audited (2026-07-17)
+**Status:** Draft v3 — implementation-audited and in progress (2026-07-17)
 **Scope:** Turn `cs-web` (originally a Three.js aim trainer) into a full Counter-Strike-1.6-derivative FPS that runs in the browser at native-like performance: authentic GoldSrc-style movement and gunplay, multiplayer on an authoritative server, and single player vs. bots. Original assets and names — derivative feel, not a rip.
 
 ---
@@ -150,7 +150,7 @@ Units: GoldSrc units (1u = 1 inch). Player hull 32×32×72 standing / 32×32×36
 The sim traces a player AABB through an abstract collision world; three authoring/import paths feed it:
 
 - **(a) Original code-built worlds (required demo path, M1–M3):** ship a compact `aim_arena` made from simple convex boxes/ramps: two spawn ends, short lanes, wood crates, a wallbang panel, stairs, and jump/duck-jump test geometry. Render meshes and collision primitives come from the same authored data. This guarantees a redistributable, fast-loading demo with no external asset dependency and deliberately echoes the small `aim_`/`fy_` maps of early community shooters without copying a layout.
-- **(b) Imported glTF worlds (optional comparison path, M2):** when a local reference GLB is available, the C++ client/tooling layer loads and normalizes it (×39.37 for meter-authored assets), then emits a canonical triangle/material stream. The sim builds a static BVH and runs **swept-AABB vs triangle** traces through the same clip-velocity solver as the primitive path. `assets/maps/de_dust2_ref.glb` remains a private, gitignored feel-testing aid, never a milestone dependency or public asset.
+- **(b) Imported glTF worlds (optional comparison path, after the demo):** when a local reference GLB is available, the C++ client/tooling layer may load and normalize it (×39.37 for meter-authored assets) for visual comparison. World collision still comes from convex brush planes or an authored low-detail collision proxy. A static triangle BVH is deferred until a concrete prop or comparison-world use case proves it necessary; it is not an M2 blocker. `assets/maps/de_dust2_ref.glb` remains a private, gitignored feel-testing aid, never a milestone dependency or public asset.
 - **(c) TrenchBroom brush maps (original/shippable path, M6):** TrenchBroom with a custom game config (spawns, buyzones, bombsites, ladders, lights) → `mapc` compiler (C++): Valve-220 `.map` → CSG brush polygons → render mesh with per-material batching + baked **lightmaps** (direct+ambient raycaster first), collision brush planes with material tags, entity list. Quake-style hull tracing via plane offsetting (Minkowski expansion) — the classic 1.6 feel path (surf ramps come free). Output: one binary pack file.
 - **Nav mesh** generation is collision-source-agnostic (flood-fill "can I stand here" sampling over the trace API, à la the official CS bot) — so bots work on `aim_arena` and any optional imported comparison world before the brush pipeline exists.
 - **Maps plan:** `aim_lab` movement fixture (M1) → original `aim_arena` playable demo (M2 onward) → optional local reference GLBs for comparison only → original defuse layout via TrenchBroom (M6). Mid/long sightlines, readable chokepoints, crates, and height changes carry the 1.6/Quake design language.
@@ -212,8 +212,8 @@ cs-web/
 | # | Milestone | Success criteria (verify) |
 |---|---|---|
 | **M0** | **Scaffold + spike** (≈1 wk): CMake + Emscripten build of sim + raw WebGL2 C++ client; render a cube moved by the sim | `npm run dev` serves a dependency-free WASM build showing C++-driven motion; sim unit test runs natively |
-| **M1** | **Movement core** (2–3 wk): pm code (walk/air/friction/jump/duck/fatigue/bhop cap), AABB-vs-brush trace, flat test room; C++ renderer drives it | 1.6 feel checklist §4.1 passes; determinism test (same inputs → same state hash) green |
-| **M2** | **Playable world** (2 wk): original code-built `aim_arena`, shared render/collision authoring data, triangle BVH + swept-AABB trace for ramps/imports, material tags, spawn markers; optional private GLB comparison loader | `aim_arena` loads immediately; full traversal of crates, ramps, stairs, doorways, jump and duck-jump fixtures with M1 movement intact; 60 fps on integrated GPU |
+| **M1** | **Movement core** (2–3 wk): pm code (walk/air/friction/jump/duck/fatigue/bhop cap), Quake-style convex-brush plane trace, flat test room; C++ renderer drives it | 1.6 feel checklist §4.1 passes; determinism test (same inputs → same state hash) green |
+| **M2** | **Playable world** (2 wk): original code-built `aim_arena`, shared render/collision authoring data, convex boxes and true ramp brushes through one plane-offset hull trace, material tags, spawn markers | `aim_arena` loads immediately; automated routes cover ramps, stairs, doorways, jump and duck-jump fixtures with M1 movement intact; browser smoke test is clean and the small fixed draw list sustains 60 fps on the demo machine |
 | **M3** | **Gunplay** (2–3 wk): weapons table, spread/recoil/patterns, damage/hitgroups, penetration, original code-built viewmodels, sampled/cached audio buffers, spray-lab debug view | Native tests prove deterministic patterns, damage, and wallbang loss; spray patterns reproduce in spray lab; a local playtest supports tapping, bursting, spraying, reloads, weapon switching, moving targets, and visible hit feedback |
 | **M4** | **Netcode + server** (3–4 wk): native server, libdatachannel transport, prediction/reconciliation, interpolation, lag comp, FFA DM | 8 players + 150 ms simulated latency + 5% loss: hit reg feels fair, no visible warping; server tick ≤ 2 ms p95 |
 | **M5** | **Bots** (2 wk): navmesh gen from the collision world, A*, combat FSM, difficulties; offline mode (WASM local server) | Bots navigate `aim_arena` end-to-end; bot wins vs. new player at max difficulty; offline page works with zero network |
@@ -253,10 +253,10 @@ Rough total: ~4–5 months of focused part-time work. Milestones are sequenced s
 
 ## 10. Immediate Next Steps
 
-1. M0 scaffold: `sim/` + CMake + Emscripten toolchain, one C++ WebGL2 browser executable with a visible sim-driven cube, minimal HTML shell, and native test.
-2. M1: port movement into `sim/`, drive it at 64 fixed ticks/s, and validate movement/collision in the code-built `aim_lab` fixture before deleting the TS reference path.
-3. M2: expand the same original authoring data into `aim_arena`; add ramp/triangle collision and material tags. Treat local reference GLBs as optional A/B inputs only.
-4. M3: move shot authority into the sim, add the full MVP weapon data table and deterministic tests, then layer viewmodel/audio/HUD feedback over the verified mechanics.
+1. **Complete — M0:** CMake + Emscripten, one C++ WebGL2/WASM executable, minimal HTML shell, dependency-free Node development server, and native test target.
+2. **Complete — M1:** 64 Hz GoldSrc-style movement, Quake-inspired convex plane tracing, deterministic replay hash, and automated feel fixtures.
+3. **Complete — M2:** shared-data `aim_arena` with boxes, ramp, stairs, materials, spawns, automated traversal, and a clean browser smoke test.
+4. **Next — M3:** move shot authority into the sim, add the full MVP weapon data table and deterministic tests, then layer viewmodel/audio/HUD feedback over the verified mechanics.
 
 ## 11. Reference Library
 

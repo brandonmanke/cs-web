@@ -166,6 +166,59 @@ void test_duck_wall_and_step_collision() {
   check(landed_on_ledge, "duck-jump lands on a fifty-eight-unit ledge");
 }
 
+void test_aim_arena_layout_and_traversal() {
+  bool has_wood = false;
+  bool has_metal = false;
+  bool has_sand = false;
+  for (const cs::BoxDefinition& box : cs::aim_arena_boxes()) {
+    has_wood = has_wood || box.material == cs::MaterialWood;
+    has_metal = has_metal || box.material == cs::MaterialMetal;
+    has_sand = has_sand || box.material == cs::MaterialSand;
+  }
+  check(has_wood && has_metal && has_sand, "aim_arena exposes material-tagged shared authoring data");
+  check(cs::aim_arena_spawns().size() == 2, "aim_arena provides two opposing spawn markers");
+
+  cs::Simulation ramp_sim{};
+  cs::initialize(ramp_sim);
+  cs::set_player(
+    ramp_sim,
+    {-540.0F, cs::kStandingHalfHeight, 160.0F},
+    {0.0F, 0.0F, -cs::kRunSpeed}
+  );
+  float ramp_peak = ramp_sim.player.origin.y;
+  for (int tick = 0; tick < 80; ++tick) {
+    cs::step(ramp_sim, {.forward = 1.0F});
+    ramp_peak = std::max(ramp_peak, ramp_sim.player.origin.y);
+  }
+  check(ramp_peak > 80.0F, "convex brush trace walks up the arena ramp");
+  check(ramp_sim.player.origin.z < -100.0F, "ramp route continues onto the raised platform");
+
+  cs::Simulation stair_sim{};
+  cs::initialize(stair_sim);
+  cs::set_player(
+    stair_sim,
+    {540.0F, cs::kStandingHalfHeight, 180.0F},
+    {0.0F, 0.0F, -cs::kRunSpeed}
+  );
+  float stair_peak = stair_sim.player.origin.y;
+  for (int tick = 0; tick < 80; ++tick) {
+    cs::step(stair_sim, {.forward = 1.0F});
+    stair_peak = std::max(stair_peak, stair_sim.player.origin.y);
+  }
+  check(stair_peak > 80.0F, "step solver climbs the arena stairs");
+  check(stair_sim.player.origin.z < -80.0F, "stair route continues onto the raised platform");
+
+  cs::Simulation doorway_sim{};
+  cs::initialize(doorway_sim);
+  cs::set_player(
+    doorway_sim,
+    {0.0F, cs::kStandingHalfHeight, -250.0F},
+    {0.0F, 0.0F, -cs::kRunSpeed}
+  );
+  run_ticks(doorway_sim, 32, {.forward = 1.0F});
+  check(doorway_sim.player.origin.z < -350.0F, "player hull traverses the arena gate opening");
+}
+
 void test_determinism() {
   cs::Simulation first = flat_world();
   cs::Simulation second = flat_world();
@@ -189,8 +242,9 @@ int main() {
   test_air_strafe_gain();
   test_jump_fatigue_and_bhop_cap();
   test_duck_wall_and_step_collision();
+  test_aim_arena_layout_and_traversal();
   test_determinism();
   if (failures != 0) return 1;
-  std::puts("cs_sim M1 movement tests passed");
+  std::puts("cs_sim M1 movement and M2 arena tests passed");
   return 0;
 }

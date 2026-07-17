@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <span>
 
 namespace cs {
 
@@ -20,6 +21,7 @@ inline constexpr float kStandingHalfHeight = 36.0F;
 inline constexpr float kDuckedHalfHeight = 18.0F;
 inline constexpr float kHullRadius = 16.0F;
 inline constexpr std::uint32_t kMaxSolids = 128;
+inline constexpr std::uint32_t kMaxBrushPlanes = 12;
 
 struct Vec3 {
   float x;
@@ -37,6 +39,13 @@ enum PlayerFlag : std::uint32_t {
   PlayerDucked = 1U << 1U,
 };
 
+enum Material : std::uint32_t {
+  MaterialConcrete = 0,
+  MaterialWood = 1,
+  MaterialMetal = 2,
+  MaterialSand = 3,
+};
+
 struct InputCommand {
   float forward;
   float strafe;
@@ -44,9 +53,30 @@ struct InputCommand {
   std::uint32_t buttons;
 };
 
+struct Plane {
+  Vec3 normal;
+  float distance;
+};
+
 struct Solid {
+  std::array<Plane, kMaxBrushPlanes> planes;
+  std::uint32_t plane_count;
+  std::uint32_t material;
+};
+
+struct BoxDefinition {
   Vec3 mins;
   Vec3 maxs;
+  std::uint32_t material;
+};
+
+struct RampDefinition {
+  float min_x;
+  float max_x;
+  float min_z;
+  float max_z;
+  float base_y;
+  float height;
   std::uint32_t material;
 };
 
@@ -81,8 +111,18 @@ struct Simulation {
 
 void initialize(Simulation& simulation);
 void load_aim_lab(Simulation& simulation);
+void load_aim_arena(Simulation& simulation);
 void clear_world(Simulation& simulation);
 bool add_solid(Simulation& simulation, Vec3 mins, Vec3 maxs, std::uint32_t material = 0);
+bool add_convex_solid(
+  Simulation& simulation,
+  std::span<const Plane> planes,
+  std::uint32_t material = 0
+);
+bool add_ramp(Simulation& simulation, const RampDefinition& ramp);
+std::span<const BoxDefinition> aim_arena_boxes();
+std::span<const RampDefinition> aim_arena_ramps();
+std::span<const Vec3> aim_arena_spawns();
 void set_player(Simulation& simulation, Vec3 origin, Vec3 velocity = {0.0F, 0.0F, 0.0F});
 void step(Simulation& simulation, const InputCommand& command);
 std::uint64_t state_hash(const Simulation& simulation);

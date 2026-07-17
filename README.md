@@ -19,6 +19,8 @@ npm run dev
 and Ctrl/C to duck. There are no npm packages or renderer frameworks; browser
 glue is limited to Emscripten callbacks and a tiny canvas-sizing shim.
 
-The M1 movement lab currently includes fixed 64 Hz simulation, Quake-style
-acceleration/slide movement, GoldSrc-style air acceleration, jump fatigue,
-mega-bhop slowdown, duck hulls, and swept-AABB collision with stair stepping.
+The M2 `aim_arena` currently includes fixed 64 Hz simulation, Quake-style
+acceleration/slide movement and convex-brush tracing, GoldSrc-style air
+acceleration, jump fatigue, mega-bhop slowdown, duck hulls, stair stepping, a
+true ramp, opposing spawns, and concrete/wood/metal/sand material tags. The
+renderer and simulation consume the same original map definitions.

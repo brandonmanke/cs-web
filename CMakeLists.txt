@@ -34,10 +34,15 @@ if(EMSCRIPTEN)
     SUFFIX ".js"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/public"
   )
-  add_custom_command(TARGET cs_game POST_BUILD
+  add_custom_command(
+    OUTPUT "${CMAKE_SOURCE_DIR}/public/index.html"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
       "${CMAKE_SOURCE_DIR}/web/index.html"
       "${CMAKE_SOURCE_DIR}/public/index.html"
+    DEPENDS "${CMAKE_SOURCE_DIR}/web/index.html"
+  )
+  add_custom_target(cs_web_shell ALL
+    DEPENDS "${CMAKE_SOURCE_DIR}/public/index.html"
   )
 else()
   include(CTest)

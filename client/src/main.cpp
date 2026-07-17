@@ -43,9 +43,12 @@ struct InputState {
 struct ClientState {
   EMSCRIPTEN_WEBGL_CONTEXT_HANDLE context = 0;
   GLuint program = 0;
-  GLuint vao = 0;
-  GLuint vertex_buffer = 0;
-  GLuint index_buffer = 0;
+  GLuint cube_vao = 0;
+  GLuint cube_vertex_buffer = 0;
+  GLuint cube_index_buffer = 0;
+  GLuint ramp_vao = 0;
+  GLuint ramp_vertex_buffer = 0;
+  GLuint ramp_index_buffer = 0;
   GLint mvp_uniform = -1;
   GLint tint_uniform = -1;
   InputState input{};
@@ -162,6 +165,36 @@ GLuint compile_shader(GLenum type, const char* source) {
   return shader;
 }
 
+template <std::size_t VertexCount, std::size_t IndexCount>
+void initialize_mesh(
+  const std::array<Vertex, VertexCount>& vertices,
+  const std::array<std::uint16_t, IndexCount>& indices,
+  GLuint& vao,
+  GLuint& vertex_buffer,
+  GLuint& index_buffer
+) {
+  glGenVertexArrays(1, &vao);
+  glBindVertexArray(vao);
+  glGenBuffers(1, &vertex_buffer);
+  glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices.data(), GL_STATIC_DRAW);
+  glGenBuffers(1, &index_buffer);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices.data(), GL_STATIC_DRAW);
+
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), nullptr);
+  glEnableVertexAttribArray(1);
+  glVertexAttribPointer(
+    1,
+    3,
+    GL_FLOAT,
+    GL_FALSE,
+    sizeof(Vertex),
+    reinterpret_cast<const void*>(3 * sizeof(float))
+  );
+}
+
 bool initialize_renderer() {
   EmscriptenWebGLContextAttributes attributes{};
   emscripten_webgl_init_context_attributes(&attributes);
@@ -212,7 +245,7 @@ bool initialize_renderer() {
     return false;
   }
 
-  constexpr std::array<Vertex, 8> vertices{{
+  constexpr std::array<Vertex, 8> cube_vertices{{
     {-0.5F, -0.5F, -0.5F, 0.72F, 0.78F, 0.68F},
     { 0.5F, -0.5F, -0.5F, 0.82F, 0.74F, 0.58F},
     { 0.5F,  0.5F, -0.5F, 0.66F, 0.73F, 0.62F},
@@ -222,7 +255,7 @@ bool initialize_renderer() {
     { 0.5F,  0.5F,  0.5F, 0.58F, 0.66F, 0.56F},
     {-0.5F,  0.5F,  0.5F, 0.68F, 0.62F, 0.48F},
   }};
-  constexpr std::array<std::uint16_t, 36> indices{{
+  constexpr std::array<std::uint16_t, 36> cube_indices{{
     0, 1, 2, 0, 2, 3,
     5, 4, 7, 5, 7, 6,
     4, 0, 3, 4, 3, 7,
@@ -230,26 +263,34 @@ bool initialize_renderer() {
     3, 2, 6, 3, 6, 7,
     4, 5, 1, 4, 1, 0,
   }};
+  constexpr std::array<Vertex, 6> ramp_vertices{{
+    {-0.5F, 0.0F, -0.5F, 0.62F, 0.68F, 0.58F},
+    { 0.5F, 0.0F, -0.5F, 0.72F, 0.66F, 0.52F},
+    {-0.5F, 1.0F, -0.5F, 0.74F, 0.78F, 0.66F},
+    { 0.5F, 1.0F, -0.5F, 0.82F, 0.74F, 0.58F},
+    {-0.5F, 0.0F,  0.5F, 0.56F, 0.62F, 0.52F},
+    { 0.5F, 0.0F,  0.5F, 0.66F, 0.60F, 0.48F},
+  }};
+  constexpr std::array<std::uint16_t, 24> ramp_indices{{
+    0, 4, 5, 0, 5, 1,
+    0, 1, 3, 0, 3, 2,
+    2, 3, 5, 2, 5, 4,
+    0, 2, 4, 1, 5, 3,
+  }};
 
-  glGenVertexArrays(1, &client.vao);
-  glBindVertexArray(client.vao);
-  glGenBuffers(1, &client.vertex_buffer);
-  glBindBuffer(GL_ARRAY_BUFFER, client.vertex_buffer);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices.data(), GL_STATIC_DRAW);
-  glGenBuffers(1, &client.index_buffer);
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, client.index_buffer);
-  glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices.data(), GL_STATIC_DRAW);
-
-  glEnableVertexAttribArray(0);
-  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), nullptr);
-  glEnableVertexAttribArray(1);
-  glVertexAttribPointer(
-    1,
-    3,
-    GL_FLOAT,
-    GL_FALSE,
-    sizeof(Vertex),
-    reinterpret_cast<const void*>(3 * sizeof(float))
+  initialize_mesh(
+    cube_vertices,
+    cube_indices,
+    client.cube_vao,
+    client.cube_vertex_buffer,
+    client.cube_index_buffer
+  );
+  initialize_mesh(
+    ramp_vertices,
+    ramp_indices,
+    client.ramp_vao,
+    client.ramp_vertex_buffer,
+    client.ramp_index_buffer
   );
 
   client.mvp_uniform = glGetUniformLocation(client.program, "u_mvp");
@@ -274,7 +315,25 @@ void draw_cube(const Mat4& view_projection, Vec3 position, Vec3 scale, Vec3 tint
   const Mat4 mvp = multiply(view_projection, model_matrix(position, scale));
   glUniformMatrix4fv(client.mvp_uniform, 1, GL_FALSE, mvp.m.data());
   glUniform3f(client.tint_uniform, tint.x, tint.y, tint.z);
+  glBindVertexArray(client.cube_vao);
   glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_SHORT, nullptr);
+}
+
+void draw_ramp(const Mat4& view_projection, Vec3 position, Vec3 scale, Vec3 tint) {
+  const Mat4 mvp = multiply(view_projection, model_matrix(position, scale));
+  glUniformMatrix4fv(client.mvp_uniform, 1, GL_FALSE, mvp.m.data());
+  glUniform3f(client.tint_uniform, tint.x, tint.y, tint.z);
+  glBindVertexArray(client.ramp_vao);
+  glDrawElements(GL_TRIANGLES, 24, GL_UNSIGNED_SHORT, nullptr);
+}
+
+Vec3 material_tint(std::uint32_t material) {
+  switch (material) {
+    case cs::MaterialWood: return {0.78F, 0.50F, 0.28F};
+    case cs::MaterialMetal: return {0.52F, 0.60F, 0.62F};
+    case cs::MaterialSand: return {0.70F, 0.62F, 0.42F};
+    default: return {0.64F, 0.66F, 0.58F};
+  }
 }
 
 void draw_crosshair() {
@@ -322,15 +381,35 @@ void render() {
   const Mat4 view_projection = multiply(projection, view);
 
   glUseProgram(client.program);
-  glBindVertexArray(client.vao);
-  draw_cube(view_projection, {0.0F, -8.0F, 0.0F}, {672.0F, 16.0F, 512.0F}, {0.58F, 0.55F, 0.46F});
-  draw_cube(view_projection, {-344.0F, 64.0F, 0.0F}, {16.0F, 144.0F, 544.0F}, {0.48F, 0.50F, 0.44F});
-  draw_cube(view_projection, {344.0F, 64.0F, 0.0F}, {16.0F, 144.0F, 544.0F}, {0.48F, 0.50F, 0.44F});
-  draw_cube(view_projection, {0.0F, 64.0F, -264.0F}, {672.0F, 144.0F, 16.0F}, {0.43F, 0.46F, 0.41F});
-  draw_cube(view_projection, {0.0F, 64.0F, 264.0F}, {672.0F, 144.0F, 16.0F}, {0.43F, 0.46F, 0.41F});
-  draw_cube(view_projection, {0.0F, 8.0F, 8.0F}, {96.0F, 16.0F, 64.0F}, {0.52F, 0.50F, 0.42F});
-  draw_cube(view_projection, {-128.0F, 24.0F, -64.0F}, {48.0F, 48.0F, 48.0F}, {0.72F, 0.48F, 0.25F});
-  draw_cube(view_projection, {128.0F, 24.0F, 64.0F}, {48.0F, 48.0F, 48.0F}, {0.72F, 0.48F, 0.25F});
+  for (const cs::BoxDefinition& box : cs::aim_arena_boxes()) {
+    const Vec3 center{
+      (box.mins.x + box.maxs.x) * 0.5F,
+      (box.mins.y + box.maxs.y) * 0.5F,
+      (box.mins.z + box.maxs.z) * 0.5F,
+    };
+    const Vec3 size{
+      box.maxs.x - box.mins.x,
+      box.maxs.y - box.mins.y,
+      box.maxs.z - box.mins.z,
+    };
+    draw_cube(view_projection, center, size, material_tint(box.material));
+  }
+  for (const cs::RampDefinition& ramp : cs::aim_arena_ramps()) {
+    draw_ramp(
+      view_projection,
+      {
+        (ramp.min_x + ramp.max_x) * 0.5F,
+        ramp.base_y,
+        (ramp.min_z + ramp.max_z) * 0.5F,
+      },
+      {
+        ramp.max_x - ramp.min_x,
+        ramp.height,
+        ramp.max_z - ramp.min_z,
+      },
+      material_tint(ramp.material)
+    );
+  }
   draw_crosshair();
 }
 

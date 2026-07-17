@@ -14,6 +14,39 @@ constexpr float kStaminaValue = 1315.789429F;
 constexpr float kBhopFactor = 1.7F;
 constexpr float kBhopSlowdown = 0.65F;
 
+constexpr std::array<BoxDefinition, 21> kAimArenaBoxes{{
+  {{-800.0F, -16.0F, -600.0F}, {800.0F, 0.0F, 600.0F}, MaterialSand},
+  {{-816.0F, 0.0F, -616.0F}, {-800.0F, 256.0F, 616.0F}, MaterialConcrete},
+  {{800.0F, 0.0F, -616.0F}, {816.0F, 256.0F, 616.0F}, MaterialConcrete},
+  {{-800.0F, 0.0F, -616.0F}, {800.0F, 256.0F, -600.0F}, MaterialConcrete},
+  {{-800.0F, 0.0F, 600.0F}, {800.0F, 256.0F, 616.0F}, MaterialConcrete},
+  {{-112.0F, 0.0F, -12.0F}, {112.0F, 92.0F, 12.0F}, MaterialWood},
+  {{-352.0F, 0.0F, 160.0F}, {-288.0F, 64.0F, 224.0F}, MaterialWood},
+  {{288.0F, 0.0F, 160.0F}, {352.0F, 64.0F, 224.0F}, MaterialWood},
+  {{-340.0F, 0.0F, -96.0F}, {-260.0F, 48.0F, -16.0F}, MaterialConcrete},
+  {{260.0F, 0.0F, -96.0F}, {340.0F, 48.0F, -16.0F}, MaterialConcrete},
+  {{-620.0F, 0.0F, -240.0F}, {-460.0F, 48.0F, -80.0F}, MaterialConcrete},
+  {{460.0F, 0.0F, 80.0F}, {620.0F, 16.0F, 140.0F}, MaterialConcrete},
+  {{460.0F, 0.0F, 20.0F}, {620.0F, 32.0F, 80.0F}, MaterialConcrete},
+  {{460.0F, 0.0F, -40.0F}, {620.0F, 48.0F, 20.0F}, MaterialConcrete},
+  {{460.0F, 0.0F, -200.0F}, {620.0F, 48.0F, -40.0F}, MaterialConcrete},
+  {{-800.0F, 0.0F, -316.0F}, {-64.0F, 144.0F, -300.0F}, MaterialConcrete},
+  {{64.0F, 0.0F, -316.0F}, {800.0F, 144.0F, -300.0F}, MaterialConcrete},
+  {{-224.0F, 0.0F, -472.0F}, {-152.0F, 72.0F, -400.0F}, MaterialWood},
+  {{152.0F, 0.0F, -472.0F}, {224.0F, 72.0F, -400.0F}, MaterialWood},
+  {{-96.0F, 0.0F, 336.0F}, {96.0F, 32.0F, 368.0F}, MaterialMetal},
+  {{-720.0F, 0.0F, 300.0F}, {-656.0F, 58.0F, 364.0F}, MaterialWood},
+}};
+
+constexpr std::array<RampDefinition, 1> kAimArenaRamps{{
+  {-620.0F, -460.0F, -80.0F, 120.0F, 0.0F, 48.0F, MaterialConcrete},
+}};
+
+constexpr std::array<Vec3, 2> kAimArenaSpawns{{
+  {0.0F, kStandingHalfHeight, 500.0F},
+  {0.0F, kStandingHalfHeight, -500.0F},
+}};
+
 struct Trace {
   float fraction = 1.0F;
   Vec3 end{};
@@ -57,31 +90,22 @@ Vec3 hull_extents(const PlayerState& player) {
   };
 }
 
-float component(Vec3 value, int axis) {
-  if (axis == 0) return value.x;
-  if (axis == 1) return value.y;
-  return value.z;
-}
-
-void set_component(Vec3& value, int axis, float component_value) {
-  if (axis == 0) value.x = component_value;
-  if (axis == 1) value.y = component_value;
-  if (axis == 2) value.z = component_value;
-}
-
 bool overlaps_hull(const Simulation& simulation, Vec3 origin, Vec3 extents) {
   for (std::uint32_t index = 0; index < simulation.solid_count; ++index) {
     const Solid& solid = simulation.solids[index];
-    if (
-      origin.x > solid.mins.x - extents.x + kTraceEpsilon &&
-      origin.x < solid.maxs.x + extents.x - kTraceEpsilon &&
-      origin.y > solid.mins.y - extents.y + kTraceEpsilon &&
-      origin.y < solid.maxs.y + extents.y - kTraceEpsilon &&
-      origin.z > solid.mins.z - extents.z + kTraceEpsilon &&
-      origin.z < solid.maxs.z + extents.z - kTraceEpsilon
-    ) {
-      return true;
+    bool inside = true;
+    for (std::uint32_t plane_index = 0; plane_index < solid.plane_count; ++plane_index) {
+      const Plane& plane = solid.planes[plane_index];
+      const float offset =
+        std::fabs(plane.normal.x) * extents.x +
+        std::fabs(plane.normal.y) * extents.y +
+        std::fabs(plane.normal.z) * extents.z;
+      if (dot(origin, plane.normal) - (plane.distance + offset) >= -kTraceEpsilon) {
+        inside = false;
+        break;
+      }
     }
+    if (inside) return true;
   }
   return false;
 }
@@ -98,68 +122,51 @@ Trace trace_hull(
 
   for (std::uint32_t index = 0; index < simulation.solid_count; ++index) {
     const Solid& solid = simulation.solids[index];
-    const Vec3 expanded_mins = subtract(solid.mins, extents);
-    const Vec3 expanded_maxs = add(solid.maxs, extents);
+    float enter = -std::numeric_limits<float>::infinity();
+    float exit = 1.0F;
+    Vec3 enter_normal{};
+    bool separated = false;
+    bool strictly_inside = true;
 
-    const bool inside =
-      start.x > expanded_mins.x + kTraceEpsilon &&
-      start.x < expanded_maxs.x - kTraceEpsilon &&
-      start.y > expanded_mins.y + kTraceEpsilon &&
-      start.y < expanded_maxs.y - kTraceEpsilon &&
-      start.z > expanded_mins.z + kTraceEpsilon &&
-      start.z < expanded_maxs.z - kTraceEpsilon;
-    if (inside) {
+    for (std::uint32_t plane_index = 0; plane_index < solid.plane_count; ++plane_index) {
+      const Plane& plane = solid.planes[plane_index];
+      const float offset =
+        std::fabs(plane.normal.x) * extents.x +
+        std::fabs(plane.normal.y) * extents.y +
+        std::fabs(plane.normal.z) * extents.z;
+      const float expanded_distance = plane.distance + offset;
+      const float start_distance = dot(start, plane.normal) - expanded_distance;
+      const float end_distance = dot(end, plane.normal) - expanded_distance;
+
+      if (start_distance >= -kTraceEpsilon) strictly_inside = false;
+      if (start_distance > 0.0F && end_distance > 0.0F) {
+        separated = true;
+        break;
+      }
+      if (start_distance >= 0.0F && end_distance < start_distance) {
+        const float fraction =
+          (start_distance - kTraceEpsilon) / (start_distance - end_distance);
+        if (fraction > enter) {
+          enter = fraction;
+          enter_normal = plane.normal;
+        }
+      } else if (start_distance <= 0.0F && end_distance > start_distance) {
+        const float fraction =
+          (start_distance + kTraceEpsilon) / (start_distance - end_distance);
+        exit = std::min(exit, fraction);
+      }
+    }
+
+    if (strictly_inside) {
       best.fraction = 0.0F;
       best.end = start;
       best.start_solid = true;
       return best;
     }
 
-    float enter = -std::numeric_limits<float>::infinity();
-    float exit = std::numeric_limits<float>::infinity();
-    Vec3 enter_normal{};
-    bool separated = false;
-
-    for (int axis = 0; axis < 3; ++axis) {
-      const float start_axis = component(start, axis);
-      const float delta_axis = component(delta, axis);
-      const float min_axis = component(expanded_mins, axis);
-      const float max_axis = component(expanded_maxs, axis);
-
-      if (std::fabs(delta_axis) < 0.000001F) {
-        if (start_axis < min_axis || start_axis > max_axis) {
-          separated = true;
-          break;
-        }
-        continue;
-      }
-
-      float near_time = 0.0F;
-      float far_time = 0.0F;
-      Vec3 near_normal{};
-      if (delta_axis > 0.0F) {
-        near_time = (min_axis - start_axis) / delta_axis;
-        far_time = (max_axis - start_axis) / delta_axis;
-        set_component(near_normal, axis, -1.0F);
-      } else {
-        near_time = (max_axis - start_axis) / delta_axis;
-        far_time = (min_axis - start_axis) / delta_axis;
-        set_component(near_normal, axis, 1.0F);
-      }
-
-      if (near_time > enter) {
-        enter = near_time;
-        enter_normal = near_normal;
-      }
-      exit = std::min(exit, far_time);
-      if (enter > exit) {
-        separated = true;
-        break;
-      }
-    }
-
     if (
       separated ||
+      enter >= exit ||
       enter < -kTraceEpsilon ||
       enter > 1.0F ||
       enter >= best.fraction
@@ -167,7 +174,7 @@ Trace trace_hull(
       continue;
     }
 
-    best.fraction = std::max(0.0F, enter - kTraceEpsilon);
+    best.fraction = std::max(0.0F, enter);
     best.end = add(start, scale(delta, best.fraction));
     best.normal = enter_normal;
   }
@@ -409,8 +416,8 @@ void hash_word(std::uint64_t& hash, std::uint32_t word) {
 
 void initialize(Simulation& simulation) {
   simulation = {};
-  load_aim_lab(simulation);
-  set_player(simulation, {0.0F, kStandingHalfHeight, 180.0F});
+  load_aim_arena(simulation);
+  set_player(simulation, kAimArenaSpawns[0]);
 }
 
 void load_aim_lab(Simulation& simulation) {
@@ -420,9 +427,19 @@ void load_aim_lab(Simulation& simulation) {
   add_solid(simulation, {336.0F, 0.0F, -272.0F}, {352.0F, 144.0F, 272.0F});
   add_solid(simulation, {-336.0F, 0.0F, -272.0F}, {336.0F, 144.0F, -256.0F});
   add_solid(simulation, {-336.0F, 0.0F, 256.0F}, {336.0F, 144.0F, 272.0F});
-  add_solid(simulation, {-48.0F, 0.0F, -24.0F}, {48.0F, 16.0F, 40.0F}, 1);
-  add_solid(simulation, {-152.0F, 0.0F, -88.0F}, {-104.0F, 48.0F, -40.0F}, 1);
-  add_solid(simulation, {104.0F, 0.0F, 40.0F}, {152.0F, 48.0F, 88.0F}, 1);
+  add_solid(simulation, {-48.0F, 0.0F, -24.0F}, {48.0F, 16.0F, 40.0F}, MaterialWood);
+  add_solid(simulation, {-152.0F, 0.0F, -88.0F}, {-104.0F, 48.0F, -40.0F}, MaterialWood);
+  add_solid(simulation, {104.0F, 0.0F, 40.0F}, {152.0F, 48.0F, 88.0F}, MaterialWood);
+}
+
+void load_aim_arena(Simulation& simulation) {
+  clear_world(simulation);
+  for (const BoxDefinition& box : kAimArenaBoxes) {
+    add_solid(simulation, box.mins, box.maxs, box.material);
+  }
+  for (const RampDefinition& ramp : kAimArenaRamps) {
+    add_ramp(simulation, ramp);
+  }
 }
 
 void clear_world(Simulation& simulation) {
@@ -430,9 +447,68 @@ void clear_world(Simulation& simulation) {
 }
 
 bool add_solid(Simulation& simulation, Vec3 mins, Vec3 maxs, std::uint32_t material) {
-  if (simulation.solid_count >= kMaxSolids) return false;
-  simulation.solids[simulation.solid_count++] = {mins, maxs, material};
+  const std::array<Plane, 6> planes{{
+    {{1.0F, 0.0F, 0.0F}, maxs.x},
+    {{-1.0F, 0.0F, 0.0F}, -mins.x},
+    {{0.0F, 1.0F, 0.0F}, maxs.y},
+    {{0.0F, -1.0F, 0.0F}, -mins.y},
+    {{0.0F, 0.0F, 1.0F}, maxs.z},
+    {{0.0F, 0.0F, -1.0F}, -mins.z},
+  }};
+  return add_convex_solid(simulation, planes, material);
+}
+
+bool add_convex_solid(
+  Simulation& simulation,
+  std::span<const Plane> planes,
+  std::uint32_t material
+) {
+  if (
+    simulation.solid_count >= kMaxSolids ||
+    planes.empty() ||
+    planes.size() > kMaxBrushPlanes
+  ) {
+    return false;
+  }
+  Solid& solid = simulation.solids[simulation.solid_count++];
+  solid = {};
+  solid.plane_count = static_cast<std::uint32_t>(planes.size());
+  solid.material = material;
+  std::copy(planes.begin(), planes.end(), solid.planes.begin());
   return true;
+}
+
+bool add_ramp(Simulation& simulation, const RampDefinition& ramp) {
+  const float depth = ramp.max_z - ramp.min_z;
+  if (depth <= 0.0F || ramp.max_x <= ramp.min_x || ramp.height <= 0.0F) {
+    return false;
+  }
+  const float slope = ramp.height / depth;
+  const float normal_length = std::sqrt(1.0F + slope * slope);
+  const Vec3 top_normal{0.0F, 1.0F / normal_length, slope / normal_length};
+  const float top_distance =
+    (ramp.base_y + slope * ramp.max_z) / normal_length;
+  const std::array<Plane, 6> planes{{
+    {{1.0F, 0.0F, 0.0F}, ramp.max_x},
+    {{-1.0F, 0.0F, 0.0F}, -ramp.min_x},
+    {{0.0F, 0.0F, 1.0F}, ramp.max_z},
+    {{0.0F, 0.0F, -1.0F}, -ramp.min_z},
+    {{0.0F, -1.0F, 0.0F}, -ramp.base_y},
+    {top_normal, top_distance},
+  }};
+  return add_convex_solid(simulation, planes, ramp.material);
+}
+
+std::span<const BoxDefinition> aim_arena_boxes() {
+  return kAimArenaBoxes;
+}
+
+std::span<const RampDefinition> aim_arena_ramps() {
+  return kAimArenaRamps;
+}
+
+std::span<const Vec3> aim_arena_spawns() {
+  return kAimArenaSpawns;
 }
 
 void set_player(Simulation& simulation, Vec3 origin, Vec3 velocity) {
