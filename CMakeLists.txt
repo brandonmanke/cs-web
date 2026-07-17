@@ -21,6 +21,12 @@ add_library(cs_net_core STATIC
 target_include_directories(cs_net_core PUBLIC net/include)
 target_link_libraries(cs_net_core PUBLIC cs_sim_core)
 
+add_library(cs_server_core STATIC
+  server/src/server.cpp
+)
+target_include_directories(cs_server_core PUBLIC server/include)
+target_link_libraries(cs_server_core PUBLIC cs_net_core)
+
 if(EMSCRIPTEN)
   file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/public")
 
@@ -34,7 +40,7 @@ if(EMSCRIPTEN)
     third_party/cgltf
     third_party/stb
   )
-  target_link_libraries(cs_game PRIVATE cs_net_core openal)
+  target_link_libraries(cs_game PRIVATE cs_server_core openal)
   target_compile_options(cs_game PRIVATE -fno-exceptions -fno-rtti)
   target_compile_options(cs_sim_core PRIVATE -fno-exceptions -fno-rtti)
   target_link_options(cs_game PRIVATE
@@ -79,12 +85,6 @@ if(EMSCRIPTEN)
     DEPENDS "${CMAKE_SOURCE_DIR}/public/index.html"
   )
 else()
-  add_library(cs_server_core STATIC
-    server/src/server.cpp
-  )
-  target_include_directories(cs_server_core PUBLIC server/include)
-  target_link_libraries(cs_server_core PUBLIC cs_net_core)
-
   add_executable(cs_server_benchmark server/src/benchmark.cpp)
   target_link_libraries(cs_server_benchmark PRIVATE cs_server_core)
 

@@ -26,6 +26,10 @@ EM_JS(int, js_online_requested, (), {
   return new URLSearchParams(window.location.search).get('online') === '1';
 });
 
+EM_JS(int, js_bots_requested, (), {
+  return new URLSearchParams(window.location.search).get('bots') === '1';
+});
+
 EM_JS(void, js_net_start, (), {
   if (Module.csNet) return;
   const query = new URLSearchParams(window.location.search);
@@ -154,6 +158,14 @@ EM_JS(void, js_net_game_status, (
   status.className = 'ready';
 });
 
+EM_JS(void, js_bot_game_status, (int players, int tick, int kills, int deaths), {
+  const status = document.getElementById('status');
+  if (!status) return;
+  status.textContent = 'M5 LOCAL FFA - ' + (players - 1) + ' BOTS - ' +
+    kills + 'K/' + deaths + 'D - TICK ' + tick;
+  status.className = 'ready';
+});
+
 }  // namespace
 
 extern "C" {
@@ -177,6 +189,10 @@ namespace cs::client {
 
 bool browser_online_requested() {
   return js_online_requested() != 0;
+}
+
+bool browser_bots_requested() {
+  return js_bots_requested() != 0;
 }
 
 void browser_net_start() {
@@ -219,6 +235,15 @@ bool browser_net_receive(
   std::copy_n(incoming.packets[incoming.read].begin(), size, bytes.begin());
   incoming.read = (incoming.read + 1U) % kQueueSize;
   return true;
+}
+
+void browser_bot_game_status(
+  std::uint8_t player_count,
+  std::uint32_t server_tick,
+  std::uint16_t kills,
+  std::uint16_t deaths
+) {
+  js_bot_game_status(player_count, static_cast<int>(server_tick), kills, deaths);
 }
 
 }  // namespace cs::client

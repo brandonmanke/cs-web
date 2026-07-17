@@ -11,6 +11,12 @@ inline constexpr std::uint32_t kCommandHistory = 256;
 inline constexpr std::uint32_t kPositionHistory = 256;
 inline constexpr std::uint32_t kRespawnTicks = 128;
 inline constexpr std::uint32_t kMaxLagCompensationTicks = 13;
+inline constexpr std::uint8_t kNoPlayer = 0xFFU;
+
+struct BotState {
+  std::uint8_t target_id = kNoPlayer;
+  std::uint32_t reaction_ticks = 0;
+};
 
 struct QueuedCommand {
   bool valid = false;
@@ -20,6 +26,7 @@ struct QueuedCommand {
 struct Player {
   std::uint8_t id = 0;
   bool connected = false;
+  bool bot = false;
   bool alive = false;
   std::uint16_t health = 0;
   std::uint16_t kills = 0;
@@ -32,6 +39,7 @@ struct Player {
   std::array<QueuedCommand, kCommandHistory> input_queue{};
   std::array<std::uint8_t, net::kMaxPlayers> target_player_ids{};
   std::uint32_t target_player_count = 0;
+  BotState bot_state{};
   Simulation simulation{};
 };
 
@@ -56,6 +64,7 @@ struct Server {
 
 void initialize(Server& server);
 int connect(Server& server);
+int connect_bot(Server& server);
 void disconnect(Server& server, std::uint8_t player_id);
 bool receive_input(Server& server, const net::InputPacket& packet);
 void step(Server& server);

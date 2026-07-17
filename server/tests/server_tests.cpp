@@ -135,6 +135,17 @@ void test_server_authority_and_lag_compensation() {
     check(cs::server::connect(server) == static_cast<int>(index), "server assigns stable player IDs");
   }
   check(cs::server::connect(server) < 0, "server enforces the eight-player cap");
+  for (std::uint32_t first = 0; first < cs::net::kMaxPlayers; ++first) {
+    for (std::uint32_t second = first + 1U; second < cs::net::kMaxPlayers; ++second) {
+      check(
+        distance(
+          server.players[first].simulation.player.origin,
+          server.players[second].simulation.player.origin
+        ) > 500.0F,
+        "FFA spawn points prevent point-blank spawn collisions"
+      );
+    }
+  }
 
   cs::server::Player& shooter = server.players[0];
   cs::server::Player& victim = server.players[1];
@@ -208,6 +219,35 @@ void test_remote_interpolation() {
   check(cs::net::sample_player(buffer, 1, 105.0F, sampled), "remote player samples from snapshot buffer");
   check(std::fabs(sampled.origin.x - 50.0F) < 0.01F, "remote position interpolates at render time");
   check(std::fabs(sampled.yaw) > 3.0F, "remote yaw takes the short path across pi");
+}
+
+void test_bot_navigation_and_combat() {
+  cs::server::Server server{};
+  cs::server::initialize(server);
+  check(cs::server::connect(server) == 0, "bot fixture connects a human player");
+  check(cs::server::connect_bot(server) == 1, "bot fixture connects an AI player");
+  cs::server::Player& bot = server.players[1];
+  check(bot.bot, "AI player is marked as server-controlled");
+
+  const cs::net::InputPacket spoofed_input{
+    .player_id = 1,
+    .command_count = 1,
+    .newest_sequence = 1,
+    .commands = {{{.sequence = 1}}},
+  };
+  check(
+    !cs::server::receive_input(server, spoofed_input),
+    "network clients cannot inject commands for a bot"
+  );
+
+  const cs::Vec3 start = bot.simulation.player.origin;
+  float farthest = 0.0F;
+  for (std::uint32_t tick = 0; tick < 2048; ++tick) {
+    cs::server::step(server);
+    farthest = std::max(farthest, distance(start, bot.simulation.player.origin));
+  }
+  check(farthest > 200.0F, "bot traverses the arena navigation graph");
+  check(bot.kills > 0, "bot acquires, aims at, and kills an opponent");
 }
 
 struct PendingInput {
@@ -334,6 +374,7 @@ int main() {
   test_protocol_round_trip();
   test_server_authority_and_lag_compensation();
   test_remote_interpolation();
+  test_bot_navigation_and_combat();
   test_lossy_loopback();
   if (failures == 0) std::puts("server/net tests passed");
   return failures == 0 ? 0 : 1;

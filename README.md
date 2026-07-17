@@ -7,7 +7,7 @@ the authoritative deathmatch server.
 ## Development
 
 Requirements: CMake and Emscripten. Node.js 22+ is used only by the tiny,
-dependency-free local static server.
+dependency-free local static server and asset audit/conversion helpers.
 
 ```sh
 npm run sim:test
@@ -57,3 +57,9 @@ without `?online=1` remains the zero-network M3 gunplay demo. The first server
 build fetches the pinned libdatachannel source and its native dependencies, so it
 takes longer than later incremental builds. A non-default signaling endpoint can
 be supplied as `?online=1&signal=ws://host:port`.
+
+For a zero-network solo FFA, run only `npm run dev` and open
+`http://127.0.0.1:3100/?bots=1`. Three server-authoritative C++ bots run inside
+the same WASM executable, follow an A* navigation graph around the arena's
+central blockers, acquire/fire/reload/respawn through the normal simulation, and
+use the same textured remote-player model as WebRTC opponents.

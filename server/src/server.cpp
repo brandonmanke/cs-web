@@ -1,26 +1,206 @@
 #include "cs/server.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <limits>
 
 namespace cs::server {
 namespace {
 
-Vec3 spawn_for(std::uint8_t player_id) {
-  const auto spawns = aim_arena_spawns();
-  const Vec3 base = spawns[player_id % spawns.size()];
-  const float lane = static_cast<float>(player_id / 2U) - 1.5F;
-  return {base.x + lane * 48.0F, base.y, base.z};
+struct NavNode {
+  Vec3 origin;
+  std::array<std::uint8_t, 3> neighbors;
+  std::uint8_t neighbor_count;
+};
+
+struct SpawnPoint {
+  Vec3 origin;
+  float yaw;
+};
+
+constexpr std::array<SpawnPoint, net::kMaxPlayers> kFfaSpawns{{
+  {{0.0F, kStandingHalfHeight, 500.0F}, 0.0F},
+  {{0.0F, kStandingHalfHeight, -500.0F}, 3.141593F},
+  {{-650.0F, kStandingHalfHeight, 500.0F}, 0.915101F},
+  {{650.0F, kStandingHalfHeight, -500.0F}, -2.226492F},
+  {{650.0F, kStandingHalfHeight, 500.0F}, -0.915101F},
+  {{-650.0F, kStandingHalfHeight, -500.0F}, 2.226492F},
+  {{-700.0F, kStandingHalfHeight, 0.0F}, 1.570796F},
+  {{700.0F, kStandingHalfHeight, 0.0F}, -1.570796F},
+}};
+
+constexpr std::array<NavNode, 10> kAimArenaNavigation{{
+  {{0.0F, kStandingHalfHeight, 500.0F}, {1, 2, 0}, 2},
+  {{-180.0F, kStandingHalfHeight, 300.0F}, {0, 3, 0}, 2},
+  {{180.0F, kStandingHalfHeight, 300.0F}, {0, 4, 0}, 2},
+  {{-180.0F, kStandingHalfHeight, 80.0F}, {1, 5, 0}, 2},
+  {{180.0F, kStandingHalfHeight, 80.0F}, {2, 6, 0}, 2},
+  {{-180.0F, kStandingHalfHeight, -160.0F}, {3, 7, 0}, 2},
+  {{180.0F, kStandingHalfHeight, -160.0F}, {4, 7, 0}, 2},
+  {{0.0F, kStandingHalfHeight, -250.0F}, {5, 6, 8}, 3},
+  {{0.0F, kStandingHalfHeight, -400.0F}, {7, 9, 0}, 2},
+  {{0.0F, kStandingHalfHeight, -500.0F}, {8, 0, 0}, 1},
+}};
+
+float horizontal_distance_squared(Vec3 first, Vec3 second) {
+  const float x = first.x - second.x;
+  const float z = first.z - second.z;
+  return x * x + z * z;
+}
+
+std::uint8_t closest_nav_node(Vec3 origin) {
+  std::uint8_t closest = 0;
+  float closest_distance = std::numeric_limits<float>::max();
+  for (std::uint8_t index = 0; index < kAimArenaNavigation.size(); ++index) {
+    const float distance = horizontal_distance_squared(
+      origin,
+      kAimArenaNavigation[index].origin
+    );
+    if (distance < closest_distance) {
+      closest_distance = distance;
+      closest = index;
+    }
+  }
+  return closest;
+}
+
+float nav_heuristic(std::uint8_t first, std::uint8_t second) {
+  return std::sqrt(horizontal_distance_squared(
+    kAimArenaNavigation[first].origin,
+    kAimArenaNavigation[second].origin
+  ));
+}
+
+std::uint8_t next_nav_node(Vec3 origin, Vec3 destination) {
+  const std::uint8_t start = closest_nav_node(origin);
+  const std::uint8_t goal = closest_nav_node(destination);
+  if (start == goal) return goal;
+
+  constexpr std::uint8_t none = static_cast<std::uint8_t>(kAimArenaNavigation.size());
+  std::array<float, kAimArenaNavigation.size()> distance{};
+  std::array<float, kAimArenaNavigation.size()> score{};
+  std::array<std::uint8_t, kAimArenaNavigation.size()> previous{};
+  std::array<bool, kAimArenaNavigation.size()> visited{};
+  distance.fill(std::numeric_limits<float>::max());
+  score.fill(std::numeric_limits<float>::max());
+  previous.fill(none);
+  distance[start] = 0.0F;
+  score[start] = nav_heuristic(start, goal);
+
+  for (std::size_t iteration = 0; iteration < kAimArenaNavigation.size(); ++iteration) {
+    std::uint8_t current = none;
+    float best = std::numeric_limits<float>::max();
+    for (std::uint8_t node = 0; node < kAimArenaNavigation.size(); ++node) {
+      if (!visited[node] && score[node] < best) {
+        best = score[node];
+        current = node;
+      }
+    }
+    if (current == none || current == goal) break;
+    visited[current] = true;
+    const NavNode& node = kAimArenaNavigation[current];
+    for (std::uint8_t index = 0; index < node.neighbor_count; ++index) {
+      const std::uint8_t neighbor = node.neighbors[index];
+      const float candidate = distance[current] + nav_heuristic(current, neighbor);
+      if (candidate >= distance[neighbor]) continue;
+      previous[neighbor] = current;
+      distance[neighbor] = candidate;
+      score[neighbor] = candidate + nav_heuristic(neighbor, goal);
+    }
+  }
+
+  if (previous[goal] == none) return goal;
+  std::uint8_t next = goal;
+  while (previous[next] != start && previous[next] != none) next = previous[next];
+  return next;
+}
+
+const SpawnPoint& spawn_for(std::uint8_t player_id) {
+  return kFfaSpawns[player_id % kFfaSpawns.size()];
 }
 
 void reset_simulation(Player& player) {
   cs::initialize(player.simulation);
   clear_targets(player.simulation);
-  set_player(player.simulation, spawn_for(player.id));
+  const SpawnPoint& spawn = spawn_for(player.id);
+  set_player(player.simulation, spawn.origin);
+  player.simulation.player.yaw = spawn.yaw;
+  refresh_snapshot(player.simulation);
   player.health = 100;
   player.alive = true;
   player.respawn_ticks = 0;
   player.last_command = {};
+  player.bot_state = {};
+}
+
+const Player* closest_target(const Server& server, const Player& bot) {
+  const Player* closest = nullptr;
+  float closest_distance = std::numeric_limits<float>::max();
+  for (const Player& player : server.players) {
+    if (!player.connected || !player.alive || player.id == bot.id) continue;
+    const float distance = horizontal_distance_squared(
+      bot.simulation.player.origin,
+      player.simulation.player.origin
+    );
+    if (distance < closest_distance) {
+      closest_distance = distance;
+      closest = &player;
+    }
+  }
+  return closest;
+}
+
+InputCommand bot_command(Server& server, Player& bot) {
+  const Player* target = closest_target(server, bot);
+  if (target == nullptr) return {};
+  if (bot.bot_state.target_id != target->id) {
+    bot.bot_state.target_id = target->id;
+    bot.bot_state.reaction_ticks = 10U + static_cast<std::uint32_t>(bot.id) * 3U;
+  } else if (bot.bot_state.reaction_ticks > 0) {
+    --bot.bot_state.reaction_ticks;
+  }
+
+  const Vec3 origin = bot.simulation.player.origin;
+  const Vec3 target_origin = target->simulation.player.origin;
+  const float target_x = target_origin.x - origin.x;
+  const float target_y = target_origin.y - origin.y - 16.0F;
+  const float target_z = target_origin.z - origin.z;
+  const float target_distance = std::sqrt(target_x * target_x + target_z * target_z);
+  const float aim_error = std::sin(
+    static_cast<float>(server.tick + static_cast<std::uint32_t>(bot.id) * 37U) * 0.045F
+  ) * 0.006F;
+  InputCommand command{
+    .yaw = std::atan2(target_x, -target_z) + aim_error,
+    .pitch = std::atan2(target_y, std::max(target_distance, 1.0F)),
+  };
+
+  if (bot.simulation.weapon.magazine[WeaponAk47] == 0U) {
+    command.buttons |= ButtonReload;
+  } else if (bot.bot_state.reaction_ticks == 0 && target_distance < 350.0F) {
+    command.buttons |= ButtonFire;
+  }
+
+  if (target_distance > 170.0F) {
+    const std::uint8_t start = closest_nav_node(origin);
+    const std::uint8_t goal = closest_nav_node(target_origin);
+    const Vec3 destination = start == goal ? target_origin :
+      kAimArenaNavigation[next_nav_node(origin, target_origin)].origin;
+    const float move_x = destination.x - origin.x;
+    const float move_z = destination.z - origin.z;
+    const float move_length = std::sqrt(move_x * move_x + move_z * move_z);
+    if (move_length > 8.0F) {
+      const float direction_x = move_x / move_length;
+      const float direction_z = move_z / move_length;
+      const float forward_x = std::sin(command.yaw);
+      const float forward_z = -std::cos(command.yaw);
+      const float right_x = std::cos(command.yaw);
+      const float right_z = std::sin(command.yaw);
+      command.forward = direction_x * forward_x + direction_z * forward_z;
+      command.strafe = direction_x * right_x + direction_z * right_z;
+    }
+  }
+  return command;
 }
 
 void record_history(Server& server) {
@@ -145,6 +325,12 @@ int connect(Server& server) {
   return -1;
 }
 
+int connect_bot(Server& server) {
+  const int player_id = connect(server);
+  if (player_id >= 0) server.players[static_cast<std::size_t>(player_id)].bot = true;
+  return player_id;
+}
+
 void disconnect(Server& server, std::uint8_t player_id) {
   if (player_id >= net::kMaxPlayers) return;
   Player& player = server.players[player_id];
@@ -155,7 +341,12 @@ void disconnect(Server& server, std::uint8_t player_id) {
 
 bool receive_input(Server& server, const net::InputPacket& packet) {
   Player* player = find_player(server, packet.player_id);
-  if (player == nullptr || packet.command_count == 0 || packet.command_count > net::kInputRedundancy) {
+  if (
+    player == nullptr ||
+    player->bot ||
+    packet.command_count == 0 ||
+    packet.command_count > net::kInputRedundancy
+  ) {
     return false;
   }
   std::uint32_t previous_sequence = 0;
@@ -206,7 +397,8 @@ void step(Server& server) {
       continue;
     }
     std::uint32_t view_tick = server.tick;
-    const InputCommand input = command_for_tick(player, view_tick);
+    const InputCommand input = player.bot ?
+      bot_command(server, player) : command_for_tick(player, view_tick);
     prepare_targets(server, player, view_tick);
     const std::uint32_t previous_shot = player.simulation.last_shot.sequence;
     cs::step(player.simulation, input);
