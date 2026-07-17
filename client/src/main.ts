@@ -41,10 +41,11 @@ async function boot(): Promise<void> {
       }
       // Safety floor far below in case of walking off the mesh edge.
       sim.addBox([-16384, -2048, -16384], [16384, -2032, 16384], 0);
-      // Drop into the middle of the map and let gravity find the ground.
-      spawn = [0, 900, 0];
-      spawnYaw = Math.PI * 0.5;
-      sim.addTarget(200, 0, -400, 0, 400, 90);
+      // T-spawn plateau (probed: solid ground y 255-336 across x -1500..-400
+      // at z -2400 in this GLB's coords), facing toward mid.
+      spawn = [-1330, 320, -2400];
+      spawnYaw = -2.53;
+      sim.addTarget(-870, 323, -2400, -960, -775, 60);
     } else {
       // GLB missing (assets/ ref models are gitignored): fall back to the arena.
       useArena = true;
@@ -82,6 +83,15 @@ async function boot(): Promise<void> {
       prev.copyFrom(curr);
       sim.step(input.sample());
       sim.read(curr);
+
+      // The dust2 ref mesh isn't a sealed hull; if we slip through a hole,
+      // respawn instead of stranding the player on the safety floor.
+      if (curr.origin[1]! < -600) {
+        sim.spawn(spawn[0]!, spawn[1]!, spawn[2]!, spawnYaw);
+        input.setYaw(spawnYaw);
+        sim.read(curr);
+        prev.copyFrom(curr);
+      }
 
       if (curr.shotSequence !== lastShotSeen) {
         lastShotSeen = curr.shotSequence;
