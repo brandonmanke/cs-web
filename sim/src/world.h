@@ -2,8 +2,8 @@
 
 #include "cs/sim.h"
 
-// Static collision world backed by box3d. The sim owns kinematic movement;
-// box3d only answers sweep/ray queries, so it stays swappable.
+// Static collision world of sealed convex brushes (GoldSrc/Quake model).
+// The player is kinematic; this only answers sweep/ray/overlap queries.
 
 namespace cs {
 
@@ -19,10 +19,10 @@ void world_create();
 void world_destroy();
 void world_reset();
 void world_add_box(Vec3 mins, Vec3 maxs, std::uint32_t material);
-void world_add_hull(const float* points, std::uint32_t point_count, std::uint32_t material);
-bool world_add_mesh(const float* vertices, std::uint32_t vertex_count,
-                    const std::uint32_t* indices, std::uint32_t triangle_count,
-                    std::uint32_t material);
+// planes: (nx, ny, nz, d) quads; interior is dot(n, x) <= d. Must be a bounded
+// convex solid. Returns false on degenerate/unbounded input.
+bool world_add_brush(const float* planes, std::uint32_t plane_count,
+                     std::uint32_t material);
 void world_finalize();
 
 // Sweep an axis-aligned box of half extents `half` from start to end.

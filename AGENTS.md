@@ -4,54 +4,63 @@ Repository guidance for any coding agent (Codex, Claude, Cursor, etc.).
 
 ## Roadmap
 
-**`PLAN.md` is the spec.** cs-web is a CS 1.6-derivative browser shooter:
-C++20 sim core (WASM in the browser, native for tests and the future server),
-box3d for collision queries, Three.js as the renderer, npm/node 24 tooling.
-Read PLAN.md before touching movement, shooting, maps, or networking — the
-milestone list defines what gets built next.
+**`PLAN.md` is the spec.** cs-web is a CS 1.6-derivative browser shooter with
+Quake-influenced level design: C++20 sim core (WASM in the browser, native for
+tests and the future server), convex-brush collision, Three.js as the renderer,
+npm/node 24 tooling. Read PLAN.md before touching movement, shooting, maps, art,
+or networking — the milestone list defines what gets built next.
 
 ## Commands
 
-- `npm run dev` — Vite dev server (uses the committed-state wasm; run `npm run wasm` first if sim changed)
+- `npm run dev` — Vite dev server (uses the committed-state wasm; run `npm run wasm` first if the sim changed)
 - `npm run wasm` — build the sim to `client/src/generated/sim.mjs` (needs Emscripten `emcc`)
 - `npm run test` — configure + build + run native sim tests (ctest)
+- `npm run mapcheck` — headless map validation against the real wasm sim
 - `npm run typecheck` — `tsc --noEmit`
 - `npm run build` — wasm + typecheck + production bundle
 
-Node ≥ 24, npm (no bun). CMake ≥ 3.24. First native/wasm configure fetches
-box3d via FetchContent (network needed once per build dir).
+Node ≥ 24, npm (no bun). CMake ≥ 3.24. **The build fetches nothing** — there are
+no third-party C dependencies and no binary assets.
 
 ## Architecture
 
 - `sim/` — all gameplay: movement (`pmove.cpp`), gunplay (`weapons.cpp`),
-  collision wrapper over box3d (`world.cpp`), orchestration + C ABI (`sim.cpp`).
+  convex-brush collision (`world.cpp`), orchestration + C ABI (`sim.cpp`).
   Fixed 64 Hz tick, flat POD state, `-fno-exceptions -fno-rtti`, deterministic
   (xorshift RNG in state, `-ffp-contract=off`).
 - `sim/include/cs/sim.h` — public types, tuning constants, and the C ABI.
   **The TS mirror of the snapshot layout lives in `client/src/sim.ts` (WORDS
-  table) — change them together**; a byte-size assert catches drift at load.
+  table) — change them together.** A byte-size assert plus an `api_version`
+  check catch drift at load; neither catches a same-size field reshuffle, so
+  bump `kSimApiVersion` when you reorder fields.
 - `client/` — rendering/input/HUD/audio only. **No gameplay logic in TS.**
-  The greybox arena data (`client/src/arena.ts`) feeds both sim and renderer.
-- box3d is queries-only (swept hull + ray casts); the player is kinematic.
-  Keep box3d behind `sim/src/world.h` so it stays swappable.
+- `client/src/map/` — brushes are the single source of truth: the same plane
+  sets feed `sim_add_brush` (collision) and the winding clipper (render
+  geometry). Never introduce a separate collision mesh.
+- `client/src/art/` — all textures, characters, and weapons are generated in
+  code. Do not add binary assets.
 - Angles: radians, yaw 0 = −Z, +yaw = counter-clockwise; Y-up; GoldSrc units
-  (1u = 1 inch). Ref assets scale ×39.37 on import.
+  (1u = 1 inch).
 
 ## Verification
 
 - After sim changes: `npm run test` (movement invariants + determinism hash)
   and `npm run wasm` must both pass.
+- After map changes: `npm run mapcheck` — catches degenerate brushes, spawns
+  that drop you through the floor, and geometry that renders but isn't solid.
 - After client changes: `npm run typecheck`; for behavior, `npm run dev` and
-  check the feel list in PLAN.md §3 (arena) or `?map=dust2`.
+  check the feel list in PLAN.md §3 (`?map=practice`).
+- Dev flags: `?map=`, `?spawn=x,y,z`, `?yaw=radians`, `?coords`.
 
 ## Assets
 
-- `assets/**/*_ref.glb` are Valve-derived Sketchfab models: dev placeholders
-  only, gitignored, never shipped. `assets/models/psx/` packs are CC0 and
-  committed; provenance lives in `assets/README.md`.
+- There are none, by design. Art is procedural (PLAN.md §5). Anything left
+  under `assets/` is unused reference — see `assets/README.md`.
+- `vite.config.ts` `publicDir` **must never** point at `assets/`: Vite copies
+  publicDir verbatim into `dist/`, which previously staged Valve-derived
+  `*_ref.glb` files into the deploy artifact.
 - Art direction: PSX/GoldSrc-era low-poly **with textures** — no modern
-  flat-shaded stylized low-poly. New assets must be original or CC0; record
-  provenance in `assets/README.md`.
+  flat-shaded stylized low-poly.
 
 ## Conventions
 
@@ -59,5 +68,5 @@ box3d via FetchContent (network needed once per build dir).
 - Prefer simple, surgical changes; match existing style (C-style C++: POD
   structs + free functions, no exceptions/RTTI/iostream).
 - No speculative systems — PLAN.md milestones define scope.
-- Audio stays synthesized (Web Audio) until PLAN.md M-content.
+- Audio stays synthesized (Web Audio) until PLAN.md M-polish.
 - GPL engines (Quake, xash3d) are behavior references only — never copy code.

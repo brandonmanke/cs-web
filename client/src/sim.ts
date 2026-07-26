@@ -2,7 +2,11 @@ import createSimModule, { type SimModule } from "./generated/sim.mjs";
 
 // Mirrors cs::SimSnapshot in sim/include/cs/sim.h: 4-byte fields only, so the
 // layout is a flat array of 32-bit words.
-const WORDS = {
+const MAX_TARGETS = 8; // cs::kMaxTargets
+const API_VERSION = 1; // cs::kSimApiVersion
+
+export const WORDS = {
+  apiVersion: 0,
   tick: 1,
   origin: 2,
   velocity: 5,
@@ -31,14 +35,20 @@ const WORDS = {
   targetCount: 34,
   targets: 35, // 6 words per target
 } as const;
-const SNAPSHOT_WORDS = 35 + 8 * 6;
+const SNAPSHOT_WORDS = 35 + MAX_TARGETS * 6;
 
 export const Buttons = {
   jump: 1 << 0,
   duck: 1 << 1,
   fire: 1 << 2,
   reload: 1 << 3,
+  walk: 1 << 4,
 } as const;
+
+export interface TraceHit {
+  point: [number, number, number];
+  normal: [number, number, number];
+}
 
 export const ShotResult = {
   none: 0,
@@ -78,10 +88,11 @@ export class Snapshot {
   shots = 0;
   shotSequence = 0;
   shotResult = 0;
+  shotMaterial = 0;
   shotStart: [number, number, number] = [0, 0, 0];
   shotEnd: [number, number, number] = [0, 0, 0];
   targetCount = 0;
-  targets: TargetView[] = Array.from({ length: 8 }, () => ({
+  targets: TargetView[] = Array.from({ length: MAX_TARGETS }, () => ({
     x: 0, y: 0, z: 0, health: 0, alive: false, flash: 0,
   }));
 
@@ -104,10 +115,15 @@ export interface InputFrame {
 }
 
 export class Sim {
+  /** Scratch for sim_trace_ray results: [fraction, end xyz, normal xyz]. */
+  private readonly traceWord: number;
+
   private constructor(
     private readonly m: SimModule,
     private readonly snapshotWord: number,
-  ) {}
+  ) {
+    this.traceWord = m._malloc(7 * 4) >> 2;
+  }
 
   static async load(): Promise<Sim> {
     const m = await createSimModule();
@@ -116,33 +132,52 @@ export class Sim {
     if (bytes !== SNAPSHOT_WORDS * 4) {
       throw new Error(`snapshot layout mismatch: wasm=${bytes}B ts=${SNAPSHOT_WORDS * 4}B`);
     }
-    return new Sim(m, m._sim_snapshot() >> 2);
+    const snapshotWord = m._sim_snapshot() >> 2;
+    // The size check alone misses same-size field reshuffles; the version word
+    // is already plumbed through the snapshot, so make it earn its keep.
+    const version = m.HEAPU32[snapshotWord + WORDS.apiVersion]!;
+    if (version !== API_VERSION) {
+      throw new Error(`sim API version mismatch: wasm=${version} ts=${API_VERSION}`);
+    }
+    return new Sim(m, snapshotWord);
   }
 
   addBox(min: readonly number[], max: readonly number[], material: number): void {
     this.m._sim_add_box(min[0]!, min[1]!, min[2]!, max[0]!, max[1]!, max[2]!, material);
   }
 
-  addHull(points: Float32Array, material: number): void {
-    const ptr = this.m._malloc(points.byteLength);
-    this.m.HEAPF32.set(points, ptr >> 2);
-    this.m._sim_add_hull(ptr, points.length / 3, material);
+  /** planes: (nx, ny, nz, d) quads. Returns false if the brush is degenerate. */
+  addBrush(planes: Float32Array, material: number): boolean {
+    const ptr = this.m._malloc(planes.byteLength);
+    this.m.HEAPF32.set(planes, ptr >> 2);
+    const ok = this.m._sim_add_brush(ptr, planes.length / 4, material);
     this.m._free(ptr);
-  }
-
-  addMesh(vertices: Float32Array, indices: Uint32Array, material: number): boolean {
-    const vPtr = this.m._malloc(vertices.byteLength);
-    this.m.HEAPF32.set(vertices, vPtr >> 2);
-    const iPtr = this.m._malloc(indices.byteLength);
-    this.m.HEAPU32.set(indices, iPtr >> 2);
-    const ok = this.m._sim_add_mesh(vPtr, vertices.length / 3, iPtr, indices.length / 3, material);
-    this.m._free(iPtr);
-    this.m._free(vPtr);
     return ok !== 0;
   }
 
   finalizeWorld(): void {
     this.m._sim_world_finalize();
+  }
+
+  /** True if the segment is blocked by world geometry. */
+  isBlocked(from: readonly number[], to: readonly number[]): boolean {
+    return this.m._sim_trace_ray(
+      from[0]!, from[1]!, from[2]!, to[0]!, to[1]!, to[2]!, this.traceWord << 2,
+    ) !== 0;
+  }
+
+  /** Impact point and surface normal, or null on a miss. */
+  traceRay(from: readonly number[], to: readonly number[]): TraceHit | null {
+    const hit = this.m._sim_trace_ray(
+      from[0]!, from[1]!, from[2]!, to[0]!, to[1]!, to[2]!, this.traceWord << 2,
+    );
+    if (hit === 0) return null;
+    const f32 = this.m.HEAPF32;
+    const w = this.traceWord;
+    return {
+      point: [f32[w + 1]!, f32[w + 2]!, f32[w + 3]!],
+      normal: [f32[w + 4]!, f32[w + 5]!, f32[w + 6]!],
+    };
   }
 
   spawn(x: number, y: number, z: number, yaw: number): void {
@@ -180,12 +215,13 @@ export class Sim {
     out.shots = u32[w + WORDS.shots]!;
     out.shotSequence = u32[w + WORDS.shotSequence]!;
     out.shotResult = u32[w + WORDS.shotResult]!;
+    out.shotMaterial = u32[w + WORDS.shotMaterial]!;
     for (let i = 0; i < 3; ++i) {
       out.shotStart[i] = f32[w + WORDS.shotStart + i]!;
       out.shotEnd[i] = f32[w + WORDS.shotEnd + i]!;
     }
     out.targetCount = u32[w + WORDS.targetCount]!;
-    for (let t = 0; t < 8; ++t) {
+    for (let t = 0; t < MAX_TARGETS; ++t) {
       const base = w + WORDS.targets + t * 6;
       const view = out.targets[t]!;
       view.x = f32[base]!;

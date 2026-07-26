@@ -1,43 +1,53 @@
 # assets/
 
-Reference assets for development. See `PLAN.md` §7 for the asset rules.
+**Nothing in this directory is used by the game or the build.**
 
-> **Licensing:** the `*_ref.glb` files are Sketchfab-sourced models derived from
-> Valve's CS 1.6 content. They are **dev/reference placeholders only** — fine for
-> local development and feel-testing, must be replaced with originals before any
-> public release.
+As of the 2026-07-25 rework, all art is generated procedurally in code:
 
-## Audit (2026-07-17, via GLB inspection)
+| What | Where |
+|---|---|
+| World textures (concrete, rust, grate, brick, crate, …) | `client/src/art/textures.ts` |
+| Player models + animation | `client/src/art/character.ts` |
+| Weapon models + viewmodel | `client/src/art/weapons.ts` |
+| Map geometry | `client/src/map/maps/*.ts` (convex brushes) |
+| Sound | `client/src/audio.ts` (Web Audio synthesis) |
 
-| File | Tris | Textures | Rig/Anims | AABB size (units) | Notes |
-|---|---|---|---|---|---|
-| `maps/de_dust2_ref.glb` | 9,318 | 34 PNGs (baked) | — | 95.3 × 13.1 × 112.5 | ~Meter scale (real dust2 ≈ 110 m footprint). Y-up. 36 meshes/materials (`material_N` names — no semantic material tags). |
-| `models/cs16_characters_ref.glb` | 9,870 total | 14 PNGs | **none** (static) | lineup 15.5 × 1.84 × 0.54 | 8 characters (urban, arctic, GIGN, SAS, terror, leet, guerilla, GSG9) + hand meshes, ~1.2k tris each, ~1.84 units tall → meter scale, consistent with the map. Needs rigging in Blender before use as player models. |
-| `models/ak47_ref.glb` | 1,836 | **none** (untextured) | — | 1.96 × 8.46 × 29.1 | 8 flat-color materials split by part (barrel, forearm, handle, magazine, …) — good for viewmodel anims. Scale/pivot are arbitrary (29 units long, AABB offset from origin) → must be recentered + rescaled on import. |
-| `models/hazmat/` (.blend/.fbx/.png/.psd) | — | 1 PNG (+ PSD source) | **rigged** (27 skin clusters, 76 bones, Blender-standard names), no animations | — | Chosen dev player model. Author idle/run/crouch/jump/die in Blender, export glTF. Source: [mcsteeg's Hazmat Character](https://mcsteeg.itch.io/hazmat-character). |
+`vite.config.ts` deliberately points `publicDir` at `client/public`, **not**
+here. It used to point at this directory, which meant `npm run build` copied
+everything below verbatim into `dist/` — including the Valve-derived `*_ref.glb`
+files that `PLAN.md` says must never ship, plus raw `.blend`/`.psd` sources no
+browser can load. `.gitignore` protected the repo; nothing protected the deploy
+artifact. Do not repoint `publicDir` here.
 
-## Committed PSX packs (`models/psx/`, CC0)
+## What is still on disk
 
-In-repo and used by the game (the AK GLB is the current viewmodel):
+**Valve-derived rips — gitignored, never tracked, must never ship.**
+`maps/de_dust2_ref.glb`, `models/cs16_characters_ref.glb`, `models/ak47_ref.glb`.
+Sketchfab uploads derived from Valve's CS 1.6 content. Nothing references them
+any more. They are safe to delete; they are *not* in git, so deleting is
+permanent (you would re-download from Sketchfab to get them back).
 
-- `weapons/` (ak47, m4a1, mp5, glock, knife, double-barrel, arms) — from
-  [Modern Weapons PS1 Style](https://ace-spectre.itch.io/modern-weapons-ps1-style)
+**`models/hazmat/` — committed, unused, licence not recorded.** Source is
+[mcsteeg's Hazmat Character](https://mcsteeg.itch.io/hazmat-character), but no
+licence was ever written down for it — the one committed asset whose
+redistribution terms are unknown. Resolve or remove before any public release.
+
+**`models/psx/` — committed, CC0, unused.** ~14 MB of legitimately licensed
+PSX packs, kept only as art-direction reference now that the models are
+procedural:
+
+- `weapons/` — [Modern Weapons PS1 Style](https://ace-spectre.itch.io/modern-weapons-ps1-style)
   and [PS1 Heavy and Light Weapons Pack](https://ace-spectre.itch.io/ps1-heavy-and-light-weapons-pack)
-  (ace-spectre, CC0; textures via texturer.com terms) and
+  (ace-spectre, CC0; textures under texturer.com terms) plus
   [Low Poly Glock](https://mextie.itch.io/low-poly-glock) (mextie, CC0).
-- `characters/` (police-set rigged + animations, anime-character, cartoon-woman,
-  ordinary-man) — PSX-style CC0 packs indexed via
+- `characters/` — CC0 packs indexed via
   [Retro3DGraphicsCollection](https://github.com/Miziziziz/Retro3DGraphicsCollection).
-- AK-47 GLB orientation: barrel points −Z (camera-forward), ~3.6 units long at
-  meter-ish scale; the client scales ×8 for the viewmodel.
+  Individual pack authors are not recorded; only the index is.
 
 ## Conventions
 
-- **Art direction: PSX/GoldSrc-era low-poly with textures** — no modern
-  flat-shaded stylized low-poly. Index for more:
-  [Retro3DGraphicsCollection](https://github.com/Miziziziz/Retro3DGraphicsCollection).
-- Canonical sim unit is the **GoldSrc unit** (1u = 1 inch). Meter-scale assets
-  get scaled ×39.37 at import time (dust2 in `renderer.loadDust2`).
-- Subdirs: `maps/` (world geometry), `models/` (weapons, characters, props).
-  TrenchBroom `.map` sources for original maps will live in `maps/` too.
-- New assets must be original or CC0; record provenance in this file.
+- **Art direction: PSX/GoldSrc-era low-poly with textures** — not modern
+  flat-shaded stylized low-poly.
+- Canonical unit is the **GoldSrc unit** (1u = 1 inch), Y-up.
+- Any new asset must be original or CC0, with provenance recorded here. Prefer
+  generating it in code: it diffs, it has no licence, and it costs no download.

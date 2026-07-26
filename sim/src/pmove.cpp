@@ -6,7 +6,7 @@
 // Quake/GoldSrc-style player movement: friction + acceleration toward a wish
 // direction, air strafing via the 30 u/s wishspeed cap, slide-along-planes
 // collision with step-up. Structure follows the classic PM_* flow; collision
-// queries go through world_trace_hull (box3d underneath).
+// queries go through world_trace_hull (convex brushes underneath).
 
 namespace cs {
 namespace {
@@ -35,10 +35,12 @@ float stamina_ratio(float stamina) {
   return (100.0F - stamina * 0.001F * 19.0F) * 0.01F;
 }
 
-float current_max_speed(const SimState& s) {
+float current_max_speed(const SimState& s, bool walking = false) {
   float max_speed = weapon_def(s.weapon.selected).max_move_speed;
   if (s.player.ducked) {
     max_speed *= kDuckSpeedFactor;
+  } else if (walking) {
+    max_speed *= kWalkSpeedFactor;
   }
   return max_speed;
 }
@@ -114,14 +116,19 @@ void clamp_velocity(PlayerState& p) {
   }
 }
 
-// PM_FlyMove: move the hull, sliding along up to kMaxClipPlanes contact planes.
+// PM_FlyMove/Q3 PM_SlideMove hybrid: move the hull, sliding along contact
+// planes. Overclip pushes velocity slightly off each plane, which on a sealed
+// brush world is enough to guarantee the next trace starts outside it and
+// cannot re-hit the same plane at fraction 0.
 void slide_move(PlayerState& p, float dt) {
+  constexpr float kOverclip = 1.001F;
   Vec3 planes[kMaxClipPlanes];
   int num_planes = 0;
   const Vec3 primal_velocity = p.velocity;
   Vec3 original_velocity = p.velocity;
   float time_left = dt;
   const Vec3 half = hull_half(p);
+  const Vec3 start_origin = p.origin;
 
   for (int bump = 0; bump < kMaxBumps; ++bump) {
     if (p.velocity.x == 0.0F && p.velocity.y == 0.0F && p.velocity.z == 0.0F) {
@@ -151,7 +158,7 @@ void slide_move(PlayerState& p, float dt) {
     // along the seam.
     int i = 0;
     for (; i < num_planes; ++i) {
-      p.velocity = clip_velocity(original_velocity, planes[i], 1.0F);
+      p.velocity = clip_velocity(original_velocity, planes[i], kOverclip);
       int j = 0;
       for (; j < num_planes; ++j) {
         if (j != i && dot(p.velocity, planes[j]) < 0.0F) {
@@ -175,6 +182,20 @@ void slide_move(PlayerState& p, float dt) {
     if (dot(p.velocity, primal_velocity) <= 0.0F) {
       p.velocity = {0.0F, 0.0F, 0.0F};
       break;
+    }
+  }
+
+  // Wedged in a crevice: no movement at all but we wanted some. Pull off along
+  // the contact normals so next tick can recover (bounded, overlap-checked).
+  if (num_planes > 0 && p.origin.x == start_origin.x &&
+      p.origin.y == start_origin.y && p.origin.z == start_origin.z) {
+    Vec3 push = {0.0F, 0.0F, 0.0F};
+    for (int k = 0; k < num_planes; ++k) {
+      push = add(push, planes[k]);
+    }
+    const Vec3 candidate = add(p.origin, scale(push, 0.125F));
+    if (!world_overlap_hull(candidate, half)) {
+      p.origin = candidate;
     }
   }
 }
@@ -370,7 +391,7 @@ void pmove_run(SimState& s, const InputCommand& cmd) {
   Vec3 wish_vel =
       add(scale(forward, cmd.forward), scale(right, cmd.strafe));
   wish_vel.y = 0.0F;
-  const float max_speed = current_max_speed(s);
+  const float max_speed = current_max_speed(s, (cmd.buttons & ButtonWalk) != 0U);
   wish_vel = scale(wish_vel, max_speed);
   float wish_speed = length(wish_vel);
   Vec3 wish_dir = {0.0F, 0.0F, 0.0F};

@@ -96,19 +96,28 @@ void sim_add_box(float min_x, float min_y, float min_z, float max_x, float max_y
   cs::world_add_box({min_x, min_y, min_z}, {max_x, max_y, max_z}, material);
 }
 
-void sim_add_hull(const float* points, std::uint32_t point_count, std::uint32_t material) {
-  cs::world_add_hull(points, point_count, material);
-}
-
-int sim_add_mesh(const float* vertices, std::uint32_t vertex_count,
-                 const std::uint32_t* indices, std::uint32_t triangle_count,
-                 std::uint32_t material) {
-  return cs::world_add_mesh(vertices, vertex_count, indices, triangle_count, material)
-             ? 1
-             : 0;
+int sim_add_brush(const float* planes, std::uint32_t plane_count,
+                  std::uint32_t material) {
+  return cs::world_add_brush(planes, plane_count, material) ? 1 : 0;
 }
 
 void sim_world_finalize() { cs::world_finalize(); }
+
+int sim_trace_ray(float start_x, float start_y, float start_z, float end_x,
+                  float end_y, float end_z, float* out_hit) {
+  const cs::TraceResult trace =
+      cs::world_trace_ray({start_x, start_y, start_z}, {end_x, end_y, end_z});
+  if (out_hit != nullptr) {
+    out_hit[0] = trace.fraction;
+    out_hit[1] = trace.end.x;
+    out_hit[2] = trace.end.y;
+    out_hit[3] = trace.end.z;
+    out_hit[4] = trace.normal.x;
+    out_hit[5] = trace.normal.y;
+    out_hit[6] = trace.normal.z;
+  }
+  return trace.hit ? 1 : 0;
+}
 
 void sim_spawn(float x, float y, float z, float yaw) {
   cs::reset_player(g_state);

@@ -192,6 +192,77 @@ void test_shooting_hits_target() {
   CHECK(snap->last_shot.sequence > 0);
 }
 
+// A ~26.6-degree ramp brush rising 1u per 2u along -Z (the yaw-0 forward
+// direction), from z=-600 (y=0) to z=-1200 (y=300), spanning x -64..64.
+// Planes are (nx, ny, nz, d) with the interior at dot(n, x) <= d.
+void add_ramp_brush() {
+  // Surface satisfies 2y + z = -600, so the outward normal is (0, 2, 1).
+  const float inv = 1.0F / std::sqrt(5.0F);
+  const float planes[] = {
+      0.0F, 2.0F * inv, inv, -600.0F * inv, // slope face, through (*, 0, -600)
+      0.0F,  0.0F, 1.0F,  -600.0F,          // +Z cap
+      0.0F,  0.0F, -1.0F, 1200.0F,          // -Z cap
+      0.0F, -1.0F, 0.0F,  0.0F,             // bottom at y = 0
+      1.0F,  0.0F, 0.0F,  64.0F,            // +X
+      -1.0F, 0.0F, 0.0F,  64.0F,            // -X
+  };
+  CHECK(sim_add_brush(planes, 6, cs::MaterialConcrete) == 1);
+}
+
+void test_ramp_is_walkable() {
+  // Non-axis-aligned geometry had no coverage before the brush trace landed.
+  sim_world_reset();
+  sim_add_box(-1024.0F, -16.0F, -1400.0F, 1024.0F, 0.0F, 1024.0F, cs::MaterialConcrete);
+  add_ramp_brush();
+  sim_world_finalize();
+
+  sim_spawn(0.0F, cs::kHullHalfHeightStand + 2.0F, -560.0F, 0.0F);
+  run_ticks(100, 1.0F, 0.0F, 0); // yaw 0 is -Z, straight up the slope
+  const cs::SimSnapshot* snap = sim_snapshot();
+  // Climbed the slope rather than stalling at its foot.
+  CHECK(snap->origin.z < -750.0F);
+  CHECK(snap->origin.y > cs::kHullHalfHeightStand + 30.0F);
+  CHECK((snap->flags & cs::SnapOnGround) != 0U);
+  // Still moving, i.e. the slope did not wedge the hull.
+  CHECK(snap->speed_h > 50.0F);
+  // Riding the surface, not floating above it or sunk into it. A box hull on a
+  // slope contacts at its lower edge, so the centre sits higher than the
+  // surface directly beneath it: contact is where 2y + z equals the plane
+  // constant plus the hull's support along the (0, 2, 1) normal, 2*36 + 1*16.
+  const float support = 2.0F * cs::kHullHalfHeightStand + cs::kHullHalfWidth;
+  CHECK_NEAR(snap->origin.y, (support - 600.0F - snap->origin.z) * 0.5F, 0.5F);
+
+  build_test_world(); // restore the shared world for later tests
+}
+
+void test_brush_rejects_degenerate_input() {
+  sim_world_reset();
+  // Three planes cannot bound a solid.
+  const float open[] = {
+      1.0F, 0.0F, 0.0F, 10.0F, 0.0F, 1.0F, 0.0F, 10.0F, 0.0F, 0.0F, 1.0F, 10.0F,
+  };
+  CHECK(sim_add_brush(open, 3, cs::MaterialConcrete) == 0);
+  // Six planes that face outward with no common interior enclose nothing.
+  const float inverted[] = {
+      -1.0F, 0.0F, 0.0F, -10.0F, 1.0F, 0.0F,  0.0F, -10.0F,
+      0.0F, -1.0F, 0.0F, -10.0F, 0.0F, 1.0F,  0.0F, -10.0F,
+      0.0F, 0.0F, -1.0F, -10.0F, 0.0F, 0.0F,  1.0F, -10.0F,
+  };
+  CHECK(sim_add_brush(inverted, 6, cs::MaterialConcrete) == 0);
+  build_test_world();
+}
+
+void test_trace_ray_abi() {
+  build_test_world();
+  float hit[7] = {};
+  // Straight at the 40u wall that starts at x = 400.
+  CHECK(sim_trace_ray(0.0F, 20.0F, 0.0F, 800.0F, 20.0F, 0.0F, hit) == 1);
+  CHECK_NEAR(hit[1], 400.0F, 1.0F);   // impact x
+  CHECK_NEAR(hit[4], -1.0F, 0.01F);   // normal points back along -X
+  // Over the top of the wall: clean miss.
+  CHECK(sim_trace_ray(0.0F, 200.0F, 0.0F, 800.0F, 200.0F, 0.0F, hit) == 0);
+}
+
 void test_determinism() {
   auto scenario = [] {
     sim_create();
@@ -230,6 +301,9 @@ int main() {
   test_duck_lowers_hull_and_blocks_unduck();
   test_air_unduck_blocked_by_roof();
   test_unstick_resolves_embedded_hull();
+  test_ramp_is_walkable();
+  test_brush_rejects_degenerate_input();
+  test_trace_ray_abi();
   test_shooting_hits_target();
   test_determinism();
 

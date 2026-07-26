@@ -14,13 +14,13 @@ declare module "*/generated/sim.mjs" {
       maxX: number, maxY: number, maxZ: number,
       material: number,
     ): void;
-    _sim_add_hull(pointsPtr: number, pointCount: number, material: number): void;
-    _sim_add_mesh(
-      verticesPtr: number, vertexCount: number,
-      indicesPtr: number, triangleCount: number,
-      material: number,
-    ): number;
+    _sim_add_brush(planesPtr: number, planeCount: number, material: number): number;
     _sim_world_finalize(): void;
+    _sim_trace_ray(
+      startX: number, startY: number, startZ: number,
+      endX: number, endY: number, endZ: number,
+      outPtr: number,
+    ): number;
     _sim_spawn(x: number, y: number, z: number, yaw: number): void;
     _sim_add_target(
       x: number, y: number, z: number,
