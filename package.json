@@ -10,8 +10,9 @@
     "dev": "vite",
     "build": "npm run wasm && npm run typecheck && vite build",
     "preview": "vite preview",
-    "wasm": "emcmake cmake -B build/wasm -DCMAKE_BUILD_TYPE=Release -DBOX3D_DISABLE_SIMD=ON && cmake --build build/wasm -j",
+    "wasm": "emcmake cmake -B build/wasm -DCMAKE_BUILD_TYPE=Release && cmake --build build/wasm -j",
     "test": "cmake --preset native && cmake --build --preset native -j && ctest --preset native",
+    "mapcheck": "esbuild tools/mapcheck.ts --bundle --platform=node --format=esm --outfile=build/mapcheck.mjs --log-level=error && node build/mapcheck.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

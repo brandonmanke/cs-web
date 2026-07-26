@@ -6,7 +6,7 @@
 // Quake/GoldSrc-style player movement: friction + acceleration toward a wish
 // direction, air strafing via the 30 u/s wishspeed cap, slide-along-planes
 // collision with step-up. Structure follows the classic PM_* flow; collision
-// queries go through world_trace_hull (box3d underneath).
+// queries go through world_trace_hull (convex brushes underneath).
 
 namespace cs {
 namespace {
@@ -35,10 +35,12 @@ float stamina_ratio(float stamina) {
   return (100.0F - stamina * 0.001F * 19.0F) * 0.01F;
 }
 
-float current_max_speed(const SimState& s) {
+float current_max_speed(const SimState& s, bool walking = false) {
   float max_speed = weapon_def(s.weapon.selected).max_move_speed;
   if (s.player.ducked) {
     max_speed *= kDuckSpeedFactor;
+  } else if (walking) {
+    max_speed *= kWalkSpeedFactor;
   }
   return max_speed;
 }
@@ -115,8 +117,9 @@ void clamp_velocity(PlayerState& p) {
 }
 
 // PM_FlyMove/Q3 PM_SlideMove hybrid: move the hull, sliding along contact
-// planes. Overclip + duplicate-plane nudges keep it robust on irregular
-// trimeshes where near-parallel grazing hits repeat at fraction ~0.
+// planes. Overclip pushes velocity slightly off each plane, which on a sealed
+// brush world is enough to guarantee the next trace starts outside it and
+// cannot re-hit the same plane at fraction 0.
 void slide_move(PlayerState& p, float dt) {
   constexpr float kOverclip = 1.001F;
   Vec3 planes[kMaxClipPlanes];
@@ -143,20 +146,6 @@ void slide_move(PlayerState& p, float dt) {
       break; // moved the full distance
     }
     time_left -= time_left * trace.fraction;
-
-    // Same plane again (fraction-0 graze): nudge velocity off it instead of
-    // burning a plane slot — Q3's anti-stick trick.
-    bool duplicate = false;
-    for (int k = 0; k < num_planes; ++k) {
-      if (dot(trace.normal, planes[k]) > 0.99F) {
-        p.velocity = add(p.velocity, trace.normal);
-        duplicate = true;
-        break;
-      }
-    }
-    if (duplicate) {
-      continue;
-    }
 
     if (num_planes >= kMaxClipPlanes) {
       p.velocity = {0.0F, 0.0F, 0.0F};
@@ -402,7 +391,7 @@ void pmove_run(SimState& s, const InputCommand& cmd) {
   Vec3 wish_vel =
       add(scale(forward, cmd.forward), scale(right, cmd.strafe));
   wish_vel.y = 0.0F;
-  const float max_speed = current_max_speed(s);
+  const float max_speed = current_max_speed(s, (cmd.buttons & ButtonWalk) != 0U);
   wish_vel = scale(wish_vel, max_speed);
   float wish_speed = length(wish_vel);
   Vec3 wish_dir = {0.0F, 0.0F, 0.0F};

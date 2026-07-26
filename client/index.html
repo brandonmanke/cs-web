@@ -3,43 +3,95 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>cs-web</title>
+    <title>cs-web &mdash; foundry</title>
     <style>
       * { box-sizing: border-box; margin: 0; padding: 0; }
-      html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0c0a; }
-      body { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: #d6d2bc; }
+      html, body { width: 100%; height: 100%; overflow: hidden; background: #070908; }
+      body {
+        font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: #cfcab4;
+        letter-spacing: 0.04em;
+      }
       #app, canvas { width: 100%; height: 100%; display: block; }
       #hud { position: fixed; inset: 0; pointer-events: none; user-select: none; }
+
+      /* Four ticks around a centre dot; the gap grows with real spread. */
       #crosshair {
-        position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-        color: #7ce07c; font-size: 15px; text-shadow: 0 0 2px #000;
+        --gap: 4px;
+        position: absolute; left: 50%; top: 50%;
+        width: 0; height: 0;
       }
+      #crosshair i {
+        position: absolute; background: #86e39a; display: block;
+        box-shadow: 0 0 2px #000, 0 0 1px #000;
+      }
+      #crosshair .h { width: 9px; height: 2px; top: -1px; }
+      #crosshair .v { width: 2px; height: 9px; left: -1px; }
+      #crosshair .l { right: var(--gap); }
+      #crosshair .r { left: var(--gap); }
+      #crosshair .u { bottom: var(--gap); }
+      #crosshair .d { top: var(--gap); }
+      #crosshair .dot {
+        width: 2px; height: 2px; left: -1px; top: -1px; background: #86e39a;
+      }
+
       #hitmarker {
         position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-        color: #ff5a4a; font-size: 22px; opacity: 0; text-shadow: 0 0 2px #000;
+        color: #ff5a4a; font-size: 24px; opacity: 0;
+        text-shadow: 0 0 3px #000; transition: opacity 60ms linear;
       }
       #hitmarker.show { opacity: 1; }
-      #ammo { position: absolute; right: 24px; bottom: 18px; font-size: 22px; color: #e8e2c8; text-shadow: 0 0 3px #000; }
-      #speed { position: absolute; left: 24px; bottom: 18px; color: #9ab89a; text-shadow: 0 0 3px #000; }
-      #score { position: absolute; right: 24px; top: 16px; color: #c8b87c; text-align: right; text-shadow: 0 0 3px #000; }
+
+      #ammo {
+        position: absolute; right: 26px; bottom: 20px;
+        font-size: 20px; color: #d8d2b4; text-shadow: 0 0 4px #000;
+      }
+      #ammo .mag { font-size: 30px; color: #f0e8c4; }
+      #ammo .dim { color: #9a8f6a; font-size: 18px; }
+
+      #speed {
+        position: absolute; left: 26px; bottom: 20px;
+        font-size: 18px; color: #8fb496; text-shadow: 0 0 4px #000;
+      }
+      #coords {
+        position: absolute; left: 26px; bottom: 46px;
+        font-size: 11px; color: #6d7a6d; text-shadow: 0 0 3px #000;
+      }
+      #score {
+        position: absolute; right: 26px; top: 18px;
+        color: #c3b177; text-align: right; text-shadow: 0 0 4px #000;
+      }
       #status {
-        position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%);
-        color: #f0a44c; font-size: 15px; letter-spacing: 1px; text-align: center;
+        position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%);
+        color: #e8933c; font-size: 14px; letter-spacing: 2px; text-align: center;
+        text-shadow: 0 0 6px #000;
       }
       #status.hidden { display: none; }
-      #help { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); opacity: 0.6; }
+      #help {
+        position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+        opacity: 0.5; font-size: 11px; white-space: nowrap;
+      }
+      #help b { color: #d8d2b4; font-weight: normal; }
     </style>
   </head>
   <body>
     <div id="app"></div>
     <div id="hud">
-      <div id="crosshair">+</div>
+      <div id="crosshair">
+        <i class="dot"></i>
+        <i class="h l"></i><i class="h r"></i><i class="v u"></i><i class="v d"></i>
+      </div>
       <div id="hitmarker">&times;</div>
       <div id="ammo">--/--</div>
       <div id="speed">0 u/s</div>
+      <div id="coords"></div>
       <div id="score"></div>
       <div id="status">LOADING</div>
-      <div id="help">CLICK TO PLAY &mdash; WASD &middot; SPACE &middot; CTRL &middot; R &middot; 1-7 &middot; ?map=dust2</div>
+      <div id="help">
+        CLICK TO PLAY &mdash; <b>WASD</b> move &middot; <b>SPACE</b>/<b>WHEEL</b> jump &middot;
+        <b>SHIFT</b> walk &middot; <b>CTRL</b> duck &middot; <b>R</b> reload &middot;
+        <b>1-7</b> weapons &middot; <b>Q</b> last &middot; <b>?map=practice</b>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

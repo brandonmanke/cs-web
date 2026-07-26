@@ -35,6 +35,7 @@ inline constexpr float kHullHalfHeightDuck = 18.0F;  // 36u tall
 inline constexpr float kEyeAboveCenterStand = 28.0F;
 inline constexpr float kEyeAboveCenterDuck = 12.0F;
 inline constexpr float kDuckSpeedFactor = 0.333F;
+inline constexpr float kWalkSpeedFactor = 0.52F;
 inline constexpr float kGroundNormalMinY = 0.7F;
 inline constexpr float kMaxVelocityPerAxis = 2000.0F;
 inline constexpr float kShotRange = 8192.0F;
@@ -53,6 +54,7 @@ enum Button : std::uint32_t {
   ButtonDuck = 1U << 1U,
   ButtonFire = 1U << 2U,
   ButtonReload = 1U << 3U,
+  ButtonWalk = 1U << 4U, // +speed: quiet, slow, accurate
 };
 
 enum SnapshotFlag : std::uint32_t {
@@ -178,13 +180,14 @@ void sim_create();
 void sim_world_reset();
 void sim_add_box(float min_x, float min_y, float min_z, float max_x, float max_y,
                  float max_z, std::uint32_t material);
-// points: xyz triples forming a convex point cloud
-void sim_add_hull(const float* points, std::uint32_t point_count, std::uint32_t material);
-// vertices: xyz triples, indices: 3 per triangle. Returns 0 on failure.
-int sim_add_mesh(const float* vertices, std::uint32_t vertex_count,
-                 const std::uint32_t* indices, std::uint32_t triangle_count,
-                 std::uint32_t material);
+// planes: (nx, ny, nz, d) quads; interior is dot(n, x) <= d. Returns 0 on failure.
+int sim_add_brush(const float* planes, std::uint32_t plane_count,
+                  std::uint32_t material);
 void sim_world_finalize();
+// World ray cast. out_hit receives [fraction, end xyz, normal xyz]; returns 0 on
+// miss. Used by the client's map light bake so lighting matches collision.
+int sim_trace_ray(float start_x, float start_y, float start_z, float end_x,
+                  float end_y, float end_z, float* out_hit);
 void sim_spawn(float x, float y, float z, float yaw);
 void sim_add_target(float x, float y, float z, float patrol_min_x, float patrol_max_x,
                     float speed);
