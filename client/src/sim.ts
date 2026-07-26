@@ -5,6 +5,9 @@ import createSimModule, { type SimModule } from "./generated/sim.mjs";
 const MAX_TARGETS = 8; // cs::kMaxTargets
 const API_VERSION = 1; // cs::kSimApiVersion
 
+/** cs::kTickSeconds. Anything converting snapshot deltas to rates needs this. */
+export const TICK_SECONDS = 1 / 64;
+
 export const WORDS = {
   apiVersion: 0,
   tick: 1,
@@ -96,12 +99,27 @@ export class Snapshot {
     x: 0, y: 0, z: 0, health: 0, alive: false, flash: 0,
   }));
 
+  /**
+   * Copies the fields the renderer interpolates between ticks. Anything drawn
+   * at a position that changes per tick belongs here — omit it and that object
+   * snaps at 64 Hz while the camera runs smooth, which reads as shimmer.
+   */
   copyFrom(other: Snapshot): void {
     this.tick = other.tick;
     this.origin[0] = other.origin[0];
     this.origin[1] = other.origin[1];
     this.origin[2] = other.origin[2];
     this.eyeHeight = other.eyeHeight;
+    this.targetCount = other.targetCount;
+    for (let i = 0; i < MAX_TARGETS; ++i) {
+      const from = other.targets[i]!;
+      const to = this.targets[i]!;
+      to.x = from.x;
+      to.y = from.y;
+      to.z = from.z;
+      to.alive = from.alive;
+      to.flash = from.flash;
+    }
   }
 }
 

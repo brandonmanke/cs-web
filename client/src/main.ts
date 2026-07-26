@@ -7,10 +7,9 @@ import type { MapDef } from "./map/mapdef";
 import { FOUNDRY } from "./map/maps/foundry";
 import { PRACTICE } from "./map/maps/practice";
 import { Renderer } from "./renderer";
-import { Flags, ShotResult, Sim, Snapshot } from "./sim";
+import { Flags, ShotResult, Sim, Snapshot, TICK_SECONDS } from "./sim";
 import { Viewmodel } from "./viewmodel";
 
-const TICK_SECONDS = 1 / 64;
 const MAX_FRAME_SECONDS = 0.25;
 
 const scratch = new THREE.Vector3();
@@ -113,7 +112,7 @@ async function boot(): Promise<void> {
 
     const alpha = accumulator / TICK_SECONDS;
     input.takeViewDelta();
-    renderer.updateTargets(curr, dt);
+    renderer.updateTargets(prev, curr, alpha, dt);
     renderer.updateEffects(dt);
     viewmodel.setWeapon(curr.weapon);
     viewmodel.update(dt, {

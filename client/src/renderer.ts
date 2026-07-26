@@ -3,7 +3,7 @@ import { Character } from "./art/character";
 import { canvasTexture } from "./art/textures";
 import { buildMapGeometry, sampleLight, type ShadowProbe } from "./map/build";
 import type { MapDef } from "./map/mapdef";
-import type { Snapshot } from "./sim";
+import { TICK_SECONDS, type Snapshot } from "./sim";
 
 // Rendering only. The world is drawn with baked vertex lighting (MeshBasic), so
 // the map costs nothing at runtime and looks like the era it is aiming at;
@@ -125,31 +125,36 @@ export class Renderer {
     }
   }
 
-  updateTargets(snapshot: Snapshot, dt: number): void {
-    for (let i = 0; i < this.characters.length && i < snapshot.targetCount; ++i) {
+  updateTargets(prev: Snapshot, curr: Snapshot, alpha: number, dt: number): void {
+    for (let i = 0; i < this.characters.length && i < curr.targetCount; ++i) {
       const character = this.characters[i]!;
-      const view = snapshot.targets[i]!;
+      const from = prev.targets[i]!;
+      const view = curr.targets[i]!;
       character.visible = true;
-      character.root.position.set(view.x, view.y, view.z);
+
+      // Interpolate between the last two ticks, exactly like the camera. The
+      // sim never teleports a target (patrols reverse in place, respawns keep
+      // the origin), so a straight lerp is always safe.
+      const x = from.x + (view.x - from.x) * alpha;
+      const y = from.y + (view.y - from.y) * alpha;
+      const z = from.z + (view.z - from.z) * alpha;
+      character.root.position.set(x, y, z);
+
+      // Gait speed comes from the per-tick delta, not the per-frame one: at any
+      // refresh rate above 64 Hz most frames advance no tick, so a frame delta
+      // alternates between zero and a full step and the walk cycle strobes.
+      const speed = Math.hypot(view.x - from.x, view.z - from.z) / TICK_SECONDS;
 
       // Patrol targets slide along X; face the way they are going.
-      const previous = character.root.userData.lastX as number | undefined;
-      const dx = previous === undefined ? 0 : view.x - previous;
-      character.root.userData.lastX = view.x;
-      const yaw = Math.abs(dx) > 0.01
+      const dx = view.x - from.x;
+      const yaw = Math.abs(dx) > 1e-4
         ? (dx > 0 ? -Math.PI / 2 : Math.PI / 2)
         : (character.root.userData.yaw as number | undefined) ?? 0;
       character.root.userData.yaw = yaw;
 
-      character.update(dt, {
-        speed: Math.abs(dx) / Math.max(dt, 1e-4),
-        onGround: true,
-        yaw,
-        pitch: 0,
-        alive: view.alive,
-      });
+      character.update(dt, { speed, onGround: true, yaw, pitch: 0, alive: view.alive });
 
-      const tint = sampleLight([view.x, view.y + 40, view.z], this.mapLights, this.mapAmbient);
+      const tint = sampleLight([x, y + 40, z], this.mapLights, this.mapAmbient);
       // Hit flash overrides the bake for a few ticks.
       if (view.flash > 0) character.setTint(1.5, 0.5, 0.4);
       else character.setTint(tint[0], tint[1], tint[2]);
