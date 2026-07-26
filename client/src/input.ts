@@ -4,6 +4,9 @@ const PITCH_LIMIT = (89 * Math.PI) / 180;
 const DEFAULT_SENSITIVITY = 0.0022; // radians per pixel
 /** A single pointer-lock event this large is a browser glitch, not a flick. */
 const MAX_MOUSE_DELTA = 400;
+/** Long enough to outlast the post-Escape re-lock cooldown (~1s in Chrome). */
+const LOCK_RETRY_WINDOW = 1800;
+const LOCK_RETRY_INTERVAL = 150;
 
 // 1-7 -> cs::WeaponId
 const WEAPON_KEYS: Record<string, number> = {
@@ -33,6 +36,7 @@ export class Input {
   private currentWeapon = 0;
   /** Scroll ticks queued as jumps — the 1.6 bhop binding. */
   private scrollJumps = 0;
+  private lockRetry: number | null = null;
   private accumYaw = 0;
   private accumPitch = 0;
 
@@ -42,22 +46,47 @@ export class Input {
   constructor(private readonly el: HTMLElement) {}
 
   /**
-   * Browsers reject a lock request for about a second after Escape released it,
-   * and older ones return void instead of a promise. Swallow both so a rejected
-   * re-lock can't surface as an unhandled rejection — the caller just tries
-   * again.
+   * Ask for pointer lock, retrying until the browser accepts.
+   *
+   * Browsers refuse a re-lock for roughly a second after Escape released it, so
+   * a single request right after opening the menu is usually rejected and the
+   * click appears to do nothing. Retrying until `LOCK_RETRY_WINDOW` covers that
+   * cooldown. Some browsers return void rather than a promise, so success is
+   * detected via `locked` (set by pointerlockchange) rather than the result.
    */
-  requestLock(): void {
+  requestLock(onGaveUp?: () => void): void {
     if (this.locked) return;
-    const result: unknown = this.el.requestPointerLock();
-    if (result instanceof Promise) result.catch(() => {});
+    this.clearLockRetry();
+    const deadline = performance.now() + LOCK_RETRY_WINDOW;
+
+    const attempt = (): void => {
+      this.lockRetry = null;
+      if (this.locked) return;
+      if (performance.now() > deadline) {
+        onGaveUp?.();
+        return;
+      }
+      const result: unknown = this.el.requestPointerLock();
+      if (result instanceof Promise) result.catch(() => {});
+      this.lockRetry = window.setTimeout(attempt, LOCK_RETRY_INTERVAL);
+    };
+    attempt();
+  }
+
+  private clearLockRetry(): void {
+    if (this.lockRetry !== null) {
+      clearTimeout(this.lockRetry);
+      this.lockRetry = null;
+    }
   }
 
   attach(): void {
     this.el.addEventListener("click", () => this.requestLock());
     document.addEventListener("pointerlockchange", () => {
       this.locked = document.pointerLockElement === this.el;
-      if (!this.locked) {
+      if (this.locked) {
+        this.clearLockRetry();
+      } else {
         this.keys.clear();
         this.fire = false;
         this.scrollJumps = 0;

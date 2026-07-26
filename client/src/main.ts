@@ -36,8 +36,11 @@ async function boot(): Promise<void> {
   input.attach();
   const audio = new GameAudio();
   const viewmodel = new Viewmodel(renderer.camera);
-  const menu = new Menu(audio, () => input.requestLock());
-  input.onLockChange = (locked) => menu.setVisible(!locked);
+  const menu = new Menu(audio, (onGaveUp) => input.requestLock(onGaveUp));
+  input.onLockChange = (locked) => {
+    if (locked) menu.markStarted();
+    menu.setVisible(!locked);
+  };
 
   const map = chooseMap();
   menu.setMap(map.name);

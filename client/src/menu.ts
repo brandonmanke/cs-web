@@ -40,7 +40,10 @@ export class Menu {
 
   private started = false;
 
-  constructor(private readonly audio: GameAudio, onResume: () => void) {
+  constructor(
+    private readonly audio: GameAudio,
+    private readonly requestLock: (onGaveUp: () => void) => void,
+  ) {
     const volume = loadVolume();
     this.audio.setVolume(volume);
     this.slider.value = String(Math.round(volume * 100));
@@ -56,11 +59,22 @@ export class Menu {
       this.slider.addEventListener(event, () => saveVolume(this.audio.getVolume()));
     }
 
-    this.resume.addEventListener("click", onResume);
-    // Clicking the backdrop resumes too, but not clicks inside the panel.
+    this.resume.addEventListener("click", () => this.dismiss());
+    // Anywhere outside the panel dismisses; clicks inside it do not.
     this.root.addEventListener("click", (e) => {
-      if (e.target === this.root) onResume();
+      if (e.target === this.root) this.dismiss();
     });
+  }
+
+  /**
+   * Hide first, then chase the lock. The browser's post-Escape cooldown means
+   * the request often can't succeed for up to a second, and waiting for
+   * pointerlockchange to hide the menu makes that latency look like a dead
+   * click. If the lock never lands, the menu comes back.
+   */
+  private dismiss(): void {
+    this.setVisible(false);
+    this.requestLock(() => this.setVisible(true));
   }
 
   private renderVolume(value: number): void {
@@ -73,14 +87,21 @@ export class Menu {
   }
 
   setVisible(visible: boolean): void {
-    this.root.classList.toggle("hidden", !visible);
     if (visible) {
       this.resume.textContent = this.started ? "RESUME" : "PLAY";
       this.hint.textContent = this.started
         ? "ESC returns here"
         : "click anywhere to lock the mouse";
-    } else {
-      this.started = true;
     }
+    this.root.classList.toggle("hidden", !visible);
+  }
+
+  /**
+   * Called once the mouse is actually locked. Hiding the menu optimistically is
+   * not the same as having started — if the lock is refused and the menu comes
+   * back, it should still say PLAY.
+   */
+  markStarted(): void {
+    this.started = true;
   }
 }
