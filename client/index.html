@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>cs-web &mdash; foundry</title>
+    <title>cs-web</title>
     <style>
       * { box-sizing: border-box; margin: 0; padding: 0; }
       html, body { width: 100%; height: 100%; overflow: hidden; background: #070908; }
@@ -67,11 +67,60 @@
         text-shadow: 0 0 6px #000;
       }
       #status.hidden { display: none; }
-      #help {
-        position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
-        opacity: 0.5; font-size: 11px; white-space: nowrap;
+      /* --- menu ------------------------------------------------------- */
+      #menu {
+        position: fixed; inset: 0; z-index: 10;
+        display: flex; align-items: center; justify-content: center;
+        background: rgba(6, 8, 7, 0.72);
+        backdrop-filter: blur(2px);
       }
-      #help b { color: #d8d2b4; font-weight: normal; }
+      #menu.hidden { display: none; }
+      #menu-panel {
+        min-width: 340px; padding: 26px 30px 22px;
+        background: #12140f;
+        border: 1px solid #3b4034;
+        box-shadow: 0 0 0 1px #0a0c08, 0 18px 50px rgba(0, 0, 0, 0.65);
+      }
+      #menu h1 {
+        font-size: 22px; font-weight: normal; letter-spacing: 5px;
+        color: #e8e2c8; margin-bottom: 2px;
+      }
+      #menu .sub {
+        font-size: 11px; letter-spacing: 3px; color: #7d8a72; margin-bottom: 22px;
+      }
+      #menu-resume {
+        display: block; width: 100%; padding: 11px 0; margin-bottom: 20px;
+        font: inherit; font-size: 15px; letter-spacing: 3px;
+        color: #0d100b; background: #86e39a; border: 0; cursor: pointer;
+      }
+      #menu-resume:hover { background: #a2f0b2; }
+      #menu-resume:active { background: #6fce85; }
+
+      #menu .row {
+        display: flex; align-items: center; gap: 12px; margin-bottom: 20px;
+      }
+      #menu .row label {
+        font-size: 11px; letter-spacing: 2px; color: #9aa38c; min-width: 62px;
+      }
+      #menu-volume { flex: 1; accent-color: #86e39a; cursor: pointer; }
+      #menu-volume-value {
+        min-width: 38px; text-align: right; font-size: 12px; color: #d8d2b4;
+      }
+
+      #menu .divider {
+        font-size: 10px; letter-spacing: 3px; color: #5c6553;
+        border-top: 1px solid #2b3026; padding-top: 12px; margin-bottom: 10px;
+      }
+      #menu dl {
+        display: grid; grid-template-columns: auto 1fr; gap: 5px 16px;
+        font-size: 11px;
+      }
+      #menu dt { color: #d8d2b4; white-space: nowrap; }
+      #menu dd { color: #808a76; }
+      #menu-hint {
+        margin-top: 16px; font-size: 10px; letter-spacing: 1px;
+        color: #5c6553; text-align: center;
+      }
     </style>
   </head>
   <body>
@@ -87,12 +136,36 @@
       <div id="coords"></div>
       <div id="score"></div>
       <div id="status">LOADING</div>
-      <div id="help">
-        CLICK TO PLAY &mdash; <b>WASD</b> move &middot; <b>SPACE</b>/<b>WHEEL</b> jump &middot;
-        <b>SHIFT</b> walk &middot; <b>CTRL</b> duck &middot; <b>R</b> reload &middot;
-        <b>1-7</b> weapons &middot; <b>Q</b> last &middot; <b>?map=practice</b>
+    </div>
+
+    <div id="menu" class="hidden">
+      <div id="menu-panel">
+        <h1>CS-WEB</h1>
+        <div class="sub" id="menu-map">&nbsp;</div>
+
+        <button id="menu-resume" type="button">PLAY</button>
+
+        <div class="row">
+          <label for="menu-volume">VOLUME</label>
+          <input id="menu-volume" type="range" min="0" max="100" value="50" />
+          <span id="menu-volume-value">50%</span>
+        </div>
+
+        <div class="divider">CONTROLS</div>
+        <dl>
+          <dt>WASD</dt><dd>move</dd>
+          <dt>SPACE / WHEEL</dt><dd>jump</dd>
+          <dt>SHIFT</dt><dd>walk</dd>
+          <dt>CTRL / C</dt><dd>duck</dd>
+          <dt>MOUSE1</dt><dd>fire</dd>
+          <dt>R</dt><dd>reload</dd>
+          <dt>1&ndash;7 / Q</dt><dd>weapons</dd>
+        </dl>
+
+        <div id="menu-hint">click anywhere to lock the mouse</div>
       </div>
     </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

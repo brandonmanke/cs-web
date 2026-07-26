@@ -6,6 +6,7 @@ import { brushPlaneArray } from "./map/brush";
 import type { MapDef } from "./map/mapdef";
 import { FOUNDRY } from "./map/maps/foundry";
 import { PRACTICE } from "./map/maps/practice";
+import { Menu } from "./menu";
 import { Renderer } from "./renderer";
 import { Flags, ShotResult, Sim, Snapshot, TICK_SECONDS } from "./sim";
 import { Viewmodel } from "./viewmodel";
@@ -35,8 +36,11 @@ async function boot(): Promise<void> {
   input.attach();
   const audio = new GameAudio();
   const viewmodel = new Viewmodel(renderer.camera);
+  const menu = new Menu(audio, () => input.requestLock());
+  input.onLockChange = (locked) => menu.setVisible(!locked);
 
   const map = chooseMap();
+  menu.setMap(map.name);
 
   // Collision first: the light bake ray-casts against this exact geometry, so
   // the world has to be finalized before anything is lit.
@@ -81,6 +85,7 @@ async function boot(): Promise<void> {
   sim.spawn(spawn[0], spawn[1], spawn[2], spawnYaw);
   input.setYaw(spawnYaw);
   hud.setStatus(null);
+  menu.setVisible(true); // the world is ready; this is the start screen
 
   const prev = new Snapshot();
   const curr = new Snapshot();

@@ -35,15 +35,18 @@ const IMPACTS: Record<number, { freq: number; type: OscillatorType; gain: number
   3: { freq: 180, type: "sine", gain: 0.08, decay: 0.04 },     // sand: thud
 };
 
+export const DEFAULT_VOLUME = 0.5;
+
 export class GameAudio {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
+  private volume = DEFAULT_VOLUME;
 
   private ensure(): AudioContext {
     if (!this.ctx) {
       this.ctx = new AudioContext();
       this.master = this.ctx.createGain();
-      this.master.gain.value = 0.9;
+      this.master.gain.value = this.volume;
       this.master.connect(this.ctx.destination);
     }
     if (this.ctx.state === "suspended") void this.ctx.resume();
@@ -55,9 +58,17 @@ export class GameAudio {
     return this.master!;
   }
 
+  /**
+   * Volume is stored even before the AudioContext exists: the context can only
+   * be created after a user gesture, but the menu slider can move before that.
+   */
   setVolume(value: number): void {
-    this.ensure();
-    this.master!.gain.value = Math.max(0, Math.min(1, value));
+    this.volume = Math.max(0, Math.min(1, value));
+    if (this.master) this.master.gain.value = this.volume;
+  }
+
+  getVolume(): number {
+    return this.volume;
   }
 
   shot(weapon: number): void {

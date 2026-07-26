@@ -36,12 +36,25 @@ export class Input {
   private accumYaw = 0;
   private accumPitch = 0;
 
+  /** Notified whenever pointer lock is gained or lost. */
+  onLockChange: ((locked: boolean) => void) | null = null;
+
   constructor(private readonly el: HTMLElement) {}
 
+  /**
+   * Browsers reject a lock request for about a second after Escape released it,
+   * and older ones return void instead of a promise. Swallow both so a rejected
+   * re-lock can't surface as an unhandled rejection — the caller just tries
+   * again.
+   */
+  requestLock(): void {
+    if (this.locked) return;
+    const result: unknown = this.el.requestPointerLock();
+    if (result instanceof Promise) result.catch(() => {});
+  }
+
   attach(): void {
-    this.el.addEventListener("click", () => {
-      if (!this.locked) void this.el.requestPointerLock();
-    });
+    this.el.addEventListener("click", () => this.requestLock());
     document.addEventListener("pointerlockchange", () => {
       this.locked = document.pointerLockElement === this.el;
       if (!this.locked) {
@@ -49,6 +62,7 @@ export class Input {
         this.fire = false;
         this.scrollJumps = 0;
       }
+      this.onLockChange?.(this.locked);
     });
     document.addEventListener("mousemove", (e) => {
       if (!this.locked) return;
