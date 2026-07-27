@@ -12,18 +12,24 @@ import { DeathCam } from "./deathcam";
 import { loadSetting, Menu, Settings, type Roster } from "./menu";
 import { Renderer } from "./renderer";
 import {
-  EventKind, Flags, MAX_PLAYERS, Mode, ShotResult, Sim, Snapshot, Team,
+  EventKind, Flags, MAX_PLAYERS, Mode, ShotResult, Sim, Snapshot, StepKind, Team,
   TICK_SECONDS, type EventView,
 } from "./sim";
 import { Viewmodel } from "./viewmodel";
 
 const MAX_FRAME_SECONDS = 0.25;
-/** Beyond this a gunshot is inaudible; inside it, volume falls off linearly. */
-const AUDIO_RANGE = 2600;
+/**
+ * Past this we don't even build the audio node. Falloff itself is the panner's
+ * job; this is only a cull so a firefight across the map doesn't allocate.
+ */
+const AUDIO_CULL_RANGE = 5000;
 const DEFAULT_BOT_SKILL = 1;
 const MAX_BOTS = MAX_PLAYERS - 1;
 
 const scratch = new THREE.Vector3();
+const listenerPos = new THREE.Vector3();
+const listenerFwd = new THREE.Vector3();
+const listenerUp = new THREE.Vector3();
 
 const MAPS: Record<string, MapDef> = {
   foundry: FOUNDRY,
@@ -212,16 +218,20 @@ async function boot(): Promise<void> {
       prev, curr, alpha,
       death?.yaw ?? input.yaw, death?.pitch ?? input.pitch, death?.eyeHeight,
     );
+    // Ears follow the camera, after it has been placed for this frame.
+    renderer.camera.getWorldPosition(listenerPos);
+    renderer.camera.getWorldDirection(listenerFwd);
+    listenerUp.set(0, 1, 0).applyQuaternion(renderer.camera.quaternion);
+    audio.setListener(listenerPos.toArray(), listenerFwd.toArray(), listenerUp.toArray());
     requestAnimationFrame(frame);
   }
 
-  /** 1 at the muzzle, 0 past AUDIO_RANGE. */
-  function attenuation(at: readonly number[]): number {
-    const distance = Math.hypot(
+  /** True if a sound at this point is close enough to be worth building. */
+  function audible(at: readonly number[]): boolean {
+    return Math.hypot(
       at[0]! - curr.origin[0], at[1]! - curr.origin[1] - curr.eyeHeight,
       at[2]! - curr.origin[2],
-    );
-    return Math.max(0, 1 - distance / AUDIO_RANGE);
+    ) < AUDIO_CULL_RANGE;
   }
 
   function handleEvent(event: EventView): void {
@@ -231,6 +241,15 @@ async function boot(): Promise<void> {
       if (event.victim === curr.localIndex) deathCam.onKilled(event.actor, curr.localIndex);
       return;
     }
+    if (event.kind === EventKind.step) {
+      // Your own footfalls play flat: a panner at the listener's own position
+      // has no direction to give and the HRTF filtering just muddies them.
+      const own = event.actor === curr.localIndex;
+      if (!own && !audible(event.start)) return;
+      audio.step(event.material, own ? undefined : event.start,
+                 event.result === StepKind.land);
+      return;
+    }
     if (event.kind !== EventKind.shot) return;
 
     const local = event.actor === curr.localIndex;
@@ -238,10 +257,9 @@ async function boot(): Promise<void> {
       if (local) audio.dry();
       return;
     }
+    if (!local && !audible(event.start)) return;
 
-    const gain = local ? 1 : attenuation(event.start);
-    if (gain <= 0) return;
-    audio.shot(event.weapon, gain);
+    audio.shot(event.weapon, local ? undefined : event.start);
 
     if (local) {
       viewmodel.onShot();
@@ -273,7 +291,7 @@ async function boot(): Promise<void> {
         to[0] + dx * overshoot, to[1] + dy * overshoot, to[2] + dz * overshoot,
       ]);
       if (hit) renderer.spawnImpact(hit.point, hit.normal);
-      audio.impact(event.material, gain);
+      audio.impact(event.material, event.end);
     } else if (local && event.result === ShotResult.hit) {
       audio.hit();
     } else if (event.victim === curr.localIndex) {

@@ -9,7 +9,7 @@
 
 namespace cs {
 
-inline constexpr std::uint32_t kSimApiVersion = 2;
+inline constexpr std::uint32_t kSimApiVersion = 3;
 
 // --- fixed tick ---
 inline constexpr float kTickRate = 64.0F;
@@ -55,6 +55,20 @@ inline constexpr float kBaseFov = 90.0F;
 inline constexpr float kZoomSpeedFactor = 0.52F;
 inline constexpr float kUnscopedSpreadScale = 7.0F;
 
+// --- footsteps ---
+// Distance between footfalls. Accumulating distance rather than time means a
+// ducked player steps as rarely as they move, for free.
+inline constexpr float kStrideDistance = 82.0F;
+/** Below this you are shuffling, not walking, and make no noise. */
+inline constexpr float kStepMinSpeed = 55.0F;
+/**
+ * Impact speed above which a touchdown is a heavy landing rather than an
+ * ordinary one. Set clear of kJumpImpulse (268) on purpose: a hop is not a
+ * fall. *Every* touchdown makes some noise though — a silent bhop would be a
+ * stealth exploit, and +speed is supposed to be the only way to move quietly.
+ */
+inline constexpr float kLandingSpeed = 300.0F;
+
 // --- match ---
 inline constexpr float kPlayerHealth = 100.0F;
 inline constexpr std::uint32_t kRespawnTicks = 128; // 2 s
@@ -62,7 +76,9 @@ inline constexpr std::uint32_t kHitFlashTicks = 8;
 
 inline constexpr std::uint32_t kMaxPlayers = 10;
 inline constexpr std::uint32_t kMaxSpawns = 24;
-inline constexpr std::uint32_t kMaxEvents = 8;
+// Shots plus footfalls, so a full roster running and firing at once still fits
+// with room to spare; overflow only ever costs a tracer or a footstep.
+inline constexpr std::uint32_t kMaxEvents = 12;
 inline constexpr std::uint32_t kWeaponCount = 8;
 inline constexpr std::uint32_t kLocalPlayer = 0;
 
@@ -138,6 +154,13 @@ enum EventKind : std::uint32_t {
   EventNone = 0,
   EventShot = 1,  // a bullet was fired; start/end/result describe where it went
   EventDeath = 2, // victim died at actor's hands
+  EventStep = 3,  // a foot hit the ground; start = feet, material = surface,
+                  // result = StepKind
+};
+
+enum StepKind : std::uint32_t {
+  StepWalk = 0, // a footfall mid-stride
+  StepLand = 1, // touching down out of a jump or a fall
 };
 
 struct InputCommand {

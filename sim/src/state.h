@@ -14,10 +14,16 @@ struct PlayerState {
   float pitch;
   float stamina;     // GoldSrc fuser2-style jump fatigue, counts down to 0
   float view_offset; // eye height above origin, lerps between duck/stand
+  float step_distance; // ground distance travelled since the last footfall
   std::uint32_t jump_buffer_ticks; // an early jump tap, waiting for the ground
+  std::uint32_t ground_material;   // Material under the feet, from the last trace
   bool on_ground;
   bool ducked;
   bool jump_held;
+  /** Impact speed of a touchdown this tick, 0 if there wasn't one. */
+  float land_speed;
+  /** A footfall happened this tick. Both are consumed by sim.cpp as events. */
+  bool stepped;
 };
 
 struct WeaponState {

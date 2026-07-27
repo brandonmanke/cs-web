@@ -65,6 +65,17 @@ client (TS + Three.js + Vite)          sim core (C++20 -> WASM via Emscripten)
 | step height | 18u | step_slide_move up/down compare |
 | ground slope | normal.y ≥ 0.7 | |
 | scoped speed | ×0.52 | on top of the per-weapon cap |
+| stride | 82u of ground covered | footfall interval, distance not time |
+
+**Footsteps are a movement rule, not an audio feature.** The sim emits an
+`EventStep` every `kStrideDistance` of ground covered, carrying the surface
+material under the feet and the position to play it at. Holding +speed makes no
+sound at all — that trade (mobility for not announcing yourself) is only real if
+the sim is what decides you were quiet. Measuring by distance rather than by a
+timer means a ducked player steps as rarely as they move, for free. Every
+touchdown is audible regardless of +speed, so a silent bhop is not a thing;
+landings above `kLandingSpeed` (set clear of the jump impulse, so a hop is not a
+fall) report as heavier ones.
 
 **Two deliberate deviations from 1.6, both to make bhop learnable:**
 
@@ -174,8 +185,13 @@ No binary assets. Nothing to license, nothing to download, everything diffs.
   Skins are cached per team, so a roster rebuild is cheap.
 - **Weapons** (`client/src/art/weapons.ts`): per-weapon box assemblies with
   distinct silhouettes, plus muzzle offsets for flashes and tracers.
-- **Audio** (`client/src/audio.ts`): Web Audio synthesis, per-weapon voices and
-  per-material impacts.
+- **Audio** (`client/src/audio.ts`): Web Audio synthesis — per-weapon voices,
+  per-material impacts and footsteps, no samples. Anything happening at a place
+  in the world goes through an HRTF `PannerNode`; only the gun in your own hands
+  and your own footfalls play flat, because a panner at the listener's position
+  has no direction to give. Direction is not decoration in a shooter: footsteps
+  behind you are the game telling you to turn around, and a mono mixdown throws
+  that away. One shared noise buffer feeds every burst.
 
 ## 6. Repo layout
 
@@ -229,9 +245,9 @@ Next, in order:
 - **M-modes+** — round loop, buy menu, defuse.
 - **M-content** — more maps; a TrenchBroom `.map` importer feeding
   `sim_add_brush` if hand-authoring in TS gets tiring; armour and wallbangs.
-- **M-polish** — footstep audio per material, reload/draw viewmodel anims,
-  spatialized sound (remote shots are distance-attenuated only today), perf
-  pass (instancing, draw batching).
+- **M-polish** — reload/draw viewmodel anims, a TAB scoreboard, occlusion on
+  spatialized sound (a shot through two walls is currently only quieter, not
+  muffled), perf pass (instancing, draw batching).
 
 ## 8. Rules that don't change
 

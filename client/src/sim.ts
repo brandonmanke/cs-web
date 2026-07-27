@@ -3,8 +3,8 @@ import createSimModule, { type SimModule } from "./generated/sim.mjs";
 // Mirrors cs::SimSnapshot in sim/include/cs/sim.h: 4-byte fields only, so the
 // layout is a flat array of 32-bit words.
 export const MAX_PLAYERS = 10; // cs::kMaxPlayers
-const MAX_EVENTS = 8; // cs::kMaxEvents
-const API_VERSION = 2; // cs::kSimApiVersion
+const MAX_EVENTS = 12; // cs::kMaxEvents
+const API_VERSION = 3; // cs::kSimApiVersion
 
 /** cs::kTickSeconds. Anything converting snapshot deltas to rates needs this. */
 export const TICK_SECONDS = 1 / 64;
@@ -76,6 +76,13 @@ export const EventKind = {
   none: 0,
   shot: 1,
   death: 2,
+  step: 3,
+} as const;
+
+/** cs::StepKind — an EventStep's `result`. */
+export const StepKind = {
+  walk: 0,
+  land: 1,
 } as const;
 
 // cs::Team

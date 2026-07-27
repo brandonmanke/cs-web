@@ -156,6 +156,13 @@ void separate_players(SimState& s) {
 void run_player(SimState& s, std::uint32_t index, const InputCommand& cmd) {
   PlayerEntity& e = s.players[index];
   pmove_run(e.move, cmd, weapon_base_speed(e));
+  if (e.move.stepped || e.move.land_speed > 0.0F) {
+    SimEvent& event = push_event(s, EventStep, index);
+    event.result = e.move.land_speed > kLandingSpeed ? StepLand : StepWalk;
+    event.material = e.move.ground_material;
+    event.start = feet_of(e);
+    event.end = event.start;
+  }
   weapons_run(s, index, cmd);
   if (e.flash_ticks > 0) {
     --e.flash_ticks;

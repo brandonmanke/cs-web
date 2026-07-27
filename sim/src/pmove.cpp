@@ -278,6 +278,8 @@ void categorize_position(PlayerState& p) {
   const TraceResult trace = world_trace_hull(p.origin, down, hull_half(p));
   if (trace.hit && trace.normal.y >= kGroundNormalMinY) {
     p.on_ground = true;
+    // Whatever is under the feet is what the next footstep sounds like.
+    p.ground_material = trace.material;
     p.origin = trace.end; // stay planted walking down slopes/steps
     if (!was_on_ground) {
       // Landing fatigue: remaining stamina bleeds horizontal speed.
@@ -292,6 +294,30 @@ void categorize_position(PlayerState& p) {
     }
   } else {
     p.on_ground = false;
+  }
+}
+
+/**
+ * Footfalls, by distance travelled rather than by a timer — a ducked player
+ * covers ground slowly and so steps rarely, which falls out for free.
+ *
+ * Holding +speed is silent. That is the whole reason the key exists: in 1.6 the
+ * trade is mobility for not announcing yourself, and it is only a real trade if
+ * the sim is the thing that decides you made no sound.
+ */
+void update_footsteps(PlayerState& p, Vec3 moved_from, bool walking) {
+  if (!p.on_ground) {
+    return;
+  }
+  const float dx = p.origin.x - moved_from.x;
+  const float dz = p.origin.z - moved_from.z;
+  p.step_distance += std::sqrt(dx * dx + dz * dz);
+  if (p.step_distance < kStrideDistance) {
+    return;
+  }
+  p.step_distance = 0.0F;
+  if (!walking && horizontal_speed(p.velocity) >= kStepMinSpeed) {
+    p.stepped = true;
   }
 }
 
@@ -366,6 +392,14 @@ void try_jump(PlayerState& p, bool jump_pressed, float base_max_speed) {
 } // namespace
 
 void pmove_run(PlayerState& p, const InputCommand& cmd, float base_max_speed) {
+  p.stepped = false;
+  p.land_speed = 0.0F;
+  // Impact speed has to be sampled before anything touches velocity: the slide
+  // clips the downward component against the floor plane, so by the time we
+  // know we are standing on something, the speed we hit it at is gone.
+  const bool was_airborne = !p.on_ground;
+  const float fall_speed = -p.velocity.y;
+
   p.yaw = cmd.yaw;
   float pitch = cmd.pitch;
   const float pitch_limit = 89.0F * 3.14159265F / 180.0F;
@@ -411,6 +445,7 @@ void pmove_run(PlayerState& p, const InputCommand& cmd, float base_max_speed) {
     wish_speed = max_speed;
   }
 
+  const Vec3 pre_move = p.origin;
   if (p.on_ground) {
     p.velocity.y = 0.0F;
     apply_friction(p);
@@ -428,6 +463,12 @@ void pmove_run(PlayerState& p, const InputCommand& cmd, float base_max_speed) {
   }
 
   categorize_position(p);
+  if (was_airborne && p.on_ground) {
+    // A hair above zero so a touchdown at rest still registers as one.
+    p.land_speed = fall_speed > 1.0F ? fall_speed : 1.0F;
+    p.step_distance = 0.0F; // the landing *is* this stride's footfall
+  }
+  update_footsteps(p, pre_move, (cmd.buttons & ButtonWalk) != 0U);
 }
 
 } // namespace cs

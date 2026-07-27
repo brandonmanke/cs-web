@@ -235,6 +235,107 @@ void test_unstick_resolves_embedded_hull() {
       p.origin, {cs::kHullHalfWidth, cs::kHullHalfHeightStand, cs::kHullHalfWidth}));
 }
 
+/** Counts events of a kind over `ticks` of holding the given input. */
+int count_events(int ticks, float forward, std::uint32_t buttons,
+                 std::uint32_t kind, std::uint32_t* out_material = nullptr) {
+  int seen = 0;
+  for (int i = 0; i < ticks; ++i) {
+    sim_step(forward, 0.0F, 0.0F, 0.0F, buttons, 0);
+    const cs::SimSnapshot* snap = sim_snapshot();
+    for (std::uint32_t e = 0; e < snap->event_count; ++e) {
+      if (snap->events[e].kind != kind) {
+        continue;
+      }
+      ++seen;
+      if (out_material != nullptr) {
+        *out_material = snap->events[e].material;
+      }
+    }
+  }
+  return seen;
+}
+
+void test_footsteps_and_silent_walk() {
+  build_test_world();
+  spawn_at_origin();
+  run_ticks(32, 0.0F, 0.0F, 0);
+
+  // Running: one footfall per kStrideDistance of ground covered. 256 ticks at
+  // the AK's 221 u/s is ~884u, so ~10 steps.
+  const int running = count_events(256, 1.0F, 0, cs::EventStep);
+  CHECK(running >= 8 && running <= 13);
+
+  // +speed is silent. That trade is the entire reason the key exists, and it
+  // is only real if the sim is what decides you made no sound.
+  spawn_at_origin();
+  run_ticks(32, 0.0F, 0.0F, 0);
+  CHECK(count_events(256, 1.0F, cs::ButtonWalk, cs::EventStep) == 0);
+
+  // Standing still is silent too.
+  CHECK(count_events(128, 0.0F, 0, cs::EventStep) == 0);
+
+  // The step carries the surface under the feet: the floor here is concrete,
+  // the 12u step at x 200..264 is wood.
+  std::uint32_t material = 99U;
+  sim_spawn(150.0F, cs::kHullHalfHeightStand + 2.0F, 0.0F, -3.14159265F * 0.5F);
+  for (int i = 0; i < 256 && sim_snapshot()->origin.y < 12.0F + cs::kHullHalfHeightStand - 1.0F; ++i) {
+    sim_step(1.0F, 0.0F, -3.14159265F * 0.5F, 0.0F, 0, 0);
+  }
+  CHECK_NEAR(sim_snapshot()->origin.y, 12.0F + cs::kHullHalfHeightStand, 1.0F);
+  for (int i = 0; i < 256 && material == 99U; ++i) {
+    sim_step(0.0F, 1.0F, -3.14159265F * 0.5F, 0.0F, 0, 0); // strafe along the step
+    const cs::SimSnapshot* snap = sim_snapshot();
+    for (std::uint32_t e = 0; e < snap->event_count; ++e) {
+      if (snap->events[e].kind == cs::EventStep) {
+        material = snap->events[e].material;
+      }
+    }
+  }
+  CHECK(material == cs::MaterialWood);
+}
+
+void test_landing_reports_a_hard_step() {
+  build_test_world();
+  sim_spawn(0.0F, cs::kHullHalfHeightStand + 200.0F, 0.0F, 0.0F);
+  bool landed = false;
+  for (int i = 0; i < 128 && !landed; ++i) {
+    sim_step(0.0F, 0.0F, 0.0F, 0.0F, 0, 0);
+    const cs::SimSnapshot* snap = sim_snapshot();
+    for (std::uint32_t e = 0; e < snap->event_count; ++e) {
+      if (snap->events[e].kind == cs::EventStep &&
+          snap->events[e].result == cs::StepLand) {
+        landed = true;
+        // Reported at the feet, not the hull centre — that is where the client
+        // puts the sound.
+        CHECK_NEAR(snap->events[e].start.y, 0.0F, 1.5F);
+      }
+    }
+  }
+  CHECK(landed);
+
+  // A plain hop touches down audibly but is not a *hard* landing: 45u of
+  // jump comes back at ~268 u/s, under kLandingSpeed. And it makes noise even
+  // while holding +speed — a silent bhop would defeat the point of walking.
+  spawn_at_origin();
+  run_ticks(32, 0.0F, 0.0F, 0);
+  int hard = 0;
+  int soft = 0;
+  sim_step(0.0F, 0.0F, 0.0F, 0.0F, cs::ButtonJump | cs::ButtonWalk, 0);
+  for (int i = 0; i < 96; ++i) {
+    sim_step(0.0F, 0.0F, 0.0F, 0.0F, cs::ButtonWalk, 0);
+    const cs::SimSnapshot* snap = sim_snapshot();
+    for (std::uint32_t e = 0; e < snap->event_count; ++e) {
+      if (snap->events[e].kind != cs::EventStep) {
+        continue;
+      }
+      if (snap->events[e].result == cs::StepLand) ++hard;
+      else ++soft;
+    }
+  }
+  CHECK(hard == 0);
+  CHECK(soft == 1);
+}
+
 void test_awp_zoom_cycles_and_slows() {
   spawn_at_origin();
   sim_step(0.0F, 0.0F, 0.0F, 0.0F, 0, cs::WeaponAwp);
@@ -494,6 +595,8 @@ int main() {
   test_duck_lowers_hull_and_blocks_unduck();
   test_air_unduck_blocked_by_roof();
   test_unstick_resolves_embedded_hull();
+  test_footsteps_and_silent_walk();
+  test_landing_reports_a_hard_step();
   test_awp_zoom_cycles_and_slows();
   test_ramp_is_walkable();
   test_brush_rejects_degenerate_input();
