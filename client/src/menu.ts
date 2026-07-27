@@ -37,6 +37,7 @@ export class Menu {
   private readonly readout = document.getElementById("menu-volume-value")!;
   private readonly hint = document.getElementById("menu-hint")!;
   private readonly subtitle = document.getElementById("menu-map")!;
+  private readonly maps = document.getElementById("menu-maps")!;
 
   private started = false;
 
@@ -81,9 +82,24 @@ export class Menu {
     this.readout.textContent = `${Math.round(value * 100)}%`;
   }
 
-  setMap(name: string): void {
-    this.subtitle.textContent = name.toUpperCase();
+  setMap(name: string, detail: string): void {
+    this.subtitle.textContent = `${name.toUpperCase()} · ${detail}`;
     document.title = `cs-web — ${name}`;
+  }
+
+  /**
+   * Switching maps rebuilds the world and re-bakes its lighting, both of which
+   * happen at boot — so these are links that reload rather than in-place
+   * swaps. Cheap, and it keeps map loading a single code path.
+   */
+  setMapList(names: readonly string[], current: string): void {
+    this.maps.replaceChildren(...names.map((name) => {
+      const link = document.createElement("a");
+      link.href = `?map=${encodeURIComponent(name)}`;
+      link.textContent = name;
+      if (name === current) link.classList.add("active");
+      return link;
+    }));
   }
 
   setVisible(visible: boolean): void {

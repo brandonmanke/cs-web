@@ -3,7 +3,7 @@ import { Character } from "./art/character";
 import { canvasTexture } from "./art/textures";
 import { buildMapGeometry, sampleLight, type ShadowProbe } from "./map/build";
 import type { MapDef } from "./map/mapdef";
-import { TICK_SECONDS, type Snapshot } from "./sim";
+import { Flags, Team, TICK_SECONDS, type Snapshot } from "./sim";
 
 // Rendering only. The world is drawn with baked vertex lighting (MeshBasic), so
 // the map costs nothing at runtime and looks like the era it is aiming at;
@@ -12,6 +12,13 @@ import { TICK_SECONDS, type Snapshot } from "./sim";
 
 const MAX_TRACERS = 48;
 const MAX_DECALS = 96;
+/** Standing hull half-height (cs::kHullHalfHeightStand): origin -> feet. */
+const HULL_HALF_STAND = 36;
+const HULL_HALF_DUCK = 18;
+/** A per-tick jump further than this is a respawn, not movement — don't lerp. */
+const TELEPORT_DISTANCE = 200;
+/** Remaps baked irradiance onto the range a player model stays readable in. */
+const CHARACTER_LIFT = (v: number): number => 0.45 + v * 0.75;
 
 interface Tracer {
   mesh: THREE.Mesh;
@@ -98,6 +105,7 @@ export class Renderer {
   }
 
   setFov(fov: number): void {
+    if (fov === this.fov) return; // called per frame; the matrix rebuild is not free
     this.fov = fov;
     this.camera.fov = fov;
     this.camera.updateProjectionMatrix();
@@ -116,48 +124,76 @@ export class Renderer {
     return built.shadowRays;
   }
 
-  buildTargets(count: number): void {
-    for (let i = 0; i < count; ++i) {
-      // Alternate teams so the two skins are both visible while bots are stubs.
-      const character = new Character(i % 2 === 0 ? "t" : "ct");
+  /**
+   * One body per roster slot, skinned by team. Slot `localIndex` is built too
+   * but never shown: keeping the array index-aligned with the snapshot is worth
+   * more than the geometry it costs.
+   */
+  buildPlayers(teams: readonly number[]): void {
+    for (const character of this.characters) {
+      this.scene.remove(character.root);
+      character.dispose();
+    }
+    this.characters.length = 0;
+    for (const team of teams) {
+      // Free-for-all has no teams; alternate the two skins so bodies are still
+      // distinguishable from each other at distance.
+      const character = new Character(team === Team.ct ? "ct" : "t");
       this.scene.add(character.root);
       this.characters.push(character);
     }
   }
 
-  updateTargets(prev: Snapshot, curr: Snapshot, alpha: number, dt: number): void {
-    for (let i = 0; i < this.characters.length && i < curr.targetCount; ++i) {
+  updatePlayers(prev: Snapshot, curr: Snapshot, alpha: number, dt: number,
+                localIndex: number): void {
+    for (let i = 0; i < this.characters.length; ++i) {
       const character = this.characters[i]!;
-      const from = prev.targets[i]!;
-      const view = curr.targets[i]!;
+      if (i === localIndex || i >= curr.playerCount) {
+        character.visible = false;
+        continue;
+      }
+      const from = prev.players[i]!;
+      const view = curr.players[i]!;
       character.visible = true;
 
-      // Interpolate between the last two ticks, exactly like the camera. The
-      // sim never teleports a target (patrols reverse in place, respawns keep
-      // the origin), so a straight lerp is always safe.
-      const x = from.x + (view.x - from.x) * alpha;
-      const y = from.y + (view.y - from.y) * alpha;
-      const z = from.z + (view.z - from.z) * alpha;
-      character.root.position.set(x, y, z);
+      // Interpolate between the last two ticks, exactly like the camera —
+      // except across a respawn, where the two ticks are on opposite sides of
+      // the map and a lerp would draw a body streaking through the level.
+      const jumped = Math.hypot(view.x - from.x, view.y - from.y, view.z - from.z) >
+        TELEPORT_DISTANCE;
+      const blend = jumped ? 1 : alpha;
+      const x = from.x + (view.x - from.x) * blend;
+      const y = from.y + (view.y - from.y) * blend;
+      const z = from.z + (view.z - from.z) * blend;
+      // The snapshot carries hull centres; the model is authored from the feet.
+      const half = (view.flags & Flags.ducked) !== 0 ? HULL_HALF_DUCK : HULL_HALF_STAND;
+      character.root.position.set(x, y - half, z);
 
       // Gait speed comes from the per-tick delta, not the per-frame one: at any
       // refresh rate above 64 Hz most frames advance no tick, so a frame delta
       // alternates between zero and a full step and the walk cycle strobes.
-      const speed = Math.hypot(view.x - from.x, view.z - from.z) / TICK_SECONDS;
+      const speed = jumped ? 0 : Math.hypot(view.x - from.x, view.z - from.z) / TICK_SECONDS;
 
-      // Patrol targets slide along X; face the way they are going.
-      const dx = view.x - from.x;
-      const yaw = Math.abs(dx) > 1e-4
-        ? (dx > 0 ? -Math.PI / 2 : Math.PI / 2)
-        : (character.root.userData.yaw as number | undefined) ?? 0;
-      character.root.userData.yaw = yaw;
+      character.update(dt, {
+        speed,
+        onGround: (view.flags & Flags.onGround) !== 0,
+        yaw: view.yaw,
+        pitch: view.pitch,
+        alive: (view.flags & Flags.alive) !== 0,
+      });
 
-      character.update(dt, { speed, onGround: true, yaw, pitch: 0, alive: view.alive });
-
-      const tint = sampleLight([x, y + 40, z], this.mapLights, this.mapAmbient);
       // Hit flash overrides the bake for a few ticks.
-      if (view.flash > 0) character.setTint(1.5, 0.5, 0.4);
-      else character.setTint(tint[0], tint[1], tint[2]);
+      if (view.flash > 0) {
+        character.setTint(1.5, 0.5, 0.4);
+      } else {
+        // Tint, not dim. Raw irradiance in a shadowed corner is ~0.2, and a CT
+        // skin is already dark navy — multiplied straight through, a body in
+        // shadow becomes an unreadable silhouette. Lifting the floor keeps the
+        // bake's relative light/dark while leaving the model legible, which for
+        // a shooter matters more than the physics of it.
+        const tint = sampleLight([x, y, z], this.mapLights, this.mapAmbient);
+        character.setTint(...(tint.map(CHARACTER_LIFT) as [number, number, number]));
+      }
     }
   }
 

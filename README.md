@@ -21,12 +21,21 @@ npm run wasm   # build the C++ sim -> client/src/generated/sim.mjs
 npm run dev    # Vite dev server; open the printed URL, click to lock the mouse
 ```
 
-`foundry` (the arena) loads by default; `?map=practice` is the movement/aim
-greybox. Dev flags: `?spawn=x,y,z`, `?yaw=radians`, `?coords`.
+You against bots, with teams or free-for-all. Maps pick their own mode and
+roster; the menu switches between them.
+
+| `?map=` | mode | |
+|---|---|---|
+| `foundry` (default) | team | pit arena, three heights |
+| `depot` | team | loading hall, long lanes — AWP country |
+| `silo` | deathmatch | tight FFA donut |
+| `practice` | range | movement/aim greybox; bots roam but never shoot |
+
+Dev flags: `?bots=N`, `?skill=0..2`, `?spawn=x,y,z`, `?yaw=radians`, `?coords`.
 
 Controls: **WASD** move · **Space**/**wheel** jump · **Shift** walk ·
 **Ctrl**/**C** duck · **R** reload · **1–7** weapons · **Q** last weapon ·
-**Mouse1** fire.
+**Mouse1** fire · **Mouse2** scope (AWP).
 
 ## Test
 

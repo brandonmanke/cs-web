@@ -2,6 +2,7 @@ set(CS_SIM_SOURCES
   src/world.cpp
   src/pmove.cpp
   src/weapons.cpp
+  src/bots.cpp
   src/sim.cpp
 )
 
@@ -17,7 +18,7 @@ if(EMSCRIPTEN)
     "-sENVIRONMENT=web,node" # node included so the sim can be smoke-tested headless
     "-sSINGLE_FILE=1"
     "-sALLOW_MEMORY_GROWTH=1"
-    "-sEXPORTED_FUNCTIONS=_sim_create,_sim_world_reset,_sim_add_box,_sim_add_brush,_sim_world_finalize,_sim_trace_ray,_sim_spawn,_sim_add_target,_sim_step,_sim_snapshot,_sim_snapshot_bytes,_malloc,_free"
+    "-sEXPORTED_FUNCTIONS=_sim_create,_sim_world_reset,_sim_add_box,_sim_add_brush,_sim_world_finalize,_sim_trace_ray,_sim_add_spawn,_sim_start_match,_sim_add_bot,_sim_spawn,_sim_step,_sim_snapshot,_sim_snapshot_bytes,_malloc,_free"
     "-sEXPORTED_RUNTIME_METHODS=HEAPF32,HEAPU32,HEAP32"
   )
   set_target_properties(sim_wasm PROPERTIES

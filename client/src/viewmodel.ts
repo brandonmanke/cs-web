@@ -81,6 +81,11 @@ export class Viewmodel {
     this.draw = 1; // play the raise
   }
 
+  /** Down the scope, or dead: the weapon has no business in the frame. */
+  setHidden(hidden: boolean): void {
+    this.rig.visible = !hidden;
+  }
+
   onShot(): void {
     this.kick = 1;
     this.flashTime = 0.045;

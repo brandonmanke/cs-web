@@ -7,6 +7,10 @@
 // direction, air strafing via the 30 u/s wishspeed cap, slide-along-planes
 // collision with step-up. Structure follows the classic PM_* flow; collision
 // queries go through world_trace_hull (convex brushes underneath).
+//
+// Nothing here knows about weapons, teams or who is driving: bots run the exact
+// same function with a synthesized InputCommand, which is the only way their
+// movement can be trusted to obey the same rules the player's does.
 
 namespace cs {
 namespace {
@@ -35,14 +39,11 @@ float stamina_ratio(float stamina) {
   return (100.0F - stamina * 0.001F * 19.0F) * 0.01F;
 }
 
-float current_max_speed(const SimState& s, bool walking = false) {
-  float max_speed = weapon_def(s.weapon.selected).max_move_speed;
-  if (s.player.ducked) {
-    max_speed *= kDuckSpeedFactor;
-  } else if (walking) {
-    max_speed *= kWalkSpeedFactor;
+float current_max_speed(const PlayerState& p, float base, bool walking) {
+  if (p.ducked) {
+    return base * kDuckSpeedFactor;
   }
-  return max_speed;
+  return walking ? base * kWalkSpeedFactor : base;
 }
 
 // PM_ClipVelocity: remove the velocity component going into the plane.
@@ -242,8 +243,7 @@ void step_slide_move(PlayerState& p, float dt) {
 // If the hull ended up embedded in geometry (stance transitions near edges,
 // residual overlap after landing on lips), nudge it out. Trying the duck hull
 // as a last resort mirrors GoldSrc's hull-switch unstick.
-void unstick(SimState& s) {
-  PlayerState& p = s.player;
+void unstick(PlayerState& p) {
   const Vec3 half = hull_half(p);
   if (!world_overlap_hull(p.origin, half)) {
     return;
@@ -268,8 +268,7 @@ void unstick(SimState& s) {
   }
 }
 
-void categorize_position(SimState& s) {
-  PlayerState& p = s.player;
+void categorize_position(PlayerState& p) {
   const bool was_on_ground = p.on_ground;
   if (p.velocity.y > kJumpingAwaySpeed) {
     p.on_ground = false;
@@ -296,8 +295,7 @@ void categorize_position(SimState& s) {
   }
 }
 
-void update_duck(SimState& s, bool wants_duck) {
-  PlayerState& p = s.player;
+void update_duck(PlayerState& p, bool wants_duck) {
   if (wants_duck && !p.ducked) {
     p.ducked = true;
     if (p.on_ground) {
@@ -328,20 +326,29 @@ void update_duck(SimState& s, bool wants_duck) {
   }
 }
 
-void try_jump(SimState& s, bool jump_pressed) {
-  PlayerState& p = s.player;
+/**
+ * A jump tap arms a buffer that survives kJumpBufferTicks. The jump fires on
+ * the first grounded tick while the buffer is live, so pressing slightly early
+ * — which is what a human bhop actually does — still hops. Holding the button
+ * never re-arms it: the buffer is set on the press edge only, so chaining hops
+ * still costs one tap each and the 1.6 rhythm survives.
+ */
+void try_jump(PlayerState& p, bool jump_pressed, float base_max_speed) {
   if (!jump_pressed) {
     p.jump_held = false;
+  } else if (!p.jump_held) {
+    p.jump_held = true;
+    p.jump_buffer_ticks = kJumpBufferTicks;
+  }
+  if (p.jump_buffer_ticks == 0U || !p.on_ground) {
     return;
   }
-  if (p.jump_held || !p.on_ground) {
-    return;
-  }
-  p.jump_held = true;
+  p.jump_buffer_ticks = 0U;
   p.on_ground = false;
 
   // PM_PreventMegaBunnyJumping: cap chained-hop speed hard.
-  const float max_scaled = kBhopSpeedFactor * current_max_speed(s);
+  const float max_scaled =
+      kBhopSpeedFactor * current_max_speed(p, base_max_speed, false);
   const float speed = length(p.velocity);
   if (max_scaled > 0.0F && speed > max_scaled) {
     const float fraction = (max_scaled / speed) * kBhopSlowdown;
@@ -358,9 +365,7 @@ void try_jump(SimState& s, bool jump_pressed) {
 
 } // namespace
 
-void pmove_run(SimState& s, const InputCommand& cmd) {
-  PlayerState& p = s.player;
-
+void pmove_run(PlayerState& p, const InputCommand& cmd, float base_max_speed) {
   p.yaw = cmd.yaw;
   float pitch = cmd.pitch;
   const float pitch_limit = 89.0F * 3.14159265F / 180.0F;
@@ -377,11 +382,14 @@ void pmove_run(SimState& s, const InputCommand& cmd) {
       p.stamina = 0.0F;
     }
   }
+  if (p.jump_buffer_ticks > 0U) {
+    --p.jump_buffer_ticks;
+  }
 
-  unstick(s);
-  categorize_position(s);
-  update_duck(s, (cmd.buttons & ButtonDuck) != 0U);
-  try_jump(s, (cmd.buttons & ButtonJump) != 0U);
+  unstick(p);
+  categorize_position(p);
+  update_duck(p, (cmd.buttons & ButtonDuck) != 0U);
+  try_jump(p, (cmd.buttons & ButtonJump) != 0U, base_max_speed);
 
   // Wish direction from yaw only; -Z is forward at yaw 0.
   const float sin_yaw = std::sin(p.yaw);
@@ -391,7 +399,8 @@ void pmove_run(SimState& s, const InputCommand& cmd) {
   Vec3 wish_vel =
       add(scale(forward, cmd.forward), scale(right, cmd.strafe));
   wish_vel.y = 0.0F;
-  const float max_speed = current_max_speed(s, (cmd.buttons & ButtonWalk) != 0U);
+  const float max_speed =
+      current_max_speed(p, base_max_speed, (cmd.buttons & ButtonWalk) != 0U);
   wish_vel = scale(wish_vel, max_speed);
   float wish_speed = length(wish_vel);
   Vec3 wish_dir = {0.0F, 0.0F, 0.0F};
@@ -418,7 +427,7 @@ void pmove_run(SimState& s, const InputCommand& cmd) {
     p.velocity.y -= kGravity * kTickSeconds * 0.5F;
   }
 
-  categorize_position(s);
+  categorize_position(p);
 }
 
 } // namespace cs

@@ -1,5 +1,6 @@
+import { Mode } from "../../sim";
 import { box, ramp, stairs, Surface, type Brush } from "../brush";
-import type { MapDef } from "../mapdef";
+import type { MapDef, SpawnDef } from "../mapdef";
 
 // PRACTICE — the movement/aim greybox, kept because it is the fastest way to
 // feel whether a pmove change broke something. Every obstacle here exists to
@@ -59,18 +60,25 @@ const lights = [
   { pos: [0, 200, 600] as [number, number, number], color: [0.85, 0.92, 1.0] as [number, number, number], intensity: 0.9, radius: 1100 },
 ];
 
+// The first spawn is where you start; the rest are the range, and in ModeRange
+// the bots wander between them without ever shooting back.
+const spawns: SpawnDef[] = [
+  { pos: [0, 38, 640], yaw: 0 }, // facing -Z, toward the target range
+  { pos: [0, 38, -550], yaw: Math.PI },
+  { pos: [-300, 38, -700], yaw: Math.PI },
+  { pos: [300, 38, -700], yaw: Math.PI },
+  { pos: [-620, 38, -160], yaw: -Math.PI / 2 },
+  { pos: [620, 38, -160], yaw: Math.PI / 2 },
+];
+
 export const PRACTICE: MapDef = {
   name: "practice",
   brushes,
   lights,
   ambient: [0.30, 0.30, 0.32],
-  spawn: [0, 38, 640],
-  spawnYaw: 0, // facing -Z, toward the target range
-  targets: [
-    { x: 0, y: 0, z: -550, minX: 0, maxX: 0, speed: 0 },
-    { x: -150, y: 0, z: -680, minX: -380, maxX: 60, speed: 90 },
-    { x: 150, y: 0, z: -800, minX: -40, maxX: 380, speed: 150 },
-  ],
+  mode: Mode.range,
+  bots: 3,
+  spawns,
   background: 0x141a16,
   fog: [1400, 4200],
 };

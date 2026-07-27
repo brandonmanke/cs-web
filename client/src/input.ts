@@ -1,4 +1,4 @@
-import { Buttons, type InputFrame } from "./sim";
+import { BASE_FOV, Buttons, type InputFrame } from "./sim";
 
 const PITCH_LIMIT = (89 * Math.PI) / 180;
 const DEFAULT_SENSITIVITY = 0.0022; // radians per pixel
@@ -31,6 +31,13 @@ export class Input {
 
   private keys = new Set<string>();
   private fire = false;
+  private zoom = false;
+  /**
+   * Mouse-to-view gain, scaled by the sim's current FOV. Without it a scoped
+   * flick covers the same pixels but a ninth of the world, and the AWP becomes
+   * unaimable — 1.6 scales the same way.
+   */
+  private fovScale = 1;
   private pendingWeapon = 0;
   private lastWeapon = 0;
   private currentWeapon = 0;
@@ -89,6 +96,7 @@ export class Input {
       } else {
         this.keys.clear();
         this.fire = false;
+        this.zoom = false;
         this.scrollJumps = 0;
       }
       this.onLockChange?.(this.locked);
@@ -97,18 +105,24 @@ export class Input {
       if (!this.locked) return;
       const dx = Math.max(-MAX_MOUSE_DELTA, Math.min(MAX_MOUSE_DELTA, e.movementX));
       const dy = Math.max(-MAX_MOUSE_DELTA, Math.min(MAX_MOUSE_DELTA, e.movementY));
-      this.yaw -= dx * this.sensitivity;
-      this.pitch -= dy * this.sensitivity;
+      const gain = this.sensitivity * this.fovScale;
+      this.yaw -= dx * gain;
+      this.pitch -= dy * gain;
       this.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, this.pitch));
-      this.accumYaw -= dx * this.sensitivity;
-      this.accumPitch -= dy * this.sensitivity;
+      this.accumYaw -= dx * gain;
+      this.accumPitch -= dy * gain;
     });
     document.addEventListener("mousedown", (e) => {
-      if (this.locked && e.button === 0) this.fire = true;
+      if (!this.locked) return;
+      if (e.button === 0) this.fire = true;
+      if (e.button === 2) this.zoom = true;
     });
     document.addEventListener("mouseup", (e) => {
       if (e.button === 0) this.fire = false;
+      if (e.button === 2) this.zoom = false;
     });
+    // Right-click is secondary fire here, not a menu.
+    this.el.addEventListener("contextmenu", (e) => e.preventDefault());
     // Scroll-to-jump: muscle memory for anyone who ever bhopped in 1.6.
     document.addEventListener("wheel", (e) => {
       if (!this.locked) return;
@@ -133,6 +147,11 @@ export class Input {
 
   setYaw(yaw: number): void {
     this.yaw = yaw;
+  }
+
+  /** Feed the sim's current FOV back in so aim gain follows the scope. */
+  setFov(fov: number): void {
+    this.fovScale = fov / BASE_FOV;
   }
 
   /** Track what the sim actually equipped, so Q can swap back to it. */
@@ -161,6 +180,7 @@ export class Input {
     if (this.keys.has("ShiftLeft")) buttons |= Buttons.walk;
     if (this.keys.has("KeyR")) buttons |= Buttons.reload;
     if (this.fire) buttons |= Buttons.fire;
+    if (this.zoom) buttons |= Buttons.zoom;
 
     const weapon = this.pendingWeapon;
     this.pendingWeapon = 0;

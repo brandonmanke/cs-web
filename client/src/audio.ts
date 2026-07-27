@@ -71,9 +71,18 @@ export class GameAudio {
     return this.volume;
   }
 
-  shot(weapon: number): void {
+  /**
+   * `attenuation` scales the whole voice, which is how a shot fired across the
+   * map by a bot ends up quieter than the one in your hands. Not true 3D audio
+   * — that is a PLAN.md M-polish item — but distance has to count for
+   * something once there are nine other guns in the room.
+   */
+  shot(weapon: number, attenuation = 1): void {
     const ctx = this.ensure();
-    const voice = VOICES[weapon] ?? DEFAULT_VOICE;
+    const base = VOICES[weapon] ?? DEFAULT_VOICE;
+    const voice = attenuation === 1
+      ? base
+      : { ...base, gain: base.gain * attenuation, cutoff: base.cutoff * (0.45 + 0.55 * attenuation) };
     const t = ctx.currentTime;
 
     const noise = ctx.createBufferSource();
@@ -118,13 +127,20 @@ export class GameAudio {
     osc.stop(t + duration);
   }
 
-  impact(material: number): void {
+  impact(material: number, attenuation = 1): void {
     const spec = IMPACTS[material] ?? IMPACTS[0]!;
-    this.blip(spec.freq * (0.9 + Math.random() * 0.2), spec.decay, spec.gain, spec.type);
+    this.blip(spec.freq * (0.9 + Math.random() * 0.2), spec.decay,
+              spec.gain * attenuation, spec.type);
   }
 
   hit(): void {
     this.blip(1180, 0.07, 0.14);
+  }
+
+  /** Taking a bullet — low and unpleasant, so it can't be mistaken for a hit. */
+  hurt(): void {
+    this.blip(190, 0.16, 0.22, "sawtooth");
+    this.blip(120, 0.22, 0.16, "triangle", 0.03);
   }
 
   kill(): void {

@@ -5,7 +5,8 @@
 #include <cmath>
 #include <cstdio>
 
-// Movement invariants + determinism. Plain asserts, no framework.
+// Movement invariants, gunplay, match rules and determinism. Plain asserts, no
+// framework.
 
 namespace {
 
@@ -41,12 +42,25 @@ void build_test_world() {
   sim_world_finalize();
 }
 
+cs::PlayerState& local_move() { return cs::state().players[cs::kLocalPlayer].move; }
+
 void spawn_at_origin() { sim_spawn(0.0F, cs::kHullHalfHeightStand + 2.0F, 0.0F, 0.0F); }
 
 void run_ticks(int n, float forward, float strafe, std::uint32_t buttons) {
   for (int i = 0; i < n; ++i) {
     sim_step(forward, strafe, 0.0F, 0.0F, buttons, 0);
   }
+}
+
+/** True if any event this tick matches the kind. */
+bool saw_event(std::uint32_t kind) {
+  const cs::SimSnapshot* snap = sim_snapshot();
+  for (std::uint32_t i = 0; i < snap->event_count; ++i) {
+    if (snap->events[i].kind == kind) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void test_ground_speed_cap() {
@@ -82,16 +96,63 @@ void test_bhop_speed_cap() {
   run_ticks(32, 0.0F, 0.0F, 0);
   // Inject an illegal 500 u/s and jump: PreventMegaBunnyJumping should clamp
   // to (1.7 * 221 / 500) * 0.65 * 500 = 244.2 u/s (AK default weapon).
-  cs::state().player.velocity = {500.0F, 0.0F, 0.0F};
+  local_move().velocity = {500.0F, 0.0F, 0.0F};
   sim_step(0.0F, 0.0F, 0.0F, 0.0F, cs::ButtonJump, 0);
   const float expected = 1.7F * 221.0F * 0.65F;
   CHECK_NEAR(sim_snapshot()->speed_h, expected, 2.0F);
 }
 
+void test_jump_buffer_hops_on_landing() {
+  // Tap jump while still falling: the buffer has to carry the press through to
+  // the landing tick, which is the whole point of the bhop-ease change.
+  sim_spawn(0.0F, cs::kHullHalfHeightStand + 70.0F, 0.0F, 0.0F);
+  bool tapped = false;
+  for (int i = 0; i < 64 && !tapped; ++i) {
+    std::uint32_t buttons = 0;
+    if (sim_snapshot()->origin.y < cs::kHullHalfHeightStand + 10.0F) {
+      buttons = cs::ButtonJump;
+      tapped = true;
+      CHECK((sim_snapshot()->flags & cs::SnapOnGround) == 0U); // still airborne
+    }
+    sim_step(0.0F, 0.0F, 0.0F, 0.0F, buttons, 0);
+  }
+  CHECK(tapped);
+
+  int wait = 0;
+  for (; wait < static_cast<int>(cs::kJumpBufferTicks) + 4; ++wait) {
+    if (sim_snapshot()->velocity.y > 200.0F) {
+      break;
+    }
+    sim_step(0.0F, 0.0F, 0.0F, 0.0F, 0, 0); // button already released
+  }
+  CHECK(wait < static_cast<int>(cs::kJumpBufferTicks) + 4);
+  CHECK(sim_snapshot()->velocity.y > 200.0F);
+}
+
+void test_holding_jump_does_not_autohop() {
+  // The buffer is armed on the press edge only. Holding space must give one
+  // hop and then nothing, or the 1.6 tap-per-hop rhythm is gone.
+  spawn_at_origin();
+  run_ticks(32, 0.0F, 0.0F, 0);
+  sim_step(0.0F, 0.0F, 0.0F, 0.0F, cs::ButtonJump, 0);
+  CHECK(sim_snapshot()->velocity.y > 200.0F);
+
+  int extra_hops = 0;
+  for (int i = 0; i < 192; ++i) {
+    const float before = sim_snapshot()->velocity.y;
+    sim_step(0.0F, 0.0F, 0.0F, 0.0F, cs::ButtonJump, 0); // never released
+    if (before < 100.0F && sim_snapshot()->velocity.y > 200.0F) {
+      ++extra_hops;
+    }
+  }
+  CHECK(extra_hops == 0);
+  CHECK((sim_snapshot()->flags & cs::SnapOnGround) != 0U);
+}
+
 void test_air_wishcap_no_gain() {
   spawn_at_origin();
   run_ticks(32, 0.0F, 0.0F, 0);
-  cs::state().player.velocity = {0.0F, 0.0F, -200.0F}; // moving forward at 200
+  local_move().velocity = {0.0F, 0.0F, -200.0F}; // moving forward at 200
   sim_step(0.0F, 0.0F, 0.0F, 0.0F, cs::ButtonJump, 0);
   const float before = sim_snapshot()->speed_h;
   // Hold pure forward in the air: the 30 u/s wishcap means no meaningful gain.
@@ -148,12 +209,12 @@ void test_air_unduck_blocked_by_roof() {
   // (top y+36) would overlap it, so releasing duck must keep us ducked instead
   // of unducking into the roof and getting stuck.
   sim_spawn(-350.0F, 20.0F, 0.0F, 0.0F);
-  cs::state().player.ducked = true;
-  cs::state().player.on_ground = false;
-  cs::state().player.velocity = {0.0F, 200.0F, 0.0F};
+  local_move().ducked = true;
+  local_move().on_ground = false;
+  local_move().velocity = {0.0F, 200.0F, 0.0F};
   sim_step(0.0F, 0.0F, 0.0F, 0.0F, 0, 0); // no duck button: wants to unduck
   CHECK((sim_snapshot()->flags & cs::SnapDucked) != 0U);
-  const cs::PlayerState& p = cs::state().player;
+  const cs::PlayerState& p = local_move();
   const cs::Vec3 half = {cs::kHullHalfWidth,
                          p.ducked ? cs::kHullHalfHeightDuck : cs::kHullHalfHeightStand,
                          cs::kHullHalfWidth};
@@ -169,27 +230,119 @@ void test_unstick_resolves_embedded_hull() {
   }
   CHECK_NEAR(sim_snapshot()->origin.y, cs::kHullHalfHeightStand, 1.0F);
   CHECK((sim_snapshot()->flags & cs::SnapOnGround) != 0U);
-  const cs::PlayerState& p = cs::state().player;
+  const cs::PlayerState& p = local_move();
   CHECK(!cs::world_overlap_hull(
       p.origin, {cs::kHullHalfWidth, cs::kHullHalfHeightStand, cs::kHullHalfWidth}));
 }
 
-void test_shooting_hits_target() {
+void test_awp_zoom_cycles_and_slows() {
   spawn_at_origin();
-  sim_add_target(0.0F, 0.0F, -300.0F, 0.0F, 0.0F, 0.0F);
+  sim_step(0.0F, 0.0F, 0.0F, 0.0F, 0, cs::WeaponAwp);
+  run_ticks(24, 0.0F, 0.0F, 0); // let the draw finish
+  CHECK(sim_snapshot()->weapon == cs::WeaponAwp);
+  CHECK_NEAR(sim_snapshot()->fov, cs::kBaseFov, 0.01F);
+
+  const cs::WeaponDef& awp = cs::weapon_def(cs::WeaponAwp);
+  const std::uint32_t kCycle[3] = {1U, 2U, 0U};
+  for (std::uint32_t expected : kCycle) {
+    sim_step(0.0F, 0.0F, 0.0F, 0.0F, cs::ButtonZoom, 0);
+    CHECK(sim_snapshot()->zoom == expected);
+    const float fov = expected == 0U ? cs::kBaseFov : awp.zoom_fov[expected - 1U];
+    CHECK_NEAR(sim_snapshot()->fov, fov, 0.01F);
+    run_ticks(4, 0.0F, 0.0F, 0); // release, so the next press is an edge
+  }
+
+  // Scoped, the AWP's 210 u/s drops by kZoomSpeedFactor.
+  sim_step(0.0F, 0.0F, 0.0F, 0.0F, cs::ButtonZoom, 0);
+  CHECK(sim_snapshot()->zoom == 1U);
+  run_ticks(256, 1.0F, 0.0F, 0);
+  CHECK_NEAR(sim_snapshot()->speed_h, 210.0F * cs::kZoomSpeedFactor, 2.0F);
+  CHECK(sim_snapshot()->zoom == 1U); // moving does not break the scope
+
+  // Reloading does: you cannot work a bolt down the scope.
+  sim_step(0.0F, 0.0F, 0.0F, 0.0F, cs::ButtonFire, 0);
+  sim_step(0.0F, 0.0F, 0.0F, 0.0F, cs::ButtonReload, 0);
+  CHECK(sim_snapshot()->zoom == 0U);
+  sim_step(0.0F, 0.0F, 0.0F, 0.0F, 0, cs::WeaponAk47);
+  run_ticks(24, 0.0F, 0.0F, 0);
+}
+
+void test_shooting_kills_a_bot() {
+  build_test_world();
+  spawn_at_origin();
+  const std::uint32_t bot =
+      sim_add_bot(0.0F, cs::kHullHalfHeightStand, -300.0F, 0.0F, cs::TeamNone, 0);
+  CHECK(bot == 1U);
   run_ticks(32, 0.0F, 0.0F, 0);
+
   // Aim at chest height (~48u above feet, eye at 64u: slight downward pitch).
-  const float pitch = -0.05F;
-  int fired = 0;
-  for (int i = 0; i < 64; ++i) {
-    sim_step(0.0F, 0.0F, 0.0F, pitch, cs::ButtonFire, 0);
-    ++fired;
+  bool saw_death = false;
+  for (int i = 0; i < 96; ++i) {
+    sim_step(0.0F, 0.0F, 0.0F, -0.05F, cs::ButtonFire, 0);
+    saw_death = saw_death || saw_event(cs::EventDeath);
   }
   const cs::SimSnapshot* snap = sim_snapshot();
   CHECK(snap->shots > 0);
   CHECK(snap->hits > 0);
   CHECK(snap->magazine < 30);
-  CHECK(snap->last_shot.sequence > 0);
+  CHECK(snap->kills > 0);
+  CHECK(saw_death);
+  CHECK(snap->players[1].deaths > 0);
+  CHECK(snap->player_count == 2);
+  build_test_world(); // clears the roster back to the local player
+}
+
+void test_bots_fight_back_and_you_respawn() {
+  build_test_world();
+  sim_add_spawn(0.0F, cs::kHullHalfHeightStand + 2.0F, 0.0F, 0.0F, cs::TeamNone);
+  sim_start_match(cs::ModeDeathmatch, 0, 2); // hard bots, placed by hand below
+  const std::uint32_t bot =
+      sim_add_bot(0.0F, cs::kHullHalfHeightStand, -420.0F, 0.0F, cs::TeamNone, 2);
+  CHECK(bot == 1U);
+
+  bool damaged = false;
+  for (int i = 0; i < 900 && !damaged; ++i) {
+    sim_step(0.0F, 0.0F, 0.0F, 0.0F, 0, 0);
+    damaged = sim_snapshot()->health < cs::kPlayerHealth;
+  }
+  CHECK(damaged);
+
+  // Stand there long enough and it finishes the job; then we come back.
+  bool died = false;
+  for (int i = 0; i < 1800 && !died; ++i) {
+    sim_step(0.0F, 0.0F, 0.0F, 0.0F, 0, 0);
+    died = sim_snapshot()->deaths > 0;
+  }
+  CHECK(died);
+  for (int i = 0; i < static_cast<int>(cs::kRespawnTicks) + 8; ++i) {
+    sim_step(0.0F, 0.0F, 0.0F, 0.0F, 0, 0);
+  }
+  CHECK((sim_snapshot()->flags & cs::SnapAlive) != 0U);
+  CHECK_NEAR(sim_snapshot()->health, cs::kPlayerHealth, 0.01F);
+  CHECK(sim_snapshot()->players[1].kills > 0);
+
+  sim_create();
+  build_test_world();
+}
+
+void test_team_mode_has_no_friendly_fire() {
+  build_test_world();
+  sim_add_spawn(0.0F, cs::kHullHalfHeightStand + 2.0F, 0.0F, 0.0F, cs::TeamNone);
+  sim_start_match(cs::ModeTeam, 0, 0);
+  // Index 0 is CT; add a CT bot directly in the line of fire.
+  const std::uint32_t friendly =
+      sim_add_bot(0.0F, cs::kHullHalfHeightStand, -300.0F, 0.0F, cs::TeamCt, 0);
+  CHECK(friendly == 1U);
+  sim_spawn(0.0F, cs::kHullHalfHeightStand + 2.0F, 0.0F, 0.0F);
+  run_ticks(32, 0.0F, 0.0F, 0);
+  for (int i = 0; i < 64; ++i) {
+    sim_step(0.0F, 0.0F, 0.0F, -0.05F, cs::ButtonFire, 0);
+  }
+  CHECK(sim_snapshot()->hits == 0);
+  CHECK_NEAR(sim_snapshot()->players[1].health, cs::kPlayerHealth, 0.01F);
+
+  sim_create();
+  build_test_world();
 }
 
 // A ~26.6-degree ramp brush rising 1u per 2u along -Z (the yaw-0 forward
@@ -264,11 +417,15 @@ void test_trace_ray_abi() {
 }
 
 void test_determinism() {
+  // Includes bots: their scans, aim error and goal picks all draw from the sim
+  // rng, so a divergence anywhere in bots.cpp shows up here.
   auto scenario = [] {
     sim_create();
     build_test_world();
-    spawn_at_origin();
-    sim_add_target(100.0F, 0.0F, -400.0F, 0.0F, 200.0F, 60.0F);
+    sim_add_spawn(0.0F, 38.0F, 0.0F, 0.0F, cs::TeamNone);
+    sim_add_spawn(-400.0F, 38.0F, 300.0F, 1.0F, cs::TeamNone);
+    sim_add_spawn(500.0F, 38.0F, -200.0F, -1.0F, cs::TeamNone);
+    sim_start_match(cs::ModeDeathmatch, 3, 1);
     for (int i = 0; i < 600; ++i) {
       const float f = (i % 128) < 64 ? 1.0F : -0.5F;
       const float s = (i % 64) < 32 ? 1.0F : -1.0F;
@@ -296,15 +453,20 @@ int main() {
   test_ground_speed_cap();
   test_jump_height();
   test_bhop_speed_cap();
+  test_jump_buffer_hops_on_landing();
+  test_holding_jump_does_not_autohop();
   test_air_wishcap_no_gain();
   test_step_up_and_wall_block();
   test_duck_lowers_hull_and_blocks_unduck();
   test_air_unduck_blocked_by_roof();
   test_unstick_resolves_embedded_hull();
+  test_awp_zoom_cycles_and_slows();
   test_ramp_is_walkable();
   test_brush_rejects_degenerate_input();
   test_trace_ray_abi();
-  test_shooting_hits_target();
+  test_shooting_kills_a_bot();
+  test_bots_fight_back_and_you_respawn();
+  test_team_mode_has_no_friendly_fire();
   test_determinism();
 
   if (g_failures == 0) {

@@ -1,5 +1,6 @@
+import { Mode, Team } from "../../sim";
 import { box, ramp, stairs, Surface, type Brush } from "../brush";
-import type { MapDef } from "../mapdef";
+import type { MapDef, SpawnDef } from "../mapdef";
 
 // FOUNDRY — an original arena, Quake's grammar with CS's sightlines.
 //
@@ -134,18 +135,28 @@ lights.push(
   { pos: [0, 140, 0], color: [1.0, 0.55, 0.25], intensity: 0.7, radius: 420 },
 );
 
+// --- spawns -----------------------------------------------------------------
+
+// Two ends of the walkway ring, clear of the corner columns and the catwalk
+// ramps. CT holds north, T holds south; the pit between them is the fight.
+const SPAWN_Y = WALK_Y + 44;
+const spawns: SpawnDef[] = [
+  ...[-480, -160, 200, 480].map((x): SpawnDef => (
+    { pos: [x, SPAWN_Y, -576], yaw: Math.PI, team: Team.ct }
+  )),
+  ...[-480, -160, 200, 480].map((x): SpawnDef => (
+    { pos: [x, SPAWN_Y, 576], yaw: 0, team: Team.t }
+  )),
+];
+
 export const FOUNDRY: MapDef = {
   name: "foundry",
   brushes,
   lights,
   ambient: [0.085, 0.095, 0.115],
-  spawn: [-320, WALK_Y + 44, -600],
-  spawnYaw: Math.PI, // facing +Z, into the pit
-  targets: [
-    { x: 0, y: 0, z: -240, minX: 0, maxX: 0, speed: 0 },
-    { x: -200, y: 0, z: 96, minX: -320, maxX: 40, speed: 110 },
-    { x: 240, y: 0, z: -80, minX: 40, maxX: 340, speed: 150 },
-  ],
+  mode: Mode.team,
+  bots: 7, // 4v4 including you
+  spawns,
   background: 0x0a0c0d,
   fog: [900, 3400],
 };

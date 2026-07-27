@@ -35,6 +35,22 @@
         width: 2px; height: 2px; left: -1px; top: -1px; background: #86e39a;
       }
 
+      /* Scope: a transparent disc with the rest of the screen blacked out by
+         its own box-shadow, plus hairlines. No image, no shader. */
+      #scope { position: absolute; inset: 0; overflow: hidden; }
+      #scope.hidden { display: none; }
+      #scope .ring {
+        position: absolute; left: 50%; top: 50%;
+        width: min(96vh, 96vw); height: min(96vh, 96vw);
+        transform: translate(-50%, -50%);
+        border-radius: 50%; display: block;
+        border: 2px solid #05070500;
+        box-shadow: 0 0 0 100vmax #050705, inset 0 0 60px rgba(0, 0, 0, 0.75);
+      }
+      #scope .line { position: absolute; background: #0a0d0a; display: block; }
+      #scope .line.h { left: 0; right: 0; top: 50%; height: 1px; }
+      #scope .line.v { top: 0; bottom: 0; left: 50%; width: 1px; }
+
       #hitmarker {
         position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
         color: #ff5a4a; font-size: 24px; opacity: 0;
@@ -53,14 +69,38 @@
         position: absolute; left: 26px; bottom: 20px;
         font-size: 18px; color: #8fb496; text-shadow: 0 0 4px #000;
       }
-      #coords {
+      #health {
         position: absolute; left: 26px; bottom: 46px;
+        font-size: 28px; color: #d8d2b4; text-shadow: 0 0 4px #000;
+      }
+      #health.hurt { color: #e8933c; }
+      #health.critical { color: #ff5a4a; }
+      #coords {
+        position: absolute; left: 26px; bottom: 84px;
         font-size: 11px; color: #6d7a6d; text-shadow: 0 0 3px #000;
       }
       #score {
         position: absolute; right: 26px; top: 18px;
         color: #c3b177; text-align: right; text-shadow: 0 0 4px #000;
+        line-height: 1.6;
       }
+      #score .ct { color: #7fb2e8; }
+      #score .t { color: #e0b268; }
+
+      #killfeed {
+        position: absolute; left: 26px; top: 18px;
+        font-size: 12px; line-height: 1.8; text-shadow: 0 0 4px #000;
+      }
+      #killfeed div { opacity: 0.9; }
+      #killfeed .self { color: #f0e8c4; }
+      #killfeed .weapon { color: #7d8a72; }
+
+      #respawn {
+        position: absolute; left: 50%; top: 56%; transform: translate(-50%, -50%);
+        color: #ff5a4a; font-size: 16px; letter-spacing: 3px; text-align: center;
+        text-shadow: 0 0 6px #000;
+      }
+      #respawn.hidden { display: none; }
       #status {
         position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%);
         color: #e8933c; font-size: 14px; letter-spacing: 2px; text-align: center;
@@ -107,6 +147,12 @@
         min-width: 38px; text-align: right; font-size: 12px; color: #d8d2b4;
       }
 
+      #menu-maps a {
+        color: #9aa38c; text-decoration: none; margin-right: 12px; font-size: 12px;
+      }
+      #menu-maps a:hover { color: #d8d2b4; }
+      #menu-maps a.active { color: #86e39a; }
+
       #menu .divider {
         font-size: 10px; letter-spacing: 3px; color: #5c6553;
         border-top: 1px solid #2b3026; padding-top: 12px; margin-bottom: 10px;
@@ -126,15 +172,22 @@
   <body>
     <div id="app"></div>
     <div id="hud">
+      <div id="scope" class="hidden">
+        <i class="ring"></i>
+        <i class="line h"></i><i class="line v"></i>
+      </div>
       <div id="crosshair">
         <i class="dot"></i>
         <i class="h l"></i><i class="h r"></i><i class="v u"></i><i class="v d"></i>
       </div>
       <div id="hitmarker">&times;</div>
       <div id="ammo">--/--</div>
+      <div id="health">100</div>
       <div id="speed">0 u/s</div>
       <div id="coords"></div>
       <div id="score"></div>
+      <div id="killfeed"></div>
+      <div id="respawn" class="hidden">RESPAWNING</div>
       <div id="status">LOADING</div>
     </div>
 
@@ -151,6 +204,11 @@
           <span id="menu-volume-value">50%</span>
         </div>
 
+        <div class="row">
+          <label>MAP</label>
+          <span id="menu-maps"></span>
+        </div>
+
         <div class="divider">CONTROLS</div>
         <dl>
           <dt>WASD</dt><dd>move</dd>
@@ -158,6 +216,7 @@
           <dt>SHIFT</dt><dd>walk</dd>
           <dt>CTRL / C</dt><dd>duck</dd>
           <dt>MOUSE1</dt><dd>fire</dd>
+          <dt>MOUSE2</dt><dd>scope (AWP)</dd>
           <dt>R</dt><dd>reload</dd>
           <dt>1&ndash;7 / Q</dt><dd>weapons</dd>
         </dl>

@@ -11,11 +11,18 @@
 
 import { brushFaces, brushPlaneArray } from "../client/src/map/brush";
 import type { MapDef } from "../client/src/map/mapdef";
+import { DEPOT } from "../client/src/map/maps/depot";
 import { FOUNDRY } from "../client/src/map/maps/foundry";
 import { PRACTICE } from "../client/src/map/maps/practice";
-import { Flags, Sim, Snapshot } from "../client/src/sim";
+import { SILO } from "../client/src/map/maps/silo";
+import { Flags, MAX_PLAYERS, Mode, Sim, Snapshot, Team } from "../client/src/sim";
 
-const MAPS: Record<string, MapDef> = { foundry: FOUNDRY, practice: PRACTICE };
+const MAPS: Record<string, MapDef> = {
+  foundry: FOUNDRY,
+  depot: DEPOT,
+  silo: SILO,
+  practice: PRACTICE,
+};
 
 let failures = 0;
 
@@ -70,32 +77,48 @@ async function checkMap(name: string, map: MapDef): Promise<void> {
   else pass(`${faces} faces across ${map.brushes.length} brushes`);
   if (degenerateFaces > 0) fail(`${degenerateFaces} degenerate face(s)`);
 
-  for (const target of map.targets) {
-    sim.addTarget(target.x, target.y, target.z, target.minX, target.maxX, target.speed);
+  for (const spawn of map.spawns) {
+    sim.addSpawn(spawn.pos, spawn.yaw, spawn.team ?? Team.none);
   }
   sim.finalizeWorld();
 
   const snapshot = new Snapshot();
 
-  // 3. The spawn must actually catch you.
-  const spawn = dropProbe(sim, snapshot, map.spawn[0], map.spawn[1], map.spawn[2]);
-  if (!spawn.grounded) {
-    fail(`spawn ${map.spawn.join(",")} never lands (rests at y=${spawn.y.toFixed(1)})`);
-  } else if (spawn.y < map.spawn[1] - 400) {
-    fail(`spawn ${map.spawn.join(",")} falls ${(map.spawn[1] - spawn.y).toFixed(0)}u before landing`);
-  } else {
-    pass(`spawn lands at y=${spawn.y.toFixed(2)}, grounded`);
+  // 3. Every spawn point must catch a player, not drop them into the void or
+  //    bury them in a brush. This is the check that made targets-in-the-air
+  //    impossible, generalized now that spawns are the only placement there is.
+  if (map.spawns.length === 0) fail("map defines no spawn points");
+  if (map.spawns.length < map.bots + 1) {
+    fail(`${map.spawns.length} spawn(s) for ${map.bots + 1} players — they will stack`);
   }
+  if (map.bots + 1 > MAX_PLAYERS) fail(`${map.bots} bots exceeds the roster limit`);
+  let badSpawns = 0;
+  for (const [i, spawn] of map.spawns.entries()) {
+    const probe = dropProbe(sim, snapshot, spawn.pos[0], spawn.pos[1], spawn.pos[2]);
+    if (!probe.grounded) {
+      fail(`spawn ${i} ${spawn.pos.join(",")} never lands (rests at y=${probe.y.toFixed(1)})`);
+      ++badSpawns;
+    } else if (probe.y < spawn.pos[1] - 400) {
+      fail(`spawn ${i} ${spawn.pos.join(",")} falls ${(spawn.pos[1] - probe.y).toFixed(0)}u`);
+      ++badSpawns;
+    } else if (probe.y > spawn.pos[1] + 24) {
+      // Landing *above* where you were placed means the hull was inside a
+      // brush and the unstick pass pushed it out.
+      fail(`spawn ${i} ${spawn.pos.join(",")} is embedded (popped up to y=${probe.y.toFixed(1)})`);
+      ++badSpawns;
+    }
+  }
+  if (badSpawns === 0) pass(`${map.spawns.length} spawn point(s) land clean`);
 
-  // 4. Targets should stand on something, not hover or sink.
-  for (const [i, target] of map.targets.entries()) {
-    const probe = dropProbe(sim, snapshot, target.x, target.y + 80, target.z);
-    // Hull centre rests half a standing hull above the surface.
-    const feet = probe.y - 36;
-    if (!probe.grounded) fail(`target ${i} at ${target.x},${target.z} has no floor`);
-    else if (Math.abs(feet - target.y) > 24) {
-      fail(`target ${i} floor is at y=${feet.toFixed(0)}, target sits at y=${target.y}`);
-    } else pass(`target ${i} grounded at y=${feet.toFixed(1)}`);
+  // 4. Team maps need usable spawns on both sides.
+  if (map.mode === Mode.team) {
+    const ct = map.spawns.filter((s) => (s.team ?? Team.none) !== Team.t).length;
+    const t = map.spawns.filter((s) => (s.team ?? Team.none) !== Team.ct).length;
+    if (ct === 0 || t === 0) fail(`team map has ${ct} CT / ${t} T spawns`);
+    else pass(`${ct} CT / ${t} T spawns`);
+    if ((map.spawns[0]?.team ?? Team.none) === Team.t) {
+      fail("spawns[0] is a T spawn, but the local player is always CT");
+    }
   }
 
   // 5. Coverage sweep: how much of the map's footprint is standable ground?

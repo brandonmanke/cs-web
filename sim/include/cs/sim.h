@@ -9,7 +9,7 @@
 
 namespace cs {
 
-inline constexpr std::uint32_t kSimApiVersion = 1;
+inline constexpr std::uint32_t kSimApiVersion = 2;
 
 // --- fixed tick ---
 inline constexpr float kTickRate = 64.0F;
@@ -27,7 +27,15 @@ inline constexpr float kJumpImpulse = 268.328157F; // sqrt(2 * gravity * 45u)
 inline constexpr float kBhopSpeedFactor = 1.7F;    // PM_PreventMegaBunnyJumping
 inline constexpr float kBhopSlowdown = 0.65F;
 inline constexpr float kStaminaFull = 1315.789429F; // GoldSrc fuser2 jump fatigue
-inline constexpr float kStaminaDrainPerSecond = 1000.0F;
+// Deliberately faster than GoldSrc's 1000/s: a hop lasts ~0.53 s, so most of
+// the fatigue has bled off by the time you land and a chained hop keeps ~89% of
+// its speed instead of ~85%. Bhop still decays without air-strafing, it just
+// forgives a sloppier one. See PLAN.md section 3.
+inline constexpr float kStaminaDrainPerSecond = 1400.0F;
+// Jump pressed this many ticks before touching ground still hops on landing.
+// 1.6 wants a frame-perfect tap; this keeps the tap-per-hop rhythm (holding
+// jump does *not* auto-hop) while forgiving ~125 ms of early press.
+inline constexpr std::uint32_t kJumpBufferTicks = 8;
 inline constexpr float kStepHeight = 18.0F;
 inline constexpr float kHullHalfWidth = 16.0F;       // 32x32 footprint
 inline constexpr float kHullHalfHeightStand = 36.0F; // 72u tall
@@ -40,8 +48,23 @@ inline constexpr float kGroundNormalMinY = 0.7F;
 inline constexpr float kMaxVelocityPerAxis = 2000.0F;
 inline constexpr float kShotRange = 8192.0F;
 
-inline constexpr std::uint32_t kMaxTargets = 8;
+// --- optics ---
+inline constexpr float kBaseFov = 90.0F;
+// Scoping costs mobility; leaving the scope costs accuracy. Both are what make
+// the AWP a positional weapon instead of a run-and-gun one.
+inline constexpr float kZoomSpeedFactor = 0.52F;
+inline constexpr float kUnscopedSpreadScale = 7.0F;
+
+// --- match ---
+inline constexpr float kPlayerHealth = 100.0F;
+inline constexpr std::uint32_t kRespawnTicks = 128; // 2 s
+inline constexpr std::uint32_t kHitFlashTicks = 8;
+
+inline constexpr std::uint32_t kMaxPlayers = 10;
+inline constexpr std::uint32_t kMaxSpawns = 24;
+inline constexpr std::uint32_t kMaxEvents = 8;
 inline constexpr std::uint32_t kWeaponCount = 8;
+inline constexpr std::uint32_t kLocalPlayer = 0;
 
 struct Vec3 {
   float x;
@@ -55,11 +78,13 @@ enum Button : std::uint32_t {
   ButtonFire = 1U << 2U,
   ButtonReload = 1U << 3U,
   ButtonWalk = 1U << 4U, // +speed: quiet, slow, accurate
+  ButtonZoom = 1U << 5U, // secondary fire: cycles scope levels
 };
 
 enum SnapshotFlag : std::uint32_t {
   SnapOnGround = 1U << 0U,
   SnapDucked = 1U << 1U,
+  SnapAlive = 1U << 2U,
 };
 
 enum Material : std::uint32_t {
@@ -92,9 +117,27 @@ enum ShotResult : std::uint32_t {
   ShotNone = 0,
   ShotWorld = 1, // hit world geometry
   ShotMiss = 2,  // hit nothing within range
-  ShotHit = 3,   // damaged a target
-  ShotKill = 4,  // killed a target
+  ShotHit = 3,   // damaged a player
+  ShotKill = 4,  // killed a player
   ShotDry = 5,   // empty magazine
+};
+
+enum Team : std::uint32_t {
+  TeamNone = 0, // free-for-all
+  TeamT = 1,
+  TeamCt = 2,
+};
+
+enum GameMode : std::uint32_t {
+  ModeRange = 0,       // bots roam but never shoot; the practice greybox
+  ModeDeathmatch = 1,  // free-for-all
+  ModeTeam = 2,        // T vs CT, no friendly fire
+};
+
+enum EventKind : std::uint32_t {
+  EventNone = 0,
+  EventShot = 1,  // a bullet was fired; start/end/result describe where it went
+  EventDeath = 2, // victim died at actor's hands
 };
 
 struct InputCommand {
@@ -121,35 +164,56 @@ struct WeaponDef {
   std::uint32_t reload_ticks;
   std::uint32_t recovery_ticks; // ticks of not firing before spray resets
   bool automatic;
+  // Scope FOVs in degrees, in cycle order; 0 ends the cycle. A weapon with no
+  // optics leaves both at 0.
+  float zoom_fov[2];
 };
 
-struct ShotEvent {
-  std::uint32_t sequence; // increments per shot fired; 0 = no shot yet
-  std::uint32_t result;   // ShotResult
+// One tick's worth of things worth hearing or drawing. The client reads the
+// snapshot after every step, so a per-tick array beats a ring buffer.
+struct SimEvent {
+  std::uint32_t kind;   // EventKind
+  std::uint32_t actor;  // player index that caused it
+  std::uint32_t victim; // player index, or kMaxPlayers for none
+  std::uint32_t result; // ShotResult
   std::uint32_t hit_group;
-  std::uint32_t target_index;
   std::uint32_t material; // world material hit (ShotWorld)
+  std::uint32_t weapon;
   float damage;
   Vec3 start;
   Vec3 end;
 };
 
-struct TargetSnapshot {
-  Vec3 origin; // feet position
+struct PlayerSnapshot {
+  Vec3 origin; // hull center
+  float yaw;
+  float pitch;
   float health;
-  std::uint32_t alive;
+  float speed_h;
+  std::uint32_t team;
+  std::uint32_t flags; // SnapshotFlag
+  std::uint32_t weapon;
+  std::uint32_t kills;
+  std::uint32_t deaths;
   std::uint32_t flash_ticks; // hit flash countdown, for renderer fx
+  std::uint32_t is_bot;
 };
 
 struct SimSnapshot {
   std::uint32_t api_version;
   std::uint32_t tick;
+  std::uint32_t mode;
+  std::uint32_t local_index;
+
+  // --- local player view: what the camera, viewmodel and HUD need ---
   Vec3 origin;   // hull center
   Vec3 velocity;
   float eye_height; // eye offset above origin (duck-lerped)
   float speed_h;    // horizontal speed, u/s
   float stamina;
+  float fov;        // degrees; drops while scoped
   std::uint32_t flags; // SnapshotFlag
+  std::uint32_t zoom;  // 0 = hip, 1..2 = scope level
   std::uint32_t weapon;
   std::uint32_t magazine;
   std::uint32_t reserve;
@@ -157,12 +221,18 @@ struct SimSnapshot {
   std::uint32_t reload_ticks;
   float punch_pitch; // radians
   float punch_yaw;
+  float health;
+  std::uint32_t respawn_ticks;
   std::uint32_t kills;
+  std::uint32_t deaths;
   std::uint32_t hits;
   std::uint32_t shots;
-  ShotEvent last_shot;
-  std::uint32_t target_count;
-  TargetSnapshot targets[kMaxTargets];
+
+  std::uint32_t team_score[3]; // indexed by Team
+  std::uint32_t player_count;
+  std::uint32_t event_count;
+  PlayerSnapshot players[kMaxPlayers];
+  SimEvent events[kMaxEvents];
 };
 
 static_assert(sizeof(SimSnapshot) % 4 == 0);
@@ -188,9 +258,19 @@ void sim_world_finalize();
 // miss. Used by the client's map light bake so lighting matches collision.
 int sim_trace_ray(float start_x, float start_y, float start_z, float end_x,
                   float end_y, float end_z, float* out_hit);
+
+// Spawn points the match uses to place everyone. team is cs::Team; TeamNone
+// means "usable by anyone".
+void sim_add_spawn(float x, float y, float z, float yaw, std::uint32_t team);
+// Reset scores, create `bot_count` bots and place every player. skill is 0..2.
+void sim_start_match(std::uint32_t mode, std::uint32_t bot_count,
+                     std::uint32_t skill);
+// Place a bot explicitly. Returns its player index, or kMaxPlayers if full.
+std::uint32_t sim_add_bot(float x, float y, float z, float yaw,
+                          std::uint32_t team, std::uint32_t skill);
+// Teleport the local player. Dev/tooling hook (?spawn=, mapcheck drop probes).
 void sim_spawn(float x, float y, float z, float yaw);
-void sim_add_target(float x, float y, float z, float patrol_min_x, float patrol_max_x,
-                    float speed);
+
 void sim_step(float forward, float strafe, float yaw, float pitch,
               std::uint32_t buttons, std::uint32_t weapon);
 const cs::SimSnapshot* sim_snapshot();

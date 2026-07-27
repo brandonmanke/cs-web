@@ -13,9 +13,13 @@ import { canvasTexture, fill, grain, stains } from "./textures";
 
 export type Team = "ct" | "t";
 
+// Bright enough to read against a map lit by pools of light and deep shadow.
+// The first pass used real-kit colours (navy CT, dark webbing) and a CT body
+// standing off a light pool was a black cutout you could not tell was facing
+// you — which is the one thing the character art has to do.
 const PALETTE: Record<Team, { cloth: string; vest: string; skin: string; trim: string }> = {
-  ct: { cloth: "#39434f", vest: "#232a33", skin: "#c49a76", trim: "#5b6672" },
-  t: { cloth: "#8a7248", vest: "#3b3226", skin: "#b98a60", trim: "#6d5a38" },
+  ct: { cloth: "#5d6d80", vest: "#3c4957", skin: "#c49a76", trim: "#8794a4" },
+  t: { cloth: "#9d8352", vest: "#4c4130", skin: "#b98a60", trim: "#7d6941" },
 };
 
 function bodyTexture(team: Team): THREE.CanvasTexture {
