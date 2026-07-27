@@ -282,6 +282,9 @@ void weapons_run(SimState& s, std::uint32_t index, const InputCommand& cmd) {
   if (cmd.weapon != WeaponNone && cmd.weapon < kWeaponCount &&
       static_cast<WeaponId>(cmd.weapon) != w.selected) {
     w.selected = static_cast<WeaponId>(cmd.weapon);
+    // Deliberate picks stick: dying should not silently put the AWP back in
+    // the locker and hand you a rifle.
+    e.loadout = w.selected;
     w.reload_ticks = 0;
     w.cooldown_ticks = 16; // 0.25 s draw
     w.shot_index = 0;

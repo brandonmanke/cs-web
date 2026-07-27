@@ -8,7 +8,8 @@ import { DEPOT } from "./map/maps/depot";
 import { FOUNDRY } from "./map/maps/foundry";
 import { PRACTICE } from "./map/maps/practice";
 import { SILO } from "./map/maps/silo";
-import { Menu } from "./menu";
+import { DeathCam } from "./deathcam";
+import { loadSetting, Menu, Settings, type Roster } from "./menu";
 import { Renderer } from "./renderer";
 import {
   EventKind, Flags, MAX_PLAYERS, Mode, ShotResult, Sim, Snapshot, Team,
@@ -20,6 +21,7 @@ const MAX_FRAME_SECONDS = 0.25;
 /** Beyond this a gunshot is inaudible; inside it, volume falls off linearly. */
 const AUDIO_RANGE = 2600;
 const DEFAULT_BOT_SKILL = 1;
+const MAX_BOTS = MAX_PLAYERS - 1;
 
 const scratch = new THREE.Vector3();
 
@@ -41,18 +43,27 @@ function chooseMap(): MapDef {
   return MAPS[requested ?? ""] ?? FOUNDRY;
 }
 
-/** ?bots= and ?skill= override the map's roster; everything else is authored. */
-function rosterOverrides(map: MapDef): { bots: number; skill: number } {
+/**
+ * How many bots to start with, in precedence order: `?bots=`, then whatever
+ * you last chose in the menu, then the map's default.
+ *
+ * That default is 0 for anything hostile. Loading a URL should not drop you
+ * into a firefight you didn't ask for — you get an empty map to look at and
+ * move around in, and PvP is one slider away. Range maps are the exception:
+ * their bots never shoot, so they're scenery, not opponents.
+ */
+function initialRoster(map: MapDef): Roster {
   const params = new URLSearchParams(location.search);
-  const bots = Number(params.get("bots"));
-  const skill = Number(params.get("skill"));
+  const urlBots = Number(params.get("bots"));
+  const urlSkill = Number(params.get("skill"));
+  const mapDefault = map.mode === Mode.range ? map.bots : 0;
   return {
-    bots: params.has("bots") && Number.isFinite(bots)
-      ? Math.max(0, Math.min(MAX_PLAYERS - 1, Math.floor(bots)))
-      : map.bots,
-    skill: params.has("skill") && Number.isFinite(skill)
-      ? Math.max(0, Math.min(2, Math.floor(skill)))
-      : DEFAULT_BOT_SKILL,
+    bots: params.has("bots") && Number.isFinite(urlBots)
+      ? Math.max(0, Math.min(MAX_BOTS, Math.floor(urlBots)))
+      : loadSetting(Settings.bots, 0, MAX_BOTS) ?? mapDefault,
+    skill: params.has("skill") && Number.isFinite(urlSkill)
+      ? Math.max(0, Math.min(2, Math.floor(urlSkill)))
+      : loadSetting(Settings.skill, 0, 2) ?? DEFAULT_BOT_SKILL,
   };
 }
 
@@ -67,15 +78,20 @@ async function boot(): Promise<void> {
   input.attach();
   const audio = new GameAudio();
   const viewmodel = new Viewmodel(renderer.camera);
-  const menu = new Menu(audio, (onGaveUp) => input.requestLock(onGaveUp));
+  const deathCam = new DeathCam();
+  const map = chooseMap();
+  const menu = new Menu(
+    audio,
+    (onGaveUp) => input.requestLock(onGaveUp),
+    (next) => startMatch(next),
+  );
   input.onLockChange = (locked) => {
     if (locked) menu.markStarted();
     menu.setVisible(!locked);
   };
 
-  const map = chooseMap();
-  const roster = rosterOverrides(map);
-  menu.setMap(map.name, `${MODE_LABELS[map.mode] ?? "?"} · ${roster.bots} BOTS`);
+  const roster = initialRoster(map);
+  menu.setRoster(roster);
   menu.setMapList(Object.keys(MAPS), map.name);
 
   // Collision first: the light bake ray-casts against this exact geometry, so
@@ -101,16 +117,27 @@ async function boot(): Promise<void> {
   const bakeMs = Math.round(performance.now() - bakeStart);
   console.info(`${map.name}: ${map.brushes.length} brushes, ${rays} shadow rays, ${bakeMs}ms bake`);
 
-  sim.startMatch(map.mode, roster.bots, roster.skill);
-
   const prev = new Snapshot();
   const curr = new Snapshot();
-  sim.read(curr);
-  prev.copyFrom(curr);
 
-  renderer.buildPlayers(
-    Array.from({ length: curr.playerCount }, (_, i) => curr.players[i]!.team),
-  );
+  /**
+   * Start (or restart) a match in place. The world and its light bake are
+   * untouched, so the menu's enemy slider costs a roster rebuild and nothing
+   * else — which is what makes turning PvP on a slider rather than a reload.
+   */
+  function startMatch(next: Roster): void {
+    sim.startMatch(map.mode, next.bots, next.skill);
+    sim.read(curr);
+    prev.copyFrom(curr);
+    renderer.buildPlayers(
+      Array.from({ length: curr.playerCount }, (_, i) => curr.players[i]!.team),
+    );
+    input.setYaw(curr.players[curr.localIndex]!.yaw);
+    const enemies = next.bots === 0 ? "NO ENEMIES" : `${next.bots} BOTS`;
+    menu.setMap(map.name, `${MODE_LABELS[map.mode] ?? "?"} · ${enemies}`);
+  }
+
+  startMatch(roster);
 
   // Dev overrides for scouting geometry: ?spawn=x,y,z and ?yaw=radians. These
   // land after the match starts, so they win over the authored spawn.
@@ -136,6 +163,7 @@ async function boot(): Promise<void> {
 
   let accumulator = 0;
   let lastTime = performance.now();
+  let wasAlive = true;
 
   function frame(now: number): void {
     let dt = (now - lastTime) / 1000;
@@ -152,6 +180,14 @@ async function boot(): Promise<void> {
       // Events are per-tick, not cumulative: read them before the next step
       // overwrites them, which is exactly what this loop does.
       for (let i = 0; i < curr.eventCount; ++i) handleEvent(curr.events[i]!);
+
+      // The respawn tick is the one tick where the sim's yaw is the spawn
+      // point's rather than the mouse's — pmove overwrites it from the next
+      // command onward. Catching it here rather than at render time means it
+      // survives a frame that advanced several ticks.
+      const alive = (curr.flags & Flags.alive) !== 0;
+      if (alive && !wasAlive) input.setYaw(curr.players[curr.localIndex]!.yaw);
+      wasAlive = alive;
     }
 
     const alpha = accumulator / TICK_SECONDS;
@@ -171,7 +207,11 @@ async function boot(): Promise<void> {
       pitchDelta: input.pitchDelta,
     });
     hud.update(curr, dt);
-    renderer.render(prev, curr, alpha, input.yaw, input.pitch);
+    const death = deathCam.update(dt, curr, input.yaw, input.pitch);
+    renderer.render(
+      prev, curr, alpha,
+      death?.yaw ?? input.yaw, death?.pitch ?? input.pitch, death?.eyeHeight,
+    );
     requestAnimationFrame(frame);
   }
 
@@ -188,6 +228,7 @@ async function boot(): Promise<void> {
     if (event.kind === EventKind.death) {
       hud.onDeath(event.actor, event.victim, event.weapon, curr.localIndex);
       if (event.actor === curr.localIndex) audio.kill();
+      if (event.victim === curr.localIndex) deathCam.onKilled(event.actor, curr.localIndex);
       return;
     }
     if (event.kind !== EventKind.shot) return;

@@ -58,6 +58,8 @@ struct PlayerEntity {
   PlayerState move;
   WeaponState weapon;
   BotState bot;
+  /** What to hand this player on respawn — their last deliberate pick. */
+  WeaponId loadout;
   float health;
   std::uint32_t team;
   std::uint32_t kills;

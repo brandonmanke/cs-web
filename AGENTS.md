@@ -59,7 +59,8 @@ no third-party C dependencies and no binary assets.
 - After client changes: `npm run typecheck`; for behavior, `npm run dev` and
   check the feel list in PLAN.md §3 (`?map=practice`).
 - Dev flags: `?map=`, `?bots=N`, `?skill=0..2`, `?spawn=x,y,z`, `?yaw=radians`,
-  `?coords`. `?bots=0` is the quickest way to look at geometry undisturbed.
+  `?coords`. Hostile maps default to zero bots, so geometry work needs no flag;
+  `?bots=N` overrides both the default and the stored menu preference.
 
 ## Assets
 

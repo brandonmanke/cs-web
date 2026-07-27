@@ -325,6 +325,40 @@ void test_bots_fight_back_and_you_respawn() {
   build_test_world();
 }
 
+void test_loadout_survives_death() {
+  // Picking the AWP and then dying used to hand you a rifle back, so the scope
+  // had to be re-selected every single life.
+  build_test_world();
+  sim_add_spawn(0.0F, cs::kHullHalfHeightStand + 2.0F, 0.0F, 0.0F, cs::TeamNone);
+  sim_start_match(cs::ModeDeathmatch, 0, 0);
+  sim_step(0.0F, 0.0F, 0.0F, 0.0F, 0, cs::WeaponAwp);
+  run_ticks(24, 0.0F, 0.0F, 0);
+  CHECK(sim_snapshot()->weapon == cs::WeaponAwp);
+
+  cs::state().players[cs::kLocalPlayer].health = 1.0F;
+  const std::uint32_t bot =
+      sim_add_bot(0.0F, cs::kHullHalfHeightStand, -300.0F, 0.0F, cs::TeamNone, 2);
+  CHECK(bot == 1U);
+  for (int i = 0; i < 1200 && sim_snapshot()->deaths == 0; ++i) {
+    sim_step(0.0F, 0.0F, 0.0F, 0.0F, 0, 0);
+  }
+  CHECK(sim_snapshot()->deaths > 0);
+  for (int i = 0; i < static_cast<int>(cs::kRespawnTicks) + 8; ++i) {
+    sim_step(0.0F, 0.0F, 0.0F, 0.0F, 0, 0);
+  }
+  CHECK((sim_snapshot()->flags & cs::SnapAlive) != 0U);
+  CHECK(sim_snapshot()->weapon == cs::WeaponAwp);
+  CHECK(sim_snapshot()->magazine == cs::weapon_def(cs::WeaponAwp).magazine);
+
+  // A match restart keeps it too, but the scope always comes back stowed.
+  sim_start_match(cs::ModeDeathmatch, 0, 0);
+  CHECK(sim_snapshot()->weapon == cs::WeaponAwp);
+  CHECK(sim_snapshot()->zoom == 0U);
+
+  sim_create();
+  build_test_world();
+}
+
 void test_team_mode_has_no_friendly_fire() {
   build_test_world();
   sim_add_spawn(0.0F, cs::kHullHalfHeightStand + 2.0F, 0.0F, 0.0F, cs::TeamNone);
@@ -466,6 +500,7 @@ int main() {
   test_trace_ray_abi();
   test_shooting_kills_a_bot();
   test_bots_fight_back_and_you_respawn();
+  test_loadout_survives_death();
   test_team_mode_has_no_friendly_fire();
   test_determinism();
 

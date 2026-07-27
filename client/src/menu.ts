@@ -9,25 +9,38 @@ import { DEFAULT_VOLUME, type GameAudio } from "./audio";
 // pause.
 
 const VOLUME_KEY = "cs-web.volume";
+const BOTS_KEY = "cs-web.bots";
+const SKILL_KEY = "cs-web.skill";
 
-function loadVolume(): number {
+const SKILL_NAMES = ["EASY", "NORMAL", "HARD"];
+
+/** A stored number, clamped, or null when absent/unreadable. */
+export function loadSetting(key: string, min: number, max: number): number | null {
   try {
-    const stored = localStorage.getItem(VOLUME_KEY);
-    if (stored === null) return DEFAULT_VOLUME;
+    const stored = localStorage.getItem(key);
+    if (stored === null) return null;
     const value = Number(stored);
-    return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : DEFAULT_VOLUME;
+    return Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : null;
   } catch {
-    // Private browsing / disabled storage — the default is fine.
-    return DEFAULT_VOLUME;
+    // Private browsing / disabled storage.
+    return null;
   }
 }
 
-function saveVolume(value: number): void {
+function saveSetting(key: string, value: number): void {
   try {
-    localStorage.setItem(VOLUME_KEY, String(value));
+    localStorage.setItem(key, String(value));
   } catch {
     // Not worth surfacing; the setting just won't persist.
   }
+}
+
+/** Preference keys main.ts seeds the menu from. */
+export const Settings = { bots: BOTS_KEY, skill: SKILL_KEY } as const;
+
+export interface Roster {
+  bots: number;
+  skill: number;
 }
 
 export class Menu {
@@ -38,14 +51,20 @@ export class Menu {
   private readonly hint = document.getElementById("menu-hint")!;
   private readonly subtitle = document.getElementById("menu-map")!;
   private readonly maps = document.getElementById("menu-maps")!;
+  private readonly bots = document.getElementById("menu-bots") as HTMLInputElement;
+  private readonly botsValue = document.getElementById("menu-bots-value")!;
+  private readonly skill = document.getElementById("menu-skill") as HTMLInputElement;
+  private readonly skillValue = document.getElementById("menu-skill-value")!;
 
   private started = false;
 
   constructor(
     private readonly audio: GameAudio,
     private readonly requestLock: (onGaveUp: () => void) => void,
+    /** Fired when the roster changes; the caller restarts the match. */
+    private readonly onRoster: (roster: Roster) => void,
   ) {
-    const volume = loadVolume();
+    const volume = loadSetting(VOLUME_KEY, 0, 1) ?? DEFAULT_VOLUME;
     this.audio.setVolume(volume);
     this.slider.value = String(Math.round(volume * 100));
     this.renderVolume(volume);
@@ -57,7 +76,19 @@ export class Menu {
     });
     // Persist on release rather than per-pixel of drag.
     for (const event of ["change", "pointerup"] as const) {
-      this.slider.addEventListener(event, () => saveVolume(this.audio.getVolume()));
+      this.slider.addEventListener(event, () => saveSetting(VOLUME_KEY, this.audio.getVolume()));
+    }
+
+    // Restarting a match on every pixel of a drag would be silly, so the labels
+    // track "input" and the actual restart waits for "change".
+    for (const input of [this.bots, this.skill]) {
+      input.addEventListener("input", () => this.renderRoster());
+      input.addEventListener("change", () => {
+        const roster = this.roster();
+        saveSetting(BOTS_KEY, roster.bots);
+        saveSetting(SKILL_KEY, roster.skill);
+        this.onRoster(roster);
+      });
     }
 
     this.resume.addEventListener("click", () => this.dismiss());
@@ -80,6 +111,23 @@ export class Menu {
 
   private renderVolume(value: number): void {
     this.readout.textContent = `${Math.round(value * 100)}%`;
+  }
+
+  private roster(): Roster {
+    return { bots: Number(this.bots.value), skill: Number(this.skill.value) };
+  }
+
+  private renderRoster(): void {
+    const { bots, skill } = this.roster();
+    this.botsValue.textContent = bots === 0 ? "OFF" : String(bots);
+    this.skillValue.textContent = SKILL_NAMES[skill] ?? "?";
+  }
+
+  /** Seed the controls without firing a restart. */
+  setRoster(roster: Roster): void {
+    this.bots.value = String(roster.bots);
+    this.skill.value = String(roster.skill);
+    this.renderRoster();
   }
 
   setMap(name: string, detail: string): void {

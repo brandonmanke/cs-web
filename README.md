@@ -21,8 +21,9 @@ npm run wasm   # build the C++ sim -> client/src/generated/sim.mjs
 npm run dev    # Vite dev server; open the printed URL, click to lock the mouse
 ```
 
-You against bots, with teams or free-for-all. Maps pick their own mode and
-roster; the menu switches between them.
+**Enemies are off by default** — you land in an empty map to move around and
+look at. Turn PvP on with the menu's ENEMIES slider (or `?bots=N`); the match
+restarts in place, no reload. Your choice is remembered.
 
 | `?map=` | mode | |
 |---|---|---|
@@ -32,6 +33,7 @@ roster; the menu switches between them.
 | `practice` | range | movement/aim greybox; bots roam but never shoot |
 
 Dev flags: `?bots=N`, `?skill=0..2`, `?spawn=x,y,z`, `?yaw=radians`, `?coords`.
+`practice` keeps its bots by default — they're targets, not opponents.
 
 Controls: **WASD** move · **Space**/**wheel** jump · **Shift** walk ·
 **Ctrl**/**C** duck · **R** reload · **1–7** weapons · **Q** last weapon ·

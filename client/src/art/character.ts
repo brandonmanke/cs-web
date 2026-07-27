@@ -58,6 +58,22 @@ function headTexture(team: Team): THREE.CanvasTexture {
   });
 }
 
+/**
+ * Skins are per team, not per body, and the roster gets rebuilt whenever the
+ * bot count changes — so generate each canvas once and share it. Character
+ * disposal deliberately leaves these alone.
+ */
+const skins = new Map<string, THREE.CanvasTexture>();
+function skin(team: Team, part: "body" | "head"): THREE.CanvasTexture {
+  const key = `${team}:${part}`;
+  let texture = skins.get(key);
+  if (!texture) {
+    texture = part === "body" ? bodyTexture(team) : headTexture(team);
+    skins.set(key, texture);
+  }
+  return texture;
+}
+
 /** A box whose pivot sits at its top face, so limbs rotate from the joint. */
 function limb(w: number, h: number, d: number, material: THREE.Material): THREE.Mesh {
   const geometry = new THREE.BoxGeometry(w, h, d);
@@ -100,9 +116,9 @@ export class Character {
   private deathTime = 0;
 
   constructor(team: Team) {
-    const cloth = new THREE.MeshLambertMaterial({ map: bodyTexture(team) });
-    const skin = new THREE.MeshLambertMaterial({ map: headTexture(team) });
-    this.materials.push(cloth, skin);
+    const cloth = new THREE.MeshLambertMaterial({ map: skin(team, "body") });
+    const flesh = new THREE.MeshLambertMaterial({ map: skin(team, "head") });
+    this.materials.push(cloth, flesh);
 
     this.root.add(this.pivot);
     this.pivot.add(this.hips);
@@ -115,7 +131,7 @@ export class Character {
 
     this.torso.add(this.head);
     this.head.position.y = 20; // world y 58
-    this.head.add(block(12, 12, 12, 6, skin));
+    this.head.add(block(12, 12, 12, 6, flesh));
     // Brow ridge: gives the silhouette a facing direction at distance.
     this.head.add(block(13, 3, 3, 8, cloth).translateZ(-5.5));
 
@@ -227,9 +243,7 @@ export class Character {
       const mesh = object as THREE.Mesh;
       if (mesh.isMesh) mesh.geometry.dispose();
     });
-    for (const material of this.materials) {
-      material.map?.dispose();
-      material.dispose();
-    }
+    // Maps are shared across every body on a team and outlive this one.
+    for (const material of this.materials) material.dispose();
   }
 }

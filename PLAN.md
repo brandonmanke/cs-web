@@ -120,6 +120,15 @@ what makes the M-net server a compile target rather than a rewrite.
 - **Modes** (`sim_start_match`): `range` (bots roam, never shoot — the practice
   greybox), `deathmatch` (FFA), `team` (T vs CT, no friendly fire). No round
   loop and no economy: you die, you respawn 2 s later. Defuse is still later.
+- **Enemies are opt-in.** Hostile modes start with zero bots; the menu's slider
+  restarts the match in place (the world and its light bake are untouched, so
+  it costs a roster rebuild and nothing else) and the choice persists. Loading
+  a URL should not drop you into a firefight you didn't ask for. Range bots are
+  exempt — they never shoot, so they're scenery.
+- **Your loadout survives death.** `PlayerEntity::loadout` records the last
+  deliberate weapon pick and `respawn_player` hands it back, including across a
+  match restart. Re-selecting the AWP every life was the fastest way to make
+  the scope feel like a chore.
 - **Spawns** are authored per map and team-tagged. The first spawn is where the
   level wants you to enter, so the opening placement is authored; every respawn
   after that picks the point furthest from a living enemy.
@@ -159,7 +168,10 @@ No binary assets. Nothing to license, nothing to download, everything diffs.
   grain, stains, drips, rivets — at 128², nearest-filtered.
 - **Characters** (`client/src/art/character.ts`): rigid box hierarchy (what PSX
   and GoldSrc actually did), proportioned to the sim hitboxes, animated with
-  sines. Tinted by `sampleLight` so they sit inside the baked lighting.
+  sines. Tinted by `sampleLight` so they sit inside the baked lighting — but
+  the tint is remapped onto a readable band rather than applied raw, because a
+  body in shadow that reads as a black cutout defeats the point of the art.
+  Skins are cached per team, so a roster rebuild is cheap.
 - **Weapons** (`client/src/art/weapons.ts`): per-weapon box assemblies with
   distinct silhouettes, plus muzzle offsets for flashes and tracers.
 - **Audio** (`client/src/audio.ts`): Web Audio synthesis, per-weapon voices and

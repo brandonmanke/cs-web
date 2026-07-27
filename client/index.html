@@ -142,9 +142,9 @@
       #menu .row label {
         font-size: 11px; letter-spacing: 2px; color: #9aa38c; min-width: 62px;
       }
-      #menu-volume { flex: 1; accent-color: #86e39a; cursor: pointer; }
-      #menu-volume-value {
-        min-width: 38px; text-align: right; font-size: 12px; color: #d8d2b4;
+      #menu .row input[type="range"] { flex: 1; accent-color: #86e39a; cursor: pointer; }
+      #menu .row .value {
+        min-width: 54px; text-align: right; font-size: 12px; color: #d8d2b4;
       }
 
       #menu-maps a {
@@ -201,7 +201,19 @@
         <div class="row">
           <label for="menu-volume">VOLUME</label>
           <input id="menu-volume" type="range" min="0" max="100" value="50" />
-          <span id="menu-volume-value">50%</span>
+          <span id="menu-volume-value" class="value">50%</span>
+        </div>
+
+        <div class="row">
+          <label for="menu-bots">ENEMIES</label>
+          <input id="menu-bots" type="range" min="0" max="9" value="0" />
+          <span id="menu-bots-value" class="value">OFF</span>
+        </div>
+
+        <div class="row">
+          <label for="menu-skill">SKILL</label>
+          <input id="menu-skill" type="range" min="0" max="2" value="1" />
+          <span id="menu-skill-value" class="value">NORMAL</span>
         </div>
 
         <div class="row">

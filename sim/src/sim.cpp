@@ -77,8 +77,10 @@ void place_player(SimState& s, std::uint32_t index, const SpawnPoint* spawn) {
   e.alive = true;
   e.respawn_ticks = 0;
   e.flash_ticks = 0;
-  const WeaponId weapon = e.is_bot ? kBotWeapons[index % 4U] : WeaponAk47;
-  weapons_reset(e, weapon);
+  if (e.loadout == WeaponNone) {
+    e.loadout = e.is_bot ? kBotWeapons[index % 4U] : WeaponAk47;
+  }
+  weapons_reset(e, e.loadout);
   if (e.is_bot) {
     bot_reset(s, index, e.bot.skill);
   }
@@ -300,7 +302,8 @@ void sim_create() {
   cs::reset_movement(local, {0.0F, cs::kHullHalfHeightStand + 1.0F, 0.0F}, 0.0F);
   local.health = cs::kPlayerHealth;
   local.alive = true;
-  cs::weapons_reset(local, cs::WeaponAk47);
+  local.loadout = cs::WeaponAk47;
+  cs::weapons_reset(local, local.loadout);
 
   cs::refresh_snapshot(g_state);
 }
@@ -367,8 +370,9 @@ std::uint32_t sim_add_bot(float x, float y, float z, float yaw,
   e.team = team <= cs::TeamCt ? team : cs::TeamNone;
   e.health = cs::kPlayerHealth;
   e.alive = true;
+  e.loadout = cs::kBotWeapons[index % 4U];
   cs::reset_movement(e, {x, y, z}, yaw);
-  cs::weapons_reset(e, cs::kBotWeapons[index % 4U]);
+  cs::weapons_reset(e, e.loadout);
   cs::bot_reset(g_state, index, skill);
   cs::refresh_snapshot(g_state);
   return index;
@@ -385,11 +389,18 @@ void sim_start_match(std::uint32_t mode, std::uint32_t bot_count,
       bot_count > cs::kMaxPlayers - 1U ? cs::kMaxPlayers - 1U : bot_count;
   g_state.player_count = bots + 1U;
 
+  // Restarting a match (the menu's bot slider does exactly that) should not
+  // confiscate the gun you chose to be holding.
+  const cs::WeaponId kept = g_state.players[cs::kLocalPlayer].loadout;
+
   // Two passes: wipe the whole roster before placing anyone, so spawn choice
   // never sees a corpse from the previous match standing in the way.
   for (std::uint32_t i = 0; i < cs::kMaxPlayers; ++i) {
     cs::PlayerEntity& e = g_state.players[i];
     e = {};
+    if (i == cs::kLocalPlayer) {
+      e.loadout = kept;
+    }
     e.active = i < g_state.player_count;
     e.is_bot = i != cs::kLocalPlayer;
     // Teams alternate so the sides stay even; you always start on CT.

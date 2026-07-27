@@ -265,11 +265,14 @@ export class Renderer {
     });
   }
 
-  render(prev: Snapshot, curr: Snapshot, alpha: number, yaw: number, pitch: number): void {
+  /** `eyeHeight` overrides the interpolated stance height — the death cam. */
+  render(prev: Snapshot, curr: Snapshot, alpha: number, yaw: number, pitch: number,
+         eyeHeight?: number): void {
     const lerp = (a: number, b: number) => a + (b - a) * alpha;
     this.camera.position.set(
       lerp(prev.origin[0]!, curr.origin[0]!),
-      lerp(prev.origin[1]!, curr.origin[1]!) + lerp(prev.eyeHeight, curr.eyeHeight),
+      lerp(prev.origin[1]!, curr.origin[1]!) +
+        (eyeHeight ?? lerp(prev.eyeHeight, curr.eyeHeight)),
       lerp(prev.origin[2]!, curr.origin[2]!),
     );
     this.camera.rotation.set(pitch + curr.punchPitch, yaw + curr.punchYaw, 0);

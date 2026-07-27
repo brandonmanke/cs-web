@@ -40,7 +40,8 @@ export class Hud {
   private lastHealthText = "";
   private lastScoreText = "";
   private lastSpeedText = "";
-  private lastZoom = -1;
+  /** Current reticle state: -1 dead, 0 crosshair, 1..2 scope level. */
+  private lastReticle = -2;
 
   /** Dev readout; off unless ?coords is present. */
   private readonly showCoords = new URLSearchParams(location.search).has("coords");
@@ -133,11 +134,13 @@ export class Hud {
     }
 
     // Scoped: the reticle is the scope's own hairlines, so the dynamic
-    // crosshair would just be a second, wrong one on top of it.
-    if (snapshot.zoom !== this.lastZoom) {
-      this.scope.classList.toggle("hidden", snapshot.zoom === 0);
-      this.crosshair.style.display = snapshot.zoom === 0 ? "" : "none";
-      this.lastZoom = snapshot.zoom;
+    // crosshair would just be a second, wrong one on top of it. Dead: there is
+    // nothing to aim.
+    const reticle = alive ? snapshot.zoom : -1;
+    if (reticle !== this.lastReticle) {
+      this.scope.classList.toggle("hidden", reticle !== 1 && reticle !== 2);
+      this.crosshair.style.display = reticle === 0 ? "" : "none";
+      this.lastReticle = reticle;
     }
 
     this.respawn.classList.toggle("hidden", alive);
