@@ -57,6 +57,20 @@ const REF_DISTANCE = 180;
 const MAX_DISTANCE = 6000;
 const ROLLOFF = 0.9;
 
+/**
+ * Muffling by wall count. Distance alone can't tell you whether the AWP that
+ * just went off is down your corridor or through the wall behind you, and in
+ * 1.6 that difference is the whole reason you turn one way and not the other.
+ * High frequencies are what a wall eats, so a lowpass carries the information
+ * and the gain drop only sells it.
+ */
+const OCCLUSION = [
+  { cutoff: 22000, gain: 1.0 },  // clear line
+  { cutoff: 1300, gain: 0.55 },  // one wall: dull, still placeable
+  { cutoff: 620, gain: 0.30 },   // two: a rumour
+  { cutoff: 320, gain: 0.16 },   // three or more: barely there
+] as const;
+
 type Point = readonly number[];
 
 export class GameAudio {
@@ -64,6 +78,7 @@ export class GameAudio {
   private master: GainNode | null = null;
   private noise: AudioBuffer | null = null;
   private volume = DEFAULT_VOLUME;
+  private occlusion: ((at: Point) => number) | null = null;
 
   private ensure(): AudioContext {
     if (!this.ctx) {
@@ -107,9 +122,19 @@ export class GameAudio {
   }
 
   /**
+   * How many walls stand between the ears and a point. Supplied by the game,
+   * which owns the sim and therefore the only ray tracer in the build; without
+   * one every sound is treated as being in the open.
+   */
+  setOcclusionProbe(probe: (at: Point) => number): void {
+    this.occlusion = probe;
+  }
+
+  /**
    * The node a sound should feed into: the master bus for anything that
-   * happens at your own hands, or a panner placed in the world for everything
-   * else. Panners are torn down on a timer once the sound has rung out.
+   * happens at your own hands, or a panner placed in the world — behind a
+   * lowpass if there is geometry in the way — for everything else. The chain is
+   * torn down on a timer once the sound has rung out.
    */
   private sink(at: Point | undefined, lifetime: number): AudioNode {
     const master = this.out();
@@ -128,8 +153,26 @@ export class GameAudio {
     } else {
       panner.setPosition(at[0]!, at[1]!, at[2]!);
     }
-    panner.connect(master);
-    window.setTimeout(() => panner.disconnect(), (lifetime + 0.4) * 1000);
+
+    // Muffle after panning, not before: the wall takes the highs out, the head
+    // still gets to say which ear heard what is left.
+    const chain: AudioNode[] = [panner];
+    const walls = Math.min(this.occlusion?.(at) ?? 0, OCCLUSION.length - 1);
+    if (walls > 0) {
+      const spec = OCCLUSION[walls]!;
+      const muffle = ctx.createBiquadFilter();
+      muffle.type = "lowpass";
+      muffle.frequency.value = spec.cutoff;
+      const gain = ctx.createGain();
+      gain.gain.value = spec.gain;
+      chain.push(muffle, gain);
+    }
+    for (let i = 0; i < chain.length - 1; ++i) chain[i]!.connect(chain[i + 1]!);
+    chain[chain.length - 1]!.connect(master);
+
+    window.setTimeout(() => {
+      for (const node of chain) node.disconnect();
+    }, (lifetime + 0.4) * 1000);
     return panner;
   }
 

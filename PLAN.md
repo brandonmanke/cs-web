@@ -156,8 +156,7 @@ what makes the M-net server a compile target rather than a rewrite.
   into the world. Full hull-vs-hull sweeps inside pmove would be the "correct"
   fix and would also reintroduce every wedging failure v3 spent its time
   eliminating, with ten hulls shoving each other every tick.
-- Known gaps: bots don't duck, don't bhop, and don't buy; no scoreboard beyond
-  the HUD line; teams never rebalance.
+- Known gaps: bots don't duck, don't bhop, and don't buy; teams never rebalance.
 
 ## 5. Art pipeline — everything is code
 
@@ -192,6 +191,13 @@ No binary assets. Nothing to license, nothing to download, everything diffs.
   has no direction to give. Direction is not decoration in a shooter: footsteps
   behind you are the game telling you to turn around, and a mono mixdown throws
   that away. One shared noise buffer feeds every burst.
+- **Occlusion** is a wall count, not a portal graph: the client walks
+  `sim_trace_ray` from the ears to the sound, restarting each trace 1u past the
+  surface it just hit. A trace that starts solid reports no hit, so every brush
+  in the way is counted exactly once, and the count picks a lowpass — a wall
+  eats the highs, which is the cue that tells you the AWP is through it rather
+  than down your corridor. Three walls is the cap; past that it's inaudible
+  anyway. Roughly 3µs per sound.
 
 ## 6. Repo layout
 
@@ -224,12 +230,14 @@ Done in v3:
   per-material audio; dynamic crosshair; decals, tracers, muzzle flash.
 - **R6** — shift-walk and scroll-jump; `mapcheck` tool; build no longer stages
   Valve-derived assets into `dist/`.
-- **R7** (api v2) — multi-player sim: roster of entities, player health and
+- **R7** (api v3) — multi-player sim: roster of entities, player health and
   damage, teams, kills/deaths, respawn, per-tick event list. Bots that play
   through the same pmove/weapons path. FFA/team/range modes with authored,
   team-tagged spawns. AWP scope as sim state. Bhop easing (jump buffer +
-  stamina). Two new maps (`depot`, `silo`). HUD health/killfeed/scoreboard,
-  in-game map switcher.
+  stamina). Footsteps as a sim event, carrying material and position. Two new
+  maps (`depot`, `silo`). Positional audio with wall-count occlusion; enemies
+  opt-in; death camera; HUD health/killfeed/TAB scoreboard, in-game map
+  switcher.
 
 Next, in order:
 
@@ -245,9 +253,8 @@ Next, in order:
 - **M-modes+** — round loop, buy menu, defuse.
 - **M-content** — more maps; a TrenchBroom `.map` importer feeding
   `sim_add_brush` if hand-authoring in TS gets tiring; armour and wallbangs.
-- **M-polish** — reload/draw viewmodel anims, a TAB scoreboard, occlusion on
-  spatialized sound (a shot through two walls is currently only quieter, not
-  muffled), perf pass (instancing, draw batching).
+- **M-polish** — reload/draw viewmodel anims, reverb sized to the room the
+  listener is standing in, perf pass (instancing, draw batching).
 
 ## 8. Rules that don't change
 

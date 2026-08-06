@@ -16,6 +16,14 @@ interface FeedEntry {
   ttl: number;
 }
 
+interface BoardRow {
+  index: number;
+  team: number;
+  kills: number;
+  deaths: number;
+  alive: boolean;
+}
+
 function playerName(index: number, localIndex: number): string {
   return index === localIndex ? "YOU" : `BOT ${index}`;
 }
@@ -32,6 +40,7 @@ export class Hud {
   private readonly scope = document.getElementById("scope")!;
   private readonly killfeed = document.getElementById("killfeed")!;
   private readonly respawn = document.getElementById("respawn")!;
+  private readonly scoreboard = document.getElementById("scoreboard")!;
 
   private hitmarkerTtl = 0;
   private gap = CROSSHAIR_MIN;
@@ -40,6 +49,8 @@ export class Hud {
   private lastHealthText = "";
   private lastScoreText = "";
   private lastSpeedText = "";
+  private lastBoardKey = "";
+  private boardShown = false;
   /** Current reticle state: -1 dead, 0 crosshair, 1..2 scope level. */
   private lastReticle = -2;
 
@@ -83,6 +94,69 @@ export class Hud {
 
   private retireFeed(entry: FeedEntry): void {
     entry.el.remove();
+  }
+
+  /** Held, not toggled: the game calls this every frame with TAB's state. */
+  setScoreboard(shown: boolean): void {
+    this.boardShown = shown;
+  }
+
+  /**
+   * Everything here already rides in the snapshot's player array, so the board
+   * is a pure read. It rebuilds only when a number on it actually moved — TAB
+   * is held for seconds at a time and this is the widest markup on screen.
+   */
+  private updateScoreboard(snapshot: Snapshot): void {
+    this.scoreboard.classList.toggle("hidden", !this.boardShown);
+    if (!this.boardShown) {
+      this.lastBoardKey = "";
+      return;
+    }
+
+    const rows: BoardRow[] = [];
+    for (let i = 0; i < snapshot.playerCount; ++i) {
+      const player = snapshot.players[i]!;
+      rows.push({
+        index: i,
+        team: player.team,
+        kills: player.kills,
+        deaths: player.deaths,
+        alive: (player.flags & Flags.alive) !== 0,
+      });
+    }
+    // Deaths break a tie on kills, index breaks that — otherwise two bots with
+    // identical lines would swap places every rebuild.
+    rows.sort((a, b) => b.kills - a.kills || a.deaths - b.deaths || a.index - b.index);
+
+    const key = rows
+      .map((r) => `${r.index}.${r.kills}.${r.deaths}.${r.alive ? 1 : 0}`)
+      .join("|");
+    if (key === this.lastBoardKey) return;
+    this.lastBoardKey = key;
+
+    const line = (r: BoardRow): string => {
+      const classes = [r.index === snapshot.localIndex ? "you" : "", r.alive ? "" : "dead"];
+      return `<tr class="${classes.join(" ").trim()}">` +
+        `<td class="name">${playerName(r.index, snapshot.localIndex)}</td>` +
+        `<td>${r.kills}</td><td>${r.deaths}</td></tr>`;
+    };
+
+    let body = "";
+    if (snapshot.mode === Mode.team) {
+      for (const [team, label] of [[Team.ct, "COUNTER-TERRORIST"], [Team.t, "TERRORIST"]] as const) {
+        const side = rows.filter((r) => r.team === team);
+        if (side.length === 0) continue;
+        body += `<tr class="head ${team === Team.ct ? "ct" : "t"}">` +
+          `<td colspan="3">${label} &middot; ${snapshot.teamScore[team]}</td></tr>`;
+        body += side.map(line).join("");
+      }
+    } else {
+      body = rows.map(line).join("");
+    }
+
+    this.scoreboard.innerHTML =
+      `<table><thead><tr><th class="name">PLAYER</th><th>K</th><th>D</th></tr></thead>` +
+      `<tbody>${body}</tbody></table>`;
   }
 
   update(snapshot: Snapshot, dt: number): void {
@@ -142,6 +216,8 @@ export class Hud {
       this.crosshair.style.display = reticle === 0 ? "" : "none";
       this.lastReticle = reticle;
     }
+
+    this.updateScoreboard(snapshot);
 
     this.respawn.classList.toggle("hidden", alive);
     if (!alive) {

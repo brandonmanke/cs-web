@@ -95,6 +95,31 @@
       #killfeed .self { color: #f0e8c4; }
       #killfeed .weapon { color: #7d8a72; }
 
+      /* Scoreboard: held on TAB, like 1.6. */
+      #scoreboard {
+        position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+        min-width: 360px; padding: 16px 22px 14px;
+        background: rgba(9, 11, 9, 0.86);
+        border: 1px solid #3b4034;
+        box-shadow: 0 0 0 1px #0a0c08, 0 18px 50px rgba(0, 0, 0, 0.6);
+      }
+      #scoreboard.hidden { display: none; }
+      #scoreboard table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      #scoreboard th {
+        font-weight: normal; font-size: 10px; letter-spacing: 2px; color: #7d8a72;
+        text-align: right; padding-bottom: 6px; border-bottom: 1px solid #2b3026;
+      }
+      #scoreboard td { padding: 3px 0; text-align: right; color: #b8b49a; }
+      #scoreboard th.name, #scoreboard td.name { text-align: left; padding-right: 34px; }
+      #scoreboard tr.dead td { color: #5e6357; }
+      #scoreboard tr.you td { color: #f0e8c4; }
+      #scoreboard tr.you.dead td { color: #98906f; }
+      #scoreboard tr.head td {
+        text-align: left; padding-top: 11px; font-size: 11px; letter-spacing: 3px;
+      }
+      #scoreboard tr.head.ct td { color: #7fb2e8; }
+      #scoreboard tr.head.t td { color: #e0b268; }
+
       #respawn {
         position: absolute; left: 50%; top: 56%; transform: translate(-50%, -50%);
         color: #ff5a4a; font-size: 16px; letter-spacing: 3px; text-align: center;
@@ -187,6 +212,7 @@
       <div id="coords"></div>
       <div id="score"></div>
       <div id="killfeed"></div>
+      <div id="scoreboard" class="hidden"></div>
       <div id="respawn" class="hidden">RESPAWNING</div>
       <div id="status">LOADING</div>
     </div>
@@ -231,6 +257,7 @@
           <dt>MOUSE2</dt><dd>scope (AWP)</dd>
           <dt>R</dt><dd>reload</dd>
           <dt>1&ndash;7 / Q</dt><dd>weapons</dd>
+          <dt>TAB</dt><dd>scoreboard</dd>
         </dl>
 
         <div id="menu-hint">click anywhere to lock the mouse</div>

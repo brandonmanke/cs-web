@@ -137,8 +137,9 @@ export class Input {
       }
       if (e.code === "KeyQ" && this.lastWeapon !== 0) this.pendingWeapon = this.lastWeapon;
       this.keys.add(e.code);
-      // Ctrl+W / Ctrl+digit would otherwise reach the browser while ducking.
-      if (e.code === "Space" || e.ctrlKey) e.preventDefault();
+      // Ctrl+W / Ctrl+digit would otherwise reach the browser while ducking,
+      // and Tab would walk focus off the canvas.
+      if (e.code === "Space" || e.code === "Tab" || e.ctrlKey) e.preventDefault();
     });
     document.addEventListener("keyup", (e) => {
       this.keys.delete(e.code);
@@ -147,6 +148,11 @@ export class Input {
 
   setYaw(yaw: number): void {
     this.yaw = yaw;
+  }
+
+  /** Scoreboard is held rather than toggled, same as 1.6. */
+  get scoreboard(): boolean {
+    return this.keys.has("Tab");
   }
 
   /** Feed the sim's current FOV back in so aim gain follows the scope. */

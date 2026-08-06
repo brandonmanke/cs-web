@@ -23,10 +23,15 @@ const MAX_FRAME_SECONDS = 0.25;
  * job; this is only a cull so a firefight across the map doesn't allocate.
  */
 const AUDIO_CULL_RANGE = 5000;
+/** Past three walls a sound is inaudible anyway, so stop paying for traces. */
+const OCCLUSION_MAX_WALLS = 3;
+/** How far past a surface the next trace starts, in units. */
+const OCCLUSION_SKIN = 1;
 const DEFAULT_BOT_SKILL = 1;
 const MAX_BOTS = MAX_PLAYERS - 1;
 
 const scratch = new THREE.Vector3();
+const occFrom = [0, 0, 0];
 const listenerPos = new THREE.Vector3();
 const listenerFwd = new THREE.Vector3();
 const listenerUp = new THREE.Vector3();
@@ -125,6 +130,8 @@ async function boot(): Promise<void> {
 
   const prev = new Snapshot();
   const curr = new Snapshot();
+  // Only the sim can trace the world, so the audio asks it what is in the way.
+  audio.setOcclusionProbe(wallsTo);
 
   /**
    * Start (or restart) a match in place. The world and its light bake are
@@ -212,6 +219,7 @@ async function boot(): Promise<void> {
       yawDelta: input.yawDelta,
       pitchDelta: input.pitchDelta,
     });
+    hud.setScoreboard(input.scoreboard);
     hud.update(curr, dt);
     const death = deathCam.update(dt, curr, input.yaw, input.pitch);
     renderer.render(
@@ -232,6 +240,45 @@ async function boot(): Promise<void> {
       at[0]! - curr.origin[0], at[1]! - curr.origin[1] - curr.eyeHeight,
       at[2]! - curr.origin[2],
     ) < AUDIO_CULL_RANGE;
+  }
+
+  /**
+   * How many brushes stand between the ears and a point.
+   *
+   * Each trace that hits restarts the next one just inside the surface it hit,
+   * and a trace that begins solid reports no hit — so a wall is entered once,
+   * counted once, and never seen again. That is the whole trick; there is no
+   * portal graph and no volumes to author.
+   */
+  function wallsTo(at: readonly number[]): number {
+    const ex = curr.origin[0];
+    const ey = curr.origin[1] + curr.eyeHeight;
+    const ez = curr.origin[2];
+    let dx = at[0]! - ex;
+    let dy = at[1]! - ey;
+    let dz = at[2]! - ez;
+    const length = Math.hypot(dx, dy, dz);
+    if (length < 1) return 0;
+    dx /= length;
+    dy /= length;
+    dz /= length;
+
+    let walls = 0;
+    let travelled = 0;
+    while (walls < OCCLUSION_MAX_WALLS && travelled < length) {
+      occFrom[0] = ex + dx * travelled;
+      occFrom[1] = ey + dy * travelled;
+      occFrom[2] = ez + dz * travelled;
+      const hit = sim.traceRay(occFrom, at);
+      if (!hit) break;
+      ++walls;
+      // Project the impact back onto the ray. Adding the skin makes this
+      // strictly increasing, so the loop terminates even if a trace were to
+      // report a hit at zero distance.
+      travelled = (hit.point[0] - ex) * dx + (hit.point[1] - ey) * dy +
+                  (hit.point[2] - ez) * dz + OCCLUSION_SKIN;
+    }
+    return walls;
   }
 
   function handleEvent(event: EventView): void {

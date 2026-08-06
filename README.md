@@ -35,12 +35,12 @@ restarts in place, no reload. Your choice is remembered.
 Dev flags: `?bots=N`, `?skill=0..2`, `?spawn=x,y,z`, `?yaw=radians`, `?coords`.
 `practice` keeps its bots by default — they're targets, not opponents.
 
-Wear headphones — footsteps and gunfire are positional, and **Shift** is the
-only way to move without making any.
+Wear headphones — footsteps and gunfire are positional and go muffled through
+walls, and **Shift** is the only way to move without making any.
 
 Controls: **WASD** move · **Space**/**wheel** jump · **Shift** walk (silent) ·
 **Ctrl**/**C** duck · **R** reload · **1–7** weapons · **Q** last weapon ·
-**Mouse1** fire · **Mouse2** scope (AWP).
+**Mouse1** fire · **Mouse2** scope (AWP) · **Tab** scoreboard.
 
 ## Test
 
