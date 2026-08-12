@@ -146,7 +146,7 @@ void add_axial_bevels(Brush& brush) {
 // zero-fraction hit: pmove resolves embedding through unstick()/overlap tests,
 // and returning a blocking hit here would stall slide_move instead.
 void clip_hull_to_brush(const Brush& brush, Vec3 start, Vec3 delta, Vec3 half,
-                        float& best_fraction, Vec3& best_normal,
+                        float& best_fraction, float& best_exit, Vec3& best_normal,
                         std::uint32_t& best_material, bool& hit) {
   float enter_fraction = -1.0F;
   float leave_fraction = 1.0F;
@@ -204,6 +204,9 @@ void clip_hull_to_brush(const Brush& brush, Vec3 start, Vec3 delta, Vec3 half,
     return;
   }
   best_fraction = enter_fraction;
+  // The same clip already knows the far side, so thickness is free. Nothing in
+  // movement reads it; penetration would otherwise need a second query per wall.
+  best_exit = leave_fraction;
   best_normal = enter_normal;
   best_material = brush.material;
   hit = true;
@@ -299,7 +302,7 @@ void world_finalize() {
 }
 
 TraceResult world_trace_hull(Vec3 start, Vec3 end, Vec3 half) {
-  TraceResult result = {1.0F, end, {0.0F, 0.0F, 0.0F}, 0, false};
+  TraceResult result = {1.0F, 1.0F, end, {0.0F, 0.0F, 0.0F}, 0, false};
   const Vec3 delta = {end.x - start.x, end.y - start.y, end.z - start.z};
   const float length = std::sqrt(dot(delta, delta));
   if (length <= 0.0F) {
@@ -318,6 +321,7 @@ TraceResult world_trace_hull(Vec3 start, Vec3 end, Vec3 half) {
   };
 
   float fraction = 1.0F;
+  float exit_fraction = 1.0F;
   Vec3 normal = {0.0F, 0.0F, 0.0F};
   std::uint32_t material = 0;
   bool hit = false;
@@ -326,7 +330,8 @@ TraceResult world_trace_hull(Vec3 start, Vec3 end, Vec3 half) {
     if (!bounds_overlap(brush, sweep_mins, sweep_maxs)) {
       continue;
     }
-    clip_hull_to_brush(brush, start, delta, half, fraction, normal, material, hit);
+    clip_hull_to_brush(brush, start, delta, half, fraction, exit_fraction, normal,
+                       material, hit);
   }
   if (!hit) {
     return result;
@@ -337,6 +342,7 @@ TraceResult world_trace_hull(Vec3 start, Vec3 end, Vec3 half) {
     fraction = 0.0F;
   }
   result.fraction = fraction;
+  result.exit_fraction = exit_fraction;
   result.end = {start.x + delta.x * fraction, start.y + delta.y * fraction,
                 start.z + delta.z * fraction};
   result.normal = normal;
@@ -346,7 +352,7 @@ TraceResult world_trace_hull(Vec3 start, Vec3 end, Vec3 half) {
 }
 
 TraceResult world_trace_ray(Vec3 start, Vec3 end) {
-  TraceResult result = {1.0F, end, {0.0F, 0.0F, 0.0F}, 0, false};
+  TraceResult result = {1.0F, 1.0F, end, {0.0F, 0.0F, 0.0F}, 0, false};
   const Vec3 delta = {end.x - start.x, end.y - start.y, end.z - start.z};
   if (dot(delta, delta) <= 0.0F) {
     return result;
@@ -360,6 +366,7 @@ TraceResult world_trace_ray(Vec3 start, Vec3 end) {
                            start.z > end.z ? start.z : end.z};
 
   float fraction = 1.0F;
+  float exit_fraction = 1.0F;
   Vec3 normal = {0.0F, 0.0F, 0.0F};
   std::uint32_t material = 0;
   bool hit = false;
@@ -369,13 +376,14 @@ TraceResult world_trace_ray(Vec3 start, Vec3 end) {
     if (!bounds_overlap(brush, sweep_mins, sweep_maxs)) {
       continue;
     }
-    clip_hull_to_brush(brush, start, delta, point_half, fraction, normal, material,
-                       hit);
+    clip_hull_to_brush(brush, start, delta, point_half, fraction, exit_fraction,
+                       normal, material, hit);
   }
   if (!hit) {
     return result;
   }
   result.fraction = fraction;
+  result.exit_fraction = exit_fraction;
   result.end = {start.x + delta.x * fraction, start.y + delta.y * fraction,
                 start.z + delta.z * fraction};
   result.normal = normal;

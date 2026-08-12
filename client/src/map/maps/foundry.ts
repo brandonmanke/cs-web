@@ -93,6 +93,16 @@ brushes.push(
   box([-64, 0, -64], [64, 64, 64], Surface.metal, "rust"), // central block
 );
 
+// Plank screens on the east and west walkways: cover that is not safety. They
+// break the lane the same way a crate does, but at 12u of wood every rifle in
+// the game goes through them, so holding one is a bet that nobody has worked
+// out you are there. Standing off the corner and shooting the screen is the
+// answer, which is the whole reason penetration is worth having.
+brushes.push(
+  box([-568, WALK_Y, -96], [-556, WALK_Y + 72, 96], Surface.wood, "crate"),
+  box([556, WALK_Y, -96], [568, WALK_Y + 72, 96], Surface.wood, "crate"),
+);
+
 // Furnace columns: sightline breakers that also hold the ceiling up visually.
 for (const [x, z] of [[-576, -576], [576, -576], [-576, 576], [576, 576]]) {
   brushes.push(box([x! - 48, WALK_Y, z! - 48], [x! + 48, CEIL_Y, z! + 48],

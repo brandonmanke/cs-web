@@ -79,6 +79,14 @@ brushes.push(
 
 // --- cover ------------------------------------------------------------------
 
+// Plank screens on the two ramp-less corners. On a map this tight the ring is
+// the only thing to hold, so the cover on it should be shootable — 12u of wood
+// is a silhouette breaker, not protection.
+brushes.push(
+  box([-208, 0, -344], [-196, 76, -168], Surface.wood, "crate"),
+  box([196, 0, 168], [208, 76, 344], Surface.wood, "crate"),
+);
+
 brushes.push(
   box([-256, 0, -96], [-160, 64, 0], Surface.wood, "crate"),
   box([160, 0, 0], [256, 64, 96], Surface.wood, "crate"),

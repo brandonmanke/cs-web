@@ -15,16 +15,35 @@ namespace cs {
 namespace {
 
 constexpr WeaponDef kWeapons[kWeaponCount] = {
-    // id, name, mag, reserve, dmg, rangeMod, spread, patternScale, punch, maxSpeed,
-    // fireTicks, reloadTicks, recoveryTicks, automatic, zoomFov
-    {WeaponNone, "None", 0, 0, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, kMaxSpeed, 1, 1, 1, false, {0.0F, 0.0F}},
-    {WeaponKnife, "Knife", 0, 0, 55.0F, 1.0F, 0.0F, 0.0F, 0.001F, 250.0F, 25, 1, 1, true, {0.0F, 0.0F}},
-    {WeaponUsp, "USP", 12, 100, 34.0F, 0.79F, 0.0045F, 0.72F, 0.014F, 250.0F, 10, 140, 22, false, {0.0F, 0.0F}},
-    {WeaponGlock, "Glock", 20, 120, 25.0F, 0.75F, 0.0060F, 0.62F, 0.011F, 250.0F, 9, 145, 20, false, {0.0F, 0.0F}},
-    {WeaponAk47, "AK-47", 30, 90, 36.0F, 0.80F, 0.0070F, 1.00F, 0.020F, 221.0F, 6, 160, 16, true, {0.0F, 0.0F}},
-    {WeaponM4a1, "M4A1", 30, 90, 33.0F, 0.82F, 0.0055F, 0.82F, 0.016F, 230.0F, 6, 165, 16, true, {0.0F, 0.0F}},
-    {WeaponAwp, "AWP", 10, 30, 115.0F, 0.99F, 0.0015F, 1.18F, 0.040F, 210.0F, 95, 235, 60, false, {40.0F, 10.0F}},
-    {WeaponMp5, "MP5", 30, 120, 26.0F, 0.84F, 0.0090F, 0.44F, 0.009F, 250.0F, 5, 150, 14, true, {0.0F, 0.0F}},
+    // id, name, mag, reserve, dmg, rangeMod, penetration, spread, patternScale,
+    // punch, maxSpeed, fireTicks, reloadTicks, recoveryTicks, automatic, zoomFov
+    {WeaponNone, "None", 0, 0, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 0.0F, kMaxSpeed, 1, 1, 1, false, {0.0F, 0.0F}},
+    {WeaponKnife, "Knife", 0, 0, 55.0F, 1.0F, 0.0F, 0.0F, 0.0F, 0.001F, 250.0F, 25, 1, 1, true, {0.0F, 0.0F}},
+    {WeaponUsp, "USP", 12, 100, 34.0F, 0.79F, 10.0F, 0.0045F, 0.72F, 0.014F, 250.0F, 10, 140, 22, false, {0.0F, 0.0F}},
+    {WeaponGlock, "Glock", 20, 120, 25.0F, 0.75F, 7.0F, 0.0060F, 0.62F, 0.011F, 250.0F, 9, 145, 20, false, {0.0F, 0.0F}},
+    {WeaponAk47, "AK-47", 30, 90, 36.0F, 0.80F, 26.0F, 0.0070F, 1.00F, 0.020F, 221.0F, 6, 160, 16, true, {0.0F, 0.0F}},
+    {WeaponM4a1, "M4A1", 30, 90, 33.0F, 0.82F, 22.0F, 0.0055F, 0.82F, 0.016F, 230.0F, 6, 165, 16, true, {0.0F, 0.0F}},
+    {WeaponAwp, "AWP", 10, 30, 115.0F, 0.99F, 48.0F, 0.0015F, 1.18F, 0.040F, 210.0F, 95, 235, 60, false, {40.0F, 10.0F}},
+    {WeaponMp5, "MP5", 30, 120, 26.0F, 0.84F, 12.0F, 0.0090F, 0.44F, 0.009F, 250.0F, 5, 150, 14, true, {0.0F, 0.0F}},
+};
+
+/**
+ * What one unit of each material costs a bullet's penetration budget, indexed
+ * by cs::Material. Concrete is the reference, so the numbers read as "how much
+ * worse than concrete".
+ *
+ * The consequence, given the maps: a 16u plank partition (5.6) is open to
+ * everything down to the Glock, an 8u sheet-metal panel (13.6) is a rifle
+ * privilege, a 32u concrete wall (32) is the AWP's alone, and a 96u crate
+ * (33.6) is cover — except through a corner, where the ray crosses less of it.
+ * That last one falls out of measuring thickness along the actual ray rather
+ * than per-surface, and it is the detail that makes learning a map pay.
+ */
+constexpr float kMaterialHardness[4] = {
+    1.00F, // concrete
+    0.35F, // wood
+    1.70F, // metal
+    0.55F, // sand
 };
 
 // Rifle spray: climbs for ~9 shots then swings left, then right. Offsets are
@@ -57,6 +76,10 @@ constexpr Hitbox kHitboxes[4] = {
 };
 
 constexpr float kPunchDecayPerTick = 0.82F;
+
+float material_hardness(std::uint32_t material) {
+  return kMaterialHardness[material < 4U ? material : MaterialConcrete];
+}
 
 float hit_group_multiplier(HitGroup group) {
   switch (group) {
@@ -188,45 +211,95 @@ void fire_shot(SimState& s, std::uint32_t shooter) {
   const Vec3 dir = {-std::sin(shot_yaw) * cp, std::sin(shot_pitch),
                     -std::cos(shot_yaw) * cp};
 
-  // World hit distance bounds the player search.
-  const Vec3 far_end = {eye.x + dir.x * kShotRange, eye.y + dir.y * kShotRange,
-                        eye.z + dir.z * kShotRange};
-  const TraceResult world_trace = world_trace_ray(eye, far_end);
-  const float world_dist = world_trace.hit ? world_trace.fraction * kShotRange : kShotRange;
-
-  float best_dist = world_dist;
+  // The bullet walks the world one solid at a time. Each brush it crosses
+  // spends thickness x hardness out of its budget, and it stops in the first
+  // one the budget cannot cover. Restarting just past an exit face is what
+  // keeps a wall from being entered twice: a trace that begins solid reports no
+  // hit, so the brush the bullet is leaving is invisible to the next query.
+  float power = def.penetration;
+  float travelled = 0.0F;
+  Vec3 from = eye;
+  std::uint32_t walls = 0;
   int best_target = -1;
   HitGroup best_group = HitNone;
-  for (std::uint32_t t = 0; t < s.player_count; ++t) {
-    if (!is_enemy(s, shooter, t)) {
-      continue;
-    }
-    const PlayerEntity& victim = s.players[t];
-    const Vec3 feet = feet_of(victim);
-    // A crouched player is half as tall, so the boxes squash with them.
-    const float squash = victim.move.ducked ? 0.5F : 1.0F;
-    for (const Hitbox& box : kHitboxes) {
-      const Vec3 mins = {feet.x + box.mins.x, feet.y + box.mins.y * squash,
-                         feet.z + box.mins.z};
-      const Vec3 maxs = {feet.x + box.maxs.x, feet.y + box.maxs.y * squash,
-                         feet.z + box.maxs.z};
-      const float dist = ray_aabb(eye, dir, mins, maxs, best_dist);
-      if (dist >= 0.0F && dist < best_dist) {
-        best_dist = dist;
-        best_target = static_cast<int>(t);
-        best_group = box.group;
+  float hit_distance = kShotRange; // eye -> wherever the round ended up
+  bool stopped_in_world = false;
+  std::uint32_t stop_material = 0;
+
+  while (travelled < kShotRange) {
+    const float remaining = kShotRange - travelled;
+    const Vec3 leg_end = {from.x + dir.x * remaining, from.y + dir.y * remaining,
+                          from.z + dir.z * remaining};
+    const TraceResult world_trace = world_trace_ray(from, leg_end);
+    const float world_dist =
+        world_trace.hit ? world_trace.fraction * remaining : remaining;
+
+    // Players in this leg only. ray_aabb clamps entry distance at zero, so a
+    // target behind the restart point can never be picked up twice.
+    float best_dist = world_dist;
+    for (std::uint32_t t = 0; t < s.player_count; ++t) {
+      if (!is_enemy(s, shooter, t)) {
+        continue;
+      }
+      const PlayerEntity& victim = s.players[t];
+      const Vec3 feet = feet_of(victim);
+      // A crouched player is half as tall, so the boxes squash with them.
+      const float squash = victim.move.ducked ? 0.5F : 1.0F;
+      for (const Hitbox& box : kHitboxes) {
+        const Vec3 mins = {feet.x + box.mins.x, feet.y + box.mins.y * squash,
+                           feet.z + box.mins.z};
+        const Vec3 maxs = {feet.x + box.maxs.x, feet.y + box.maxs.y * squash,
+                           feet.z + box.maxs.z};
+        const float dist = ray_aabb(from, dir, mins, maxs, best_dist);
+        if (dist >= 0.0F && dist < best_dist) {
+          best_dist = dist;
+          best_target = static_cast<int>(t);
+          best_group = box.group;
+        }
       }
     }
+    if (best_target >= 0) {
+      hit_distance = travelled + best_dist;
+      break;
+    }
+    if (!world_trace.hit) {
+      hit_distance = travelled + world_dist; // ran out of range in open air
+      break;
+    }
+
+    const float entry = travelled + world_dist;
+    const float thickness =
+        (world_trace.exit_fraction - world_trace.fraction) * remaining;
+    const float cost = thickness * material_hardness(world_trace.material);
+    // `cost >= power` also covers a weapon with no penetration at all, which is
+    // why the knife needs no special case.
+    if (walls >= kMaxPenetrations || cost >= power) {
+      hit_distance = entry;
+      stopped_in_world = true;
+      stop_material = world_trace.material;
+      break;
+    }
+    power -= cost;
+    ++walls;
+    travelled = entry + thickness + kPenetrationSkin;
+    from = {eye.x + dir.x * travelled, eye.y + dir.y * travelled,
+            eye.z + dir.z * travelled};
   }
 
-  event.end = {eye.x + dir.x * best_dist, eye.y + dir.y * best_dist,
-               eye.z + dir.z * best_dist};
+  event.end = {eye.x + dir.x * hit_distance, eye.y + dir.y * hit_distance,
+               eye.z + dir.z * hit_distance};
 
   if (best_target >= 0) {
     const std::uint32_t victim_index = static_cast<std::uint32_t>(best_target);
     PlayerEntity& victim = s.players[victim_index];
-    float damage = def.base_damage * std::pow(def.range_modifier, best_dist / 500.0F);
+    float damage = def.base_damage * std::pow(def.range_modifier, hit_distance / 500.0F);
     damage *= hit_group_multiplier(best_group);
+    // What is left of the budget is what is left of the round. A shot that
+    // barely made it through does barely any damage, and one that spent nothing
+    // is untouched — no separate falloff curve to keep in sync.
+    if (def.penetration > 0.0F) {
+      damage *= power / def.penetration;
+    }
     victim.health -= damage;
     victim.flash_ticks = kHitFlashTicks;
     event.hit_group = best_group;
@@ -239,9 +312,9 @@ void fire_shot(SimState& s, std::uint32_t shooter) {
     } else {
       event.result = ShotHit;
     }
-  } else if (world_trace.hit) {
+  } else if (stopped_in_world) {
     event.result = ShotWorld;
-    event.material = world_trace.material;
+    event.material = stop_material;
   } else {
     event.result = ShotMiss;
   }

@@ -49,6 +49,24 @@ brushes.push(
   box([460, 0, -520], [620, 48, -360], Surface.concrete, "concrete"),
 );
 
+// Penetration range: four panels with a common near face at x = 700, so you can
+// stand west of them and walk the same shot across all four. Thicknesses are
+// picked to straddle the weapon budgets in sim/src/weapons.cpp — a plank every
+// gun goes through, a plank stack only rifles do, sheet steel that costs more
+// than twice its thickness, and a concrete wall that is the AWP's alone. The
+// backstop is there so you can see what came out the far side.
+const PANEL_X = 700;
+const PANELS: Array<[number, number, Surface, string]> = [
+  [16, 300, Surface.wood, "crate"],      // plank
+  [48, 428, Surface.wood, "crate"],      // plank stack
+  [8, 556, Surface.metal, "metal"],      // sheet steel
+  [32, 684, Surface.concrete, "concrete"], // wall
+];
+for (const [thickness, z, surface, tex] of PANELS) {
+  brushes.push(box([PANEL_X, 0, z], [PANEL_X + thickness, 112, z + 96], surface, tex));
+}
+brushes.push(box([880, 0, 280], [912, 160, 800], Surface.concrete, "concrete_dark"));
+
 // Ramp onto a platform: the slope case the brush trace has to get right.
 brushes.push(ramp([-80, 0, 200], [80, 64, 360], "+z", Surface.concrete, "concrete"));
 brushes.push(box([-80, 0, 360], [80, 64, 440], Surface.concrete, "concrete"));

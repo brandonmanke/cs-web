@@ -48,6 +48,15 @@ inline constexpr float kGroundNormalMinY = 0.7F;
 inline constexpr float kMaxVelocityPerAxis = 2000.0F;
 inline constexpr float kShotRange = 8192.0F;
 
+// --- penetration ---
+// A bullet carries a budget measured in inches of concrete. Every brush it
+// crosses spends thickness x the material's hardness, and what is left of the
+// budget is what is left of the damage — so a wallbang always costs something
+// and a wall thick enough to drain the budget stops the round outright.
+inline constexpr std::uint32_t kMaxPenetrations = 3;
+/** How far past an exit face the next trace resumes, in units. */
+inline constexpr float kPenetrationSkin = 0.5F;
+
 // --- optics ---
 inline constexpr float kBaseFov = 90.0F;
 // Scoping costs mobility; leaving the scope costs accuracy. Both are what make
@@ -179,6 +188,7 @@ struct WeaponDef {
   std::uint32_t reserve;
   float base_damage;
   float range_modifier;    // damage *= pow(range_modifier, dist / 500)
+  float penetration;       // wall budget, in inches of concrete; 0 = never
   float spread;            // base inaccuracy, radians
   float pattern_scale;     // spray pattern magnitude multiplier
   float punch_per_shot;    // view punch, radians
@@ -277,8 +287,9 @@ void sim_add_box(float min_x, float min_y, float min_z, float max_x, float max_y
 int sim_add_brush(const float* planes, std::uint32_t plane_count,
                   std::uint32_t material);
 void sim_world_finalize();
-// World ray cast. out_hit receives [fraction, end xyz, normal xyz]; returns 0 on
-// miss. Used by the client's map light bake so lighting matches collision.
+// World ray cast. out_hit receives [fraction, end xyz, normal xyz, material];
+// returns 0 on miss. Used by the client's map light bake so lighting matches
+// collision, and by the impact/occlusion walks that step surface by surface.
 int sim_trace_ray(float start_x, float start_y, float start_z, float end_x,
                   float end_y, float end_z, float* out_hit);
 

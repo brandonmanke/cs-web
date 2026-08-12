@@ -9,6 +9,13 @@ namespace cs {
 
 struct TraceResult {
   float fraction; // of the requested move, after epsilon backoff
+  /**
+   * Fraction at which the segment leaves the brush it hit — the far side of
+   * the same solid, so `exit_fraction - fraction` is its thickness along the
+   * ray. 1 when the segment ends before getting out. Only penetration reads
+   * it; movement stops at the entry face and never cares.
+   */
+  float exit_fraction;
   Vec3 end;
   Vec3 normal;
   std::uint32_t material;

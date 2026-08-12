@@ -68,6 +68,15 @@ brushes.push(
   box([224, 0, 352], [352, 36, 448], Surface.metal, "metal"),
 );
 
+// Plywood hoardings across the two flank lanes. The dock was the only crossing
+// anyone could contest; these give the flanks a contested angle too, because
+// 16u of board stops nothing bigger than a pistol and a rifle held on the lane
+// can punish someone waiting behind one.
+brushes.push(
+  box([-64, 0, -HALF_Z], [-48, 88, -368], Surface.wood, "crate"),
+  box([48, 0, 368], [64, 88, HALF_Z], Surface.wood, "crate"),
+);
+
 // Pipe runs along the upper walls — silhouette only, but the hall needs a roof
 // line to read as a building rather than a box.
 brushes.push(

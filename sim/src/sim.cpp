@@ -350,6 +350,7 @@ int sim_trace_ray(float start_x, float start_y, float start_z, float end_x,
     out_hit[4] = trace.normal.x;
     out_hit[5] = trace.normal.y;
     out_hit[6] = trace.normal.z;
+    out_hit[7] = static_cast<float>(trace.material);
   }
   return trace.hit ? 1 : 0;
 }

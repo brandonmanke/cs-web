@@ -13,7 +13,7 @@ import { loadSetting, Menu, Settings, type Roster } from "./menu";
 import { Renderer } from "./renderer";
 import {
   EventKind, Flags, MAX_PLAYERS, Mode, ShotResult, Sim, Snapshot, StepKind, Team,
-  TICK_SECONDS, type EventView,
+  TICK_SECONDS, type EventView, type TraceHit,
 } from "./sim";
 import { Viewmodel } from "./viewmodel";
 
@@ -25,15 +25,21 @@ const MAX_FRAME_SECONDS = 0.25;
 const AUDIO_CULL_RANGE = 5000;
 /** Past three walls a sound is inaudible anyway, so stop paying for traces. */
 const OCCLUSION_MAX_WALLS = 3;
+/** cs::kMaxPenetrations + the wall the round finally stops in. */
+const MAX_IMPACT_SURFACES = 4;
 /** How far past a surface the next trace starts, in units. */
-const OCCLUSION_SKIN = 1;
+const SURFACE_SKIN = 1;
+/** How far past a bullet's resting point to look for the wall it stopped on. */
+const IMPACT_OVERSHOOT = 4;
 /** cs::sim_start_match takes skill as a continuous 0..2. */
 const MAX_BOT_SKILL = 2;
 const DEFAULT_BOT_SKILL = 1;
 const MAX_BOTS = MAX_PLAYERS - 1;
 
 const scratch = new THREE.Vector3();
-const occFrom = [0, 0, 0];
+const walkFrom = [0, 0, 0];
+const walkTo = [0, 0, 0];
+const earPos = [0, 0, 0];
 const listenerPos = new THREE.Vector3();
 const listenerFwd = new THREE.Vector3();
 const listenerUp = new THREE.Vector3();
@@ -246,42 +252,51 @@ async function boot(): Promise<void> {
   }
 
   /**
-   * How many brushes stand between the ears and a point.
+   * The surfaces a segment enters, nearest first: `visit` sees each one, and
+   * the count comes back.
    *
-   * Each trace that hits restarts the next one just inside the surface it hit,
+   * Each trace that hits restarts the next one just past the surface it hit,
    * and a trace that begins solid reports no hit — so a wall is entered once,
-   * counted once, and never seen again. That is the whole trick; there is no
-   * portal graph and no volumes to author.
+   * seen once, and never met again. That one property is what lets both the
+   * audio occlusion and the wallbang decals read the world without a portal
+   * graph or any authored volumes.
    */
-  function wallsTo(at: readonly number[]): number {
-    const ex = curr.origin[0];
-    const ey = curr.origin[1] + curr.eyeHeight;
-    const ez = curr.origin[2];
-    let dx = at[0]! - ex;
-    let dy = at[1]! - ey;
-    let dz = at[2]! - ez;
+  function eachSurface(from: readonly number[], to: readonly number[],
+                       limit: number, visit?: (hit: TraceHit) => void): number {
+    let dx = to[0]! - from[0]!;
+    let dy = to[1]! - from[1]!;
+    let dz = to[2]! - from[2]!;
     const length = Math.hypot(dx, dy, dz);
     if (length < 1) return 0;
     dx /= length;
     dy /= length;
     dz /= length;
 
-    let walls = 0;
+    let found = 0;
     let travelled = 0;
-    while (walls < OCCLUSION_MAX_WALLS && travelled < length) {
-      occFrom[0] = ex + dx * travelled;
-      occFrom[1] = ey + dy * travelled;
-      occFrom[2] = ez + dz * travelled;
-      const hit = sim.traceRay(occFrom, at);
+    while (found < limit && travelled < length) {
+      walkFrom[0] = from[0]! + dx * travelled;
+      walkFrom[1] = from[1]! + dy * travelled;
+      walkFrom[2] = from[2]! + dz * travelled;
+      const hit = sim.traceRay(walkFrom, to);
       if (!hit) break;
-      ++walls;
+      ++found;
+      visit?.(hit);
       // Project the impact back onto the ray. Adding the skin makes this
       // strictly increasing, so the loop terminates even if a trace were to
       // report a hit at zero distance.
-      travelled = (hit.point[0] - ex) * dx + (hit.point[1] - ey) * dy +
-                  (hit.point[2] - ez) * dz + OCCLUSION_SKIN;
+      travelled = (hit.point[0] - from[0]!) * dx + (hit.point[1] - from[1]!) * dy +
+                  (hit.point[2] - from[2]!) * dz + SURFACE_SKIN;
     }
-    return walls;
+    return found;
+  }
+
+  /** How many brushes stand between the ears and a point. */
+  function wallsTo(at: readonly number[]): number {
+    earPos[0] = curr.origin[0];
+    earPos[1] = curr.origin[1] + curr.eyeHeight;
+    earPos[2] = curr.origin[2];
+    return eachSurface(earPos, at, OCCLUSION_MAX_WALLS);
   }
 
   function handleEvent(event: EventView): void {
@@ -327,22 +342,36 @@ async function boot(): Promise<void> {
       : event.start;
     renderer.spawnTracer(start, event.end);
 
+    // Mark every surface the round entered, not just where it came to rest: a
+    // shot that punched through a partition and killed someone behind it has to
+    // leave the near-side spall, or the wallbang is invisible from where you
+    // fired it. The walk re-derives what the sim already decided — the event
+    // carries one endpoint, and the surfaces between are a trace away.
+    //
+    // A round that failed to get through stops exactly *on* the face that
+    // stopped it, and a segment ending on a plane doesn't register as crossing
+    // it, so that last surface needs reaching past. Only for a shot that ended
+    // in the world: an endpoint on a hitbox has nothing behind it worth marking.
+    let to: readonly number[] = event.end;
     if (event.result === ShotResult.world) {
-      // Re-trace slightly past the impact to recover the surface normal, which
-      // the event doesn't carry.
-      const from = event.start;
-      const to = event.end;
-      const dx = to[0] - from[0];
-      const dy = to[1] - from[1];
-      const dz = to[2] - from[2];
-      const length = Math.hypot(dx, dy, dz) || 1;
-      const overshoot = 4 / length;
-      const hit = sim.traceRay(from, [
-        to[0] + dx * overshoot, to[1] + dy * overshoot, to[2] + dz * overshoot,
-      ]);
-      if (hit) renderer.spawnImpact(hit.point, hit.normal);
-      audio.impact(event.material, event.end);
-    } else if (local && event.result === ShotResult.hit) {
+      const dx = event.end[0] - event.start[0];
+      const dy = event.end[1] - event.start[1];
+      const dz = event.end[2] - event.start[2];
+      const reach = IMPACT_OVERSHOOT / (Math.hypot(dx, dy, dz) || 1);
+      walkTo[0] = event.end[0] + dx * reach;
+      walkTo[1] = event.end[1] + dy * reach;
+      walkTo[2] = event.end[2] + dz * reach;
+      to = walkTo;
+    }
+
+    let first = true;
+    eachSurface(event.start, to, MAX_IMPACT_SURFACES, (hit) => {
+      renderer.spawnImpact(hit.point, hit.normal);
+      if (first) audio.impact(hit.material, hit.point);
+      first = false;
+    });
+
+    if (local && event.result === ShotResult.hit) {
       audio.hit();
     } else if (event.victim === curr.localIndex) {
       audio.hurt();

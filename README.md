@@ -37,6 +37,11 @@ Dev flags: `?bots=N`, `?skill=0..2` (fractions welcome), `?spawn=x,y,z`,
 `?yaw=radians`, `?coords`. `practice` keeps its bots by default — they're
 targets, not opponents.
 
+**Bullets go through things.** Plank screens and thin panels are cover, not
+safety: a rifle punches through 16u of board, only the AWP gets through 32u of
+concrete, and steel stops nearly everything. Damage falls off with what the wall
+cost you. `?map=practice` has a four-panel range to feel it out.
+
 Wear headphones — footsteps and gunfire are positional and go muffled through
 walls, and **Shift** is the only way to move without making any.
 

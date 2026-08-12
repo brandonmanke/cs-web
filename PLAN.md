@@ -132,9 +132,30 @@ smoothly.
   `kUnscopedSpreadScale`× your accuracy, so the FOV you see and the cone you
   shoot into can never disagree — the reason this was never a client-only
   change. Reloading drops the scope.
-- Not yet: wallbang penetration, per-weapon movement-inaccuracy curves, real
-  melee, arm hitboxes (the `limbs` box covers legs only, so visible arms aren't
-  hittable), armour.
+- **Wallbangs.** A round carries a budget in inches of concrete
+  (`WeaponDef::penetration`: Glock 7 → AK 26 → AWP 48). Each brush it crosses
+  spends thickness × `kMaterialHardness` (wood 0.35, sand 0.55, concrete 1.0,
+  metal 1.7), and what is left of the budget multiplies the damage — so a
+  wallbang always costs something and a wall that drains the budget stops the
+  round in it. Capped at `kMaxPenetrations` walls.
+
+  Thickness comes free from the trace: `clip_hull_to_brush` already computes the
+  far side of the solid it clips, so `TraceResult::exit_fraction` is one
+  assignment rather than a second query. The bullet then restarts just past that
+  exit face, and because a trace that begins solid reports no hit, the wall it
+  is leaving is invisible to the next query — a brush is entered once and never
+  met again, with no per-surface bookkeeping. Measuring along the ray rather
+  than per-face is what makes a corner shot cheaper than a face-on one, and that
+  is the detail that makes learning a map pay.
+
+  Maps carry cover meant to be shot: 12–16u plank screens on foundry's flanks,
+  depot's lanes and silo's ring, plus a four-panel penetration range on
+  practice (`x = 700`, wood 16u / wood 48u / metal 8u / concrete 32u against a
+  backstop) that straddles every weapon budget. The client marks every surface a
+  round entered, not just where it stopped, or the near-side spall of a bang
+  that killed someone would be invisible from where you fired it.
+- Not yet: per-weapon movement-inaccuracy curves, real melee, arm hitboxes (the
+  `limbs` box covers legs only, so visible arms aren't hittable), armour.
 
 ## 4a. Players, bots and modes (implemented)
 
@@ -258,6 +279,11 @@ Done in v3:
   maps (`depot`, `silo`). Positional audio with wall-count occlusion; enemies
   opt-in; death camera; HUD health/killfeed/TAB scoreboard, in-game map
   switcher.
+- **R8** (api v3, unchanged snapshot) — wallbang penetration with per-material
+  hardness and shootable cover in every map; bot skill as a continuous dial
+  rather than three presets; stair rises brought under the step height (silo to
+  ramps, depot to ten steps) with `stairs()` enforcing it, plus camera step
+  smoothing so a climb reads as a slope.
 
 Next, in order:
 
@@ -272,7 +298,7 @@ Next, in order:
   drop-probe primitive), waypoint pathing, bots that duck and take cover.
 - **M-modes+** — round loop, buy menu, defuse.
 - **M-content** — more maps; a TrenchBroom `.map` importer feeding
-  `sim_add_brush` if hand-authoring in TS gets tiring; armour and wallbangs.
+  `sim_add_brush` if hand-authoring in TS gets tiring; armour.
 - **M-polish** — reload/draw viewmodel anims, reverb sized to the room the
   listener is standing in, perf pass (instancing, draw batching).
 

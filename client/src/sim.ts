@@ -103,6 +103,8 @@ export type Mode = (typeof Mode)[keyof typeof Mode];
 export interface TraceHit {
   point: [number, number, number];
   normal: [number, number, number];
+  /** cs::Material of the surface — what the impact sounds and looks like. */
+  material: number;
 }
 
 export interface PlayerView {
@@ -213,14 +215,14 @@ export interface InputFrame {
 }
 
 export class Sim {
-  /** Scratch for sim_trace_ray results: [fraction, end xyz, normal xyz]. */
+  /** Scratch for sim_trace_ray: [fraction, end xyz, normal xyz, material]. */
   private readonly traceWord: number;
 
   private constructor(
     private readonly m: SimModule,
     private readonly snapshotWord: number,
   ) {
-    this.traceWord = m._malloc(7 * 4) >> 2;
+    this.traceWord = m._malloc(8 * 4) >> 2;
   }
 
   static async load(): Promise<Sim> {
@@ -264,7 +266,7 @@ export class Sim {
     ) !== 0;
   }
 
-  /** Impact point and surface normal, or null on a miss. */
+  /** Impact point, surface normal and material, or null on a miss. */
   traceRay(from: readonly number[], to: readonly number[]): TraceHit | null {
     const hit = this.m._sim_trace_ray(
       from[0]!, from[1]!, from[2]!, to[0]!, to[1]!, to[2]!, this.traceWord << 2,
@@ -275,6 +277,7 @@ export class Sim {
     return {
       point: [f32[w + 1]!, f32[w + 2]!, f32[w + 3]!],
       normal: [f32[w + 4]!, f32[w + 5]!, f32[w + 6]!],
+      material: f32[w + 7]!,
     };
   }
 

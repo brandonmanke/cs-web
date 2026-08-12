@@ -542,13 +542,101 @@ void test_brush_rejects_degenerate_input() {
 
 void test_trace_ray_abi() {
   build_test_world();
-  float hit[7] = {};
+  float hit[8] = {};
   // Straight at the 40u wall that starts at x = 400.
   CHECK(sim_trace_ray(0.0F, 20.0F, 0.0F, 800.0F, 20.0F, 0.0F, hit) == 1);
   CHECK_NEAR(hit[1], 400.0F, 1.0F);   // impact x
   CHECK_NEAR(hit[4], -1.0F, 0.01F);   // normal points back along -X
+  CHECK(hit[7] == static_cast<float>(cs::MaterialConcrete));
+  // The 12u step at x 200..264 is wood; the client picks impact sounds off this.
+  CHECK(sim_trace_ray(0.0F, 6.0F, 0.0F, 800.0F, 6.0F, 0.0F, hit) == 1);
+  CHECK(hit[7] == static_cast<float>(cs::MaterialWood));
   // Over the top of the wall: clean miss.
   CHECK(sim_trace_ray(0.0F, 200.0F, 0.0F, 800.0F, 200.0F, 0.0F, hit) == 0);
+}
+
+// A plank, a sheet of steel and a concrete wall, each on its own lane so a
+// bullet meets exactly one of them.
+void build_penetration_world() {
+  sim_world_reset();
+  sim_add_box(-1024.0F, -16.0F, -1024.0F, 1024.0F, 0.0F, 1024.0F, cs::MaterialConcrete);
+  sim_add_box(200.0F, 0.0F, -64.0F, 216.0F, 128.0F, 64.0F, cs::MaterialWood);      // 16u
+  sim_add_box(200.0F, 0.0F, 200.0F, 216.0F, 128.0F, 328.0F, cs::MaterialMetal);    // 16u
+  sim_add_box(200.0F, 0.0F, -328.0F, 232.0F, 128.0F, -200.0F, cs::MaterialConcrete); // 32u
+  sim_world_finalize();
+}
+
+/**
+ * Fires one round down +X from (0, eye, lane) and reports its shot event.
+ *
+ * The first round only: the spray pattern walks later shots up into the head
+ * box, and a headshot's x4 would swamp the damage the wall is supposed to cost.
+ */
+cs::SimEvent shoot_lane(float lane, std::uint32_t weapon) {
+  const float yaw = -3.14159265F * 0.5F; // +X
+  sim_spawn(0.0F, cs::kHullHalfHeightStand + 2.0F, lane, yaw);
+  sim_step(0.0F, 0.0F, yaw, 0.0F, 0, weapon);
+  run_ticks(48, 0.0F, 0.0F, 0); // settle on the floor and finish the draw
+
+  for (int i = 0; i < 64; ++i) {
+    sim_step(0.0F, 0.0F, yaw, -0.04F, cs::ButtonFire, 0);
+    const cs::SimSnapshot* snap = sim_snapshot();
+    for (std::uint32_t e = 0; e < snap->event_count; ++e) {
+      if (snap->events[e].kind == cs::EventShot &&
+          snap->events[e].result != cs::ShotDry) {
+        return snap->events[e];
+      }
+    }
+  }
+  CHECK(false); // never got a round off
+  return {};
+}
+
+void test_wallbang_penetration() {
+  build_penetration_world();
+
+  // Thickness comes straight off the trace: one clip, both faces.
+  const cs::TraceResult plank =
+      cs::world_trace_ray({0.0F, 64.0F, 0.0F}, {1000.0F, 64.0F, 0.0F});
+  CHECK(plank.hit);
+  CHECK_NEAR(plank.fraction * 1000.0F, 200.0F, 0.1F);
+  CHECK_NEAR((plank.exit_fraction - plank.fraction) * 1000.0F, 16.0F, 0.1F);
+  // A ray crossing the same plank at 45 degrees passes through more of it, and
+  // that is what makes corner-banging a crate work.
+  const cs::TraceResult angled =
+      cs::world_trace_ray({0.0F, 64.0F, 0.0F}, {1000.0F, 64.0F, 1000.0F});
+  const float diagonal = std::sqrt(2.0F) * 1000.0F;
+  CHECK_NEAR((angled.exit_fraction - angled.fraction) * diagonal, 16.0F * std::sqrt(2.0F), 0.2F);
+
+  // 16u of wood costs the AK 5.6 of its 26: through, and still lethal.
+  sim_add_bot(400.0F, cs::kHullHalfHeightStand, 0.0F, 0.0F, cs::TeamNone, 0.0F);
+  const cs::SimEvent wood = shoot_lane(0.0F, cs::WeaponAk47);
+  CHECK(wood.result == cs::ShotHit || wood.result == cs::ShotKill);
+  CHECK(wood.damage > 15.0F && wood.damage < 30.0F);
+
+  // The same 16u in steel costs 27.2, which the AK cannot pay.
+  build_penetration_world();
+  sim_add_bot(400.0F, cs::kHullHalfHeightStand, 264.0F, 0.0F, cs::TeamNone, 0.0F);
+  const cs::SimEvent steel = shoot_lane(264.0F, cs::WeaponAk47);
+  CHECK(steel.result == cs::ShotWorld);
+  CHECK(steel.material == cs::MaterialMetal);
+  CHECK_NEAR(steel.end.x, 200.0F, 2.0F); // stopped at the near face
+  CHECK(sim_snapshot()->players[1].health == cs::kPlayerHealth);
+
+  // 32u of concrete is the AWP's alone, and it arrives with a third of its
+  // budget left, so a wallbang is never a free kill.
+  build_penetration_world();
+  sim_add_bot(400.0F, cs::kHullHalfHeightStand, -264.0F, 0.0F, cs::TeamNone, 0.0F);
+  CHECK(shoot_lane(-264.0F, cs::WeaponAk47).result == cs::ShotWorld);
+  build_penetration_world();
+  sim_add_bot(400.0F, cs::kHullHalfHeightStand, -264.0F, 0.0F, cs::TeamNone, 0.0F);
+  const cs::SimEvent awp = shoot_lane(-264.0F, cs::WeaponAwp);
+  CHECK(awp.result == cs::ShotHit || awp.result == cs::ShotKill);
+  CHECK(awp.damage > 20.0F && awp.damage < 60.0F); // 115 base, cut by the wall
+
+  build_test_world();
+  sim_step(0.0F, 0.0F, 0.0F, 0.0F, 0, cs::WeaponAk47);
+  run_ticks(24, 0.0F, 0.0F, 0);
 }
 
 void test_determinism() {
@@ -601,6 +689,7 @@ int main() {
   test_ramp_is_walkable();
   test_brush_rejects_degenerate_input();
   test_trace_ray_abi();
+  test_wallbang_penetration();
   test_shooting_kills_a_bot();
   test_bots_fight_back_and_you_respawn();
   test_loadout_survives_death();
