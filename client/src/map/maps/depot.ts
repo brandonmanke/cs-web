@@ -46,9 +46,13 @@ brushes.push(
   box([512, 0, 320], [HALF_X, PERCH_Y, HALF_Z], Surface.concrete,
       "concrete", { 2: "grate" }),
 );
-brushes.push(...stairs([-512, 0, -HALF_Z], [-384, PERCH_Y, -320], 5, "-x",
+// Ten steps, not five: 160u of rise over five is 32u a step, twice the 18u you
+// can walk up, so taking a perch meant jumping the whole flight. Ten puts every
+// step under the limit. The run stays short and the flight stays steep — the
+// perch is the best angle on the map and it should cost you the climb.
+brushes.push(...stairs([-512, 0, -HALF_Z], [-384, PERCH_Y, -320], 10, "-x",
                        Surface.metal, "metal"));
-brushes.push(...stairs([384, 0, 320], [512, PERCH_Y, HALF_Z], 5, "+x",
+brushes.push(...stairs([384, 0, 320], [512, PERCH_Y, HALF_Z], 10, "+x",
                        Surface.metal, "metal"));
 
 // --- containers and cover ---------------------------------------------------

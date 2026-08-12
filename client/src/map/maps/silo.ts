@@ -1,5 +1,5 @@
 import { Mode } from "../../sim";
-import { box, room, stairs, Surface, type Brush } from "../brush";
+import { box, ramp, room, Surface, type Brush } from "../brush";
 import type { MapDef, SpawnDef } from "../mapdef";
 
 // SILO — a tight free-for-all donut.
@@ -59,12 +59,23 @@ brushes.push(
       Surface.metal, "hazard"),
 );
 
-// Stairs up, diagonally opposite: north-west onto the west terrace, south-east
+// Ramps up, diagonally opposite: north-west onto the west terrace, south-east
 // onto the east one.
-brushes.push(...stairs([-TERRACE_EDGE, 0, -HALF], [-CORE, TERRACE, -352], 6, "-x",
-                       Surface.metal, "metal"));
-brushes.push(...stairs([CORE, 0, 352], [TERRACE_EDGE, TERRACE, HALF], 6, "+x",
-                       Surface.metal, "metal"));
+//
+// These were six 24u stairs, which is over the 18u step height — every one of
+// them had to be jumped. Ramps rather than more steps because this is the map
+// you keep moving on: a slope carries your speed and gives the terrace a
+// run-up, where a staircase would still cost you the momentum. They reach
+// further into the ring than the stairs did (224u of run for 144u of rise, so
+// about 33 degrees) because that is what a walkable slope costs.
+const RAMP_TOE = 64; // how far the foot of each ramp reaches past the core
+
+brushes.push(
+  ramp([-TERRACE_EDGE, 0, -HALF], [-RAMP_TOE, TERRACE, -352], "-x",
+       Surface.metal, "metal"),
+  ramp([RAMP_TOE, 0, 352], [TERRACE_EDGE, TERRACE, HALF], "+x",
+       Surface.metal, "metal"),
+);
 
 // --- cover ------------------------------------------------------------------
 

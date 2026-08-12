@@ -17,6 +17,10 @@ const HULL_HALF_STAND = 36;
 const HULL_HALF_DUCK = 18;
 /** A per-tick jump further than this is a respawn, not movement — don't lerp. */
 const TELEPORT_DISTANCE = 200;
+/** Most the camera may lag the feet while climbing (cs::kStepHeight). */
+const MAX_STEP_LAG = 18;
+/** How fast that lag is paid back, u/s. A full step clears in ~0.1 s. */
+const STEP_CATCHUP = 180;
 /** Remaps baked irradiance onto the range a player model stays readable in. */
 const CHARACTER_LIFT = (v: number): number => 0.45 + v * 0.75;
 
@@ -66,6 +70,10 @@ export class Renderer {
   private mapLights: MapDef["lights"] = [];
   private mapAmbient: [number, number, number] = [0.2, 0.2, 0.2];
   private fov = 90;
+  /** Step smoothing: how far the camera is currently behind the eye, and where
+   *  the eye was last frame. */
+  private eyeLag = 0;
+  private lastEyeY = 0;
 
   constructor(container: HTMLElement) {
     this.gl = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
@@ -265,14 +273,43 @@ export class Renderer {
     });
   }
 
+  /**
+   * Absorb a step-up so a staircase doesn't strobe the camera.
+   *
+   * Stepping onto a stair teleports the hull to the top of it — that is what
+   * step height *is* — so climbing a 16u flight snaps the eye upward several
+   * times a second. This keeps a bounded amount of that snap as lag and pays it
+   * back at a fixed rate, which is what turns a flight of stairs into a slope
+   * from behind the eyes. Only the view moves: the sim's eye, and therefore
+   * where shots leave from and what the bots can see, is untouched.
+   *
+   * Rises bigger than a step are jumps, falls and respawns, and go through
+   * unsmoothed. Walking a ramp gains less per frame than the catch-up rate
+   * pays off, so slopes are left alone too.
+   */
+  private smoothStep(eyeY: number, grounded: boolean, dt: number): number {
+    const rise = eyeY - this.lastEyeY;
+    this.lastEyeY = eyeY;
+    if (grounded && rise > 0 && rise <= MAX_STEP_LAG) {
+      this.eyeLag = Math.min(this.eyeLag + rise, MAX_STEP_LAG);
+    }
+    this.eyeLag = Math.max(0, this.eyeLag - STEP_CATCHUP * dt);
+    return eyeY - this.eyeLag;
+  }
+
   /** `eyeHeight` overrides the interpolated stance height — the death cam. */
-  render(prev: Snapshot, curr: Snapshot, alpha: number, yaw: number, pitch: number,
-         eyeHeight?: number): void {
+  render(prev: Snapshot, curr: Snapshot, alpha: number, dt: number, yaw: number,
+         pitch: number, eyeHeight?: number): void {
     const lerp = (a: number, b: number) => a + (b - a) * alpha;
+    const eyeY = lerp(prev.origin[1]!, curr.origin[1]!) +
+      (eyeHeight ?? lerp(prev.eyeHeight, curr.eyeHeight));
+    // The death cam flies the camera on its own terms; smoothing would fight it.
+    const cameraY = eyeHeight === undefined
+      ? this.smoothStep(eyeY, (curr.flags & Flags.onGround) !== 0, dt)
+      : eyeY;
+
     this.camera.position.set(
-      lerp(prev.origin[0]!, curr.origin[0]!),
-      lerp(prev.origin[1]!, curr.origin[1]!) +
-        (eyeHeight ?? lerp(prev.eyeHeight, curr.eyeHeight)),
+      lerp(prev.origin[0]!, curr.origin[0]!), cameraY,
       lerp(prev.origin[2]!, curr.origin[2]!),
     );
     this.camera.rotation.set(pitch + curr.punchPitch, yaw + curr.punchYaw, 0);

@@ -62,7 +62,7 @@ client (TS + Three.js + Vite)          sim core (C++20 -> WASM via Emscripten)
 | stamina | 1315.789429, −1400/s | scales jump impulse and landing speed |
 | jump buffer | 8 ticks (125 ms) | early tap still hops on landing |
 | hull | 32×32×72, ducked 32×32×36 | eye +28 / +12 above hull center |
-| step height | 18u | step_slide_move up/down compare |
+| step height | 18u | step_slide_move up/down compare; `stairs()` enforces it |
 | ground slope | normal.y ≥ 0.7 | |
 | scoped speed | ×0.52 | on top of the per-weapon cap |
 | stride | 82u of ground covered | footfall interval, distance not time |
@@ -89,9 +89,26 @@ fall) report as heavier ones.
    of its speed instead of ~85%. Bhop still decays without air-strafing; it just
    forgives a sloppier one.
 
+**Stairs are a step-height contract, and the camera pays for it.** A step taller
+than `kStepHeight` cannot be walked up at all — you have to jump every single
+one — so `stairs()` in `client/src/map/brush.ts` refuses to emit a flight over
+18u and names the count that would work. Silo's terraces (24u a step) and
+depot's perches (32u) both shipped broken because the geometry was perfectly
+valid and nothing checked the one number that mattered; the probe that pinned it
+down walks the sim up a synthetic flight at each rise and finds the wall exactly
+between 18u and 19u.
+
+Climbing is still a teleport per step, which strobes the view, so the renderer
+keeps up to `kStepHeight` of that jump as camera lag and pays it back at 180 u/s
+(`Renderer.smoothStep`). View only: the sim's eye — what you shoot from and what
+bots trace against — never moves. Rises bigger than a step are jumps, falls and
+respawns and go through unsmoothed, and a ramp gains less per frame than the
+catch-up rate, so slopes are untouched.
+
 Feel checklist (manual, `?map=practice`): strafe-jumping gains speed, bhop
-capped but chainable, duck-jump clears 36u crates, stairs don't launch you, no
-jitter resting against surfaces, ramps carry you smoothly.
+capped but chainable, duck-jump clears 36u crates, stairs don't launch you and
+don't need jumping, no jitter resting against surfaces, ramps carry you
+smoothly.
 
 ## 4. Gunplay spec (implemented, first pass)
 

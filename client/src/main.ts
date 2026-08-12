@@ -226,7 +226,7 @@ async function boot(): Promise<void> {
     hud.update(curr, dt);
     const death = deathCam.update(dt, curr, input.yaw, input.pitch);
     renderer.render(
-      prev, curr, alpha,
+      prev, curr, alpha, dt,
       death?.yaw ?? input.yaw, death?.pitch ?? input.pitch, death?.eyeHeight,
     );
     // Ears follow the camera, after it has been placed for this frame.
