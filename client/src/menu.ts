@@ -11,6 +11,11 @@ import { DEFAULT_VOLUME, type GameAudio } from "./audio";
 const VOLUME_KEY = "cs-web.volume";
 const BOTS_KEY = "cs-web.bots";
 const SKILL_KEY = "cs-web.skill";
+const SENS_KEY = "cs-web.sensitivity";
+
+/** Multiplier bounds on Input's base sensitivity; matches the slider in HTML. */
+const MIN_SENS = 0.3;
+const MAX_SENS = 4;
 
 /**
  * Bands over the sim's continuous 0..2 skill. The number rides alongside the
@@ -71,6 +76,8 @@ export class Menu {
   private readonly botsValue = document.getElementById("menu-bots-value")!;
   private readonly skill = document.getElementById("menu-skill") as HTMLInputElement;
   private readonly skillValue = document.getElementById("menu-skill-value")!;
+  private readonly sens = document.getElementById("menu-sens") as HTMLInputElement;
+  private readonly sensValue = document.getElementById("menu-sens-value")!;
 
   private started = false;
 
@@ -79,7 +86,17 @@ export class Menu {
     private readonly requestLock: (onGaveUp: () => void) => void,
     /** Fired when the roster changes; the caller restarts the match. */
     private readonly onRoster: (roster: Roster) => void,
+    /** Multiplier on the base look sensitivity. */
+    private readonly onSensitivity: (multiplier: number) => void,
   ) {
+    const sensitivity = loadSetting(SENS_KEY, MIN_SENS, MAX_SENS) ?? 1;
+    this.sens.value = String(sensitivity);
+    this.applySensitivity();
+    this.sens.addEventListener("input", () => this.applySensitivity());
+    for (const event of ["change", "pointerup"] as const) {
+      this.sens.addEventListener(event, () => saveSetting(SENS_KEY, Number(this.sens.value)));
+    }
+
     const volume = loadSetting(VOLUME_KEY, 0, 1) ?? DEFAULT_VOLUME;
     this.audio.setVolume(volume);
     this.slider.value = String(Math.round(volume * 100));
@@ -127,6 +144,12 @@ export class Menu {
 
   private renderVolume(value: number): void {
     this.readout.textContent = `${Math.round(value * 100)}%`;
+  }
+
+  private applySensitivity(): void {
+    const value = Number(this.sens.value);
+    this.sensValue.textContent = `${value.toFixed(1)}×`;
+    this.onSensitivity(value);
   }
 
   private roster(): Roster {

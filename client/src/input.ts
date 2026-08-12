@@ -1,7 +1,13 @@
 import { BASE_FOV, Buttons, type InputFrame } from "./sim";
 
 const PITCH_LIMIT = (89 * Math.PI) / 180;
-const DEFAULT_SENSITIVITY = 0.0022; // radians per pixel
+/**
+ * Radians of view per pixel of mouse travel, before the FOV scale. This is the
+ * 1x point the menu's slider multiplies: a trackpad runs out of surface long
+ * before a mouse does, so turning around at 1x takes a swipe and a half and the
+ * only real fix is letting people pick their own number.
+ */
+export const DEFAULT_SENSITIVITY = 0.0022;
 /** A single pointer-lock event this large is a browser glitch, not a flick. */
 const MAX_MOUSE_DELTA = 400;
 /** Long enough to outlast the post-Escape re-lock cooldown (~1s in Chrome). */

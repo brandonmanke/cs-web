@@ -168,11 +168,11 @@
         font-size: 11px; letter-spacing: 2px; color: #9aa38c; min-width: 62px;
       }
       #menu .row input[type="range"] { flex: 1; accent-color: #86e39a; cursor: pointer; }
+      /* Wide enough for the longest readout (skill's name plus the number
+         ?skill= takes), so every slider track lines up. */
       #menu .row .value {
-        min-width: 54px; text-align: right; font-size: 12px; color: #d8d2b4;
+        min-width: 92px; text-align: right; font-size: 12px; color: #d8d2b4;
       }
-      /* Skill reads as a name plus the number ?skill= takes. */
-      #menu .row .value.wide { min-width: 92px; }
 
       #menu-maps a {
         color: #9aa38c; text-decoration: none; margin-right: 12px; font-size: 12px;
@@ -233,6 +233,12 @@
         </div>
 
         <div class="row">
+          <label for="menu-sens">MOUSE</label>
+          <input id="menu-sens" type="range" min="0.3" max="4" step="0.1" value="1" />
+          <span id="menu-sens-value" class="value">1.0&times;</span>
+        </div>
+
+        <div class="row">
           <label for="menu-bots">ENEMIES</label>
           <input id="menu-bots" type="range" min="0" max="9" value="0" />
           <span id="menu-bots-value" class="value">OFF</span>
@@ -241,7 +247,7 @@
         <div class="row">
           <label for="menu-skill">SKILL</label>
           <input id="menu-skill" type="range" min="0" max="2" step="0.1" value="1" />
-          <span id="menu-skill-value" class="value wide">NORMAL 1.0</span>
+          <span id="menu-skill-value" class="value">NORMAL 1.0</span>
         </div>
 
         <div class="row">

@@ -25,7 +25,8 @@ npm run dev    # Vite dev server; open the printed URL, click to lock the mouse
 look at. Turn PvP on with the menu's ENEMIES slider (or `?bots=N`); the match
 restarts in place, no reload. SKILL next to it is a continuous 0–2 dial, not
 three presets, and **0 is passive** — the bots roam the map and never shoot, so
-you can learn a level with company in it. Both choices are remembered.
+you can learn a level with company in it. MOUSE scales look sensitivity, which
+is the knob to reach for on a trackpad. Every choice is remembered.
 
 | `?map=` | mode | |
 |---|---|---|

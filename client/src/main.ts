@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { GameAudio } from "./audio";
 import { Hud } from "./hud";
-import { Input } from "./input";
+import { DEFAULT_SENSITIVITY, Input } from "./input";
 import { brushPlaneArray } from "./map/brush";
 import type { MapDef } from "./map/mapdef";
 import { DEPOT } from "./map/maps/depot";
@@ -104,6 +104,7 @@ async function boot(): Promise<void> {
     audio,
     (onGaveUp) => input.requestLock(onGaveUp),
     (next) => startMatch(next),
+    (multiplier) => { input.sensitivity = DEFAULT_SENSITIVITY * multiplier; },
   );
   input.onLockChange = (locked) => {
     if (locked) menu.markStarted();
