@@ -12,7 +12,19 @@ const VOLUME_KEY = "cs-web.volume";
 const BOTS_KEY = "cs-web.bots";
 const SKILL_KEY = "cs-web.skill";
 
-const SKILL_NAMES = ["EASY", "NORMAL", "HARD"];
+/**
+ * Bands over the sim's continuous 0..2 skill. The number rides alongside the
+ * name because it is exactly what `?skill=` takes, and because a five-band name
+ * alone can't tell 1.25 from 1.55 — which, in aim error and reaction time, is a
+ * difference you feel.
+ */
+const SKILL_BANDS: Array<[number, string]> = [
+  [0.4, "EASY"], [0.8, "FAIR"], [1.2, "NORMAL"], [1.6, "TOUGH"], [Infinity, "EXPERT"],
+];
+
+function skillName(skill: number): string {
+  return SKILL_BANDS.find(([upper]) => skill < upper)?.[1] ?? "NORMAL";
+}
 
 /** A stored number, clamped, or null when absent/unreadable. */
 export function loadSetting(key: string, min: number, max: number): number | null {
@@ -120,7 +132,7 @@ export class Menu {
   private renderRoster(): void {
     const { bots, skill } = this.roster();
     this.botsValue.textContent = bots === 0 ? "OFF" : String(bots);
-    this.skillValue.textContent = SKILL_NAMES[skill] ?? "?";
+    this.skillValue.textContent = `${skillName(skill)} ${skill.toFixed(1)}`;
   }
 
   /** Seed the controls without firing a restart. */

@@ -23,7 +23,8 @@ npm run dev    # Vite dev server; open the printed URL, click to lock the mouse
 
 **Enemies are off by default** — you land in an empty map to move around and
 look at. Turn PvP on with the menu's ENEMIES slider (or `?bots=N`); the match
-restarts in place, no reload. Your choice is remembered.
+restarts in place, no reload. SKILL next to it is a continuous 0–2 dial, not
+three presets. Both choices are remembered.
 
 | `?map=` | mode | |
 |---|---|---|
@@ -32,8 +33,9 @@ restarts in place, no reload. Your choice is remembered.
 | `silo` | deathmatch | tight FFA donut |
 | `practice` | range | movement/aim greybox; bots roam but never shoot |
 
-Dev flags: `?bots=N`, `?skill=0..2`, `?spawn=x,y,z`, `?yaw=radians`, `?coords`.
-`practice` keeps its bots by default — they're targets, not opponents.
+Dev flags: `?bots=N`, `?skill=0..2` (fractions welcome), `?spawn=x,y,z`,
+`?yaw=radians`, `?coords`. `practice` keeps its bots by default — they're
+targets, not opponents.
 
 Wear headphones — footsteps and gunfire are positional and go muffled through
 walls, and **Shift** is the only way to move without making any.

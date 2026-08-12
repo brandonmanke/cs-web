@@ -145,8 +145,11 @@ what makes the M-net server a compile target rather than a rewrite.
   after that picks the point furthest from a living enemy.
 - **Bot AI** is reactive, not a nav mesh: goals are drawn from the map's spawn
   points, steering is direct, and a ledge probe plus bump-and-slide covers the
-  rest. Skill (0–2) scales aim slew rate, aim error, reaction delay and burst
-  discipline. Targets are re-scanned every 8 ticks, staggered by index.
+  rest. Skill scales aim slew rate, aim error, reaction delay and burst
+  discipline. It is a **continuous 0–2**, not three presets: `kSkills` holds
+  easy/normal/hard as anchors and `skill_of` interpolates between the two a bot
+  sits between, so the menu's slider and `?skill=1.4` are real settings rather
+  than a rounded 1. Targets are re-scanned every 8 ticks, staggered by index.
 - **Events**: the snapshot carries up to `kMaxEvents` per tick (shots, deaths)
   rather than one `last_shot`, because with ten guns firing the client needs all
   of them for tracers, impacts, audio and the killfeed. The client reads the

@@ -365,7 +365,7 @@ void sim_add_spawn(float x, float y, float z, float yaw, std::uint32_t team) {
 }
 
 std::uint32_t sim_add_bot(float x, float y, float z, float yaw,
-                          std::uint32_t team, std::uint32_t skill) {
+                          std::uint32_t team, float skill) {
   if (g_state.player_count >= cs::kMaxPlayers) {
     return cs::kMaxPlayers;
   }
@@ -385,8 +385,7 @@ std::uint32_t sim_add_bot(float x, float y, float z, float yaw,
   return index;
 }
 
-void sim_start_match(std::uint32_t mode, std::uint32_t bot_count,
-                     std::uint32_t skill) {
+void sim_start_match(std::uint32_t mode, std::uint32_t bot_count, float skill) {
   g_state.mode = mode <= cs::ModeTeam ? mode : cs::ModeDeathmatch;
   g_state.team_score[0] = 0;
   g_state.team_score[1] = 0;
@@ -414,7 +413,7 @@ void sim_start_match(std::uint32_t mode, std::uint32_t bot_count,
     e.team = g_state.mode == cs::ModeTeam
                  ? (i % 2U == 0U ? cs::TeamCt : cs::TeamT)
                  : cs::TeamNone;
-    e.bot.skill = skill < 3U ? skill : 1U;
+    e.bot.skill = skill;
   }
   // The map's first spawn is where the level wants you to enter, so the opening
   // placement is authored rather than scored. Every later respawn uses the

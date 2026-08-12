@@ -27,6 +27,8 @@ const AUDIO_CULL_RANGE = 5000;
 const OCCLUSION_MAX_WALLS = 3;
 /** How far past a surface the next trace starts, in units. */
 const OCCLUSION_SKIN = 1;
+/** cs::sim_start_match takes skill as a continuous 0..2. */
+const MAX_BOT_SKILL = 2;
 const DEFAULT_BOT_SKILL = 1;
 const MAX_BOTS = MAX_PLAYERS - 1;
 
@@ -72,9 +74,10 @@ function initialRoster(map: MapDef): Roster {
     bots: params.has("bots") && Number.isFinite(urlBots)
       ? Math.max(0, Math.min(MAX_BOTS, Math.floor(urlBots)))
       : loadSetting(Settings.bots, 0, MAX_BOTS) ?? mapDefault,
+    // Skill is continuous, so ?skill=1.4 is a real setting, not a rounded 1.
     skill: params.has("skill") && Number.isFinite(urlSkill)
-      ? Math.max(0, Math.min(2, Math.floor(urlSkill)))
-      : loadSetting(Settings.skill, 0, 2) ?? DEFAULT_BOT_SKILL,
+      ? Math.max(0, Math.min(MAX_BOT_SKILL, urlSkill))
+      : loadSetting(Settings.skill, 0, MAX_BOT_SKILL) ?? DEFAULT_BOT_SKILL,
   };
 }
 

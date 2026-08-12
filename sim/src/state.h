@@ -44,7 +44,7 @@ struct WeaponState {
 // Everything the AI needs, kept inside the deterministic state so a bot match
 // hashes the same twice. Unused on the local player.
 struct BotState {
-  std::uint32_t skill;   // 0 = easy, 1 = normal, 2 = hard
+  float skill;           // 0 = easy, 1 = normal, 2 = hard, continuous between
   std::uint32_t target;  // player index being engaged, or kMaxPlayers
   std::uint32_t scan_ticks;     // until the next target re-scan
   std::uint32_t reaction_ticks; // until it may open fire on a fresh target
@@ -133,7 +133,7 @@ float weapon_base_speed(const PlayerEntity& e);
 // bots.cpp — produces the command a bot would have typed this tick; the caller
 // feeds it through the same pmove/weapons path the local player uses.
 InputCommand bot_think(SimState& s, std::uint32_t index);
-void bot_reset(SimState& s, std::uint32_t index, std::uint32_t skill);
+void bot_reset(SimState& s, std::uint32_t index, float skill);
 
 inline float rand_float(SimState& s) { // [0, 1)
   std::uint32_t x = s.rng;

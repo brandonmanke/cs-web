@@ -27,6 +27,9 @@ struct SkillDef {
   float fire_cone;    // radians of aim error tolerated before firing
 };
 
+// Anchors, not presets: skill is a float and everything between two rows is
+// interpolated, so the menu's slider is a real dial rather than three buttons
+// wearing a slider's clothes.
 constexpr SkillDef kSkills[3] = {
     {4.5F, 0.070F, 28U, 7U, 30U, 0.075F},  // easy
     {8.0F, 0.034F, 16U, 11U, 18U, 0.055F}, // normal
@@ -42,8 +45,32 @@ constexpr float kRangeSlack = 130.0F;
 constexpr std::uint32_t kStuckLimit = 14U;
 constexpr float kGoalReached = 110.0F;
 
-const SkillDef& skill_of(const PlayerEntity& e) {
-  return kSkills[e.bot.skill < 3U ? e.bot.skill : 1U];
+std::uint32_t lerp_ticks(std::uint32_t a, std::uint32_t b, float t) {
+  const float value = static_cast<float>(a) +
+                      (static_cast<float>(b) - static_cast<float>(a)) * t;
+  return static_cast<std::uint32_t>(value + 0.5F);
+}
+
+/** The skill row for a bot, blended between the two anchors it sits between. */
+SkillDef skill_of(const PlayerEntity& e) {
+  float skill = e.bot.skill;
+  if (!(skill > 0.0F)) { // also catches NaN
+    skill = 0.0F;
+  } else if (skill > 2.0F) {
+    skill = 2.0F;
+  }
+  const std::uint32_t low = skill >= 1.0F ? 1U : 0U;
+  const float t = skill - static_cast<float>(low);
+  const SkillDef& a = kSkills[low];
+  const SkillDef& b = kSkills[low + 1U];
+  return {
+      a.turn_rate + (b.turn_rate - a.turn_rate) * t,
+      a.aim_error + (b.aim_error - a.aim_error) * t,
+      lerp_ticks(a.reaction_ticks, b.reaction_ticks, t),
+      lerp_ticks(a.burst_ticks, b.burst_ticks, t),
+      lerp_ticks(a.rest_ticks, b.rest_ticks, t),
+      a.fire_cone + (b.fire_cone - a.fire_cone) * t,
+  };
 }
 
 float wrap_angle(float a) {
@@ -118,10 +145,10 @@ std::uint32_t scan_for_target(SimState& s, std::uint32_t index) {
 
 } // namespace
 
-void bot_reset(SimState& s, std::uint32_t index, std::uint32_t skill) {
+void bot_reset(SimState& s, std::uint32_t index, float skill) {
   BotState& bot = s.players[index].bot;
   bot = {};
-  bot.skill = skill < 3U ? skill : 1U;
+  bot.skill = skill;
   bot.target = kMaxPlayers;
   bot.strafe_dir = rand_float(s) < 0.5F ? -1.0F : 1.0F;
   bot.scan_ticks = index % kScanInterval;
@@ -131,7 +158,7 @@ void bot_reset(SimState& s, std::uint32_t index, std::uint32_t skill) {
 InputCommand bot_think(SimState& s, std::uint32_t index) {
   PlayerEntity& e = s.players[index];
   BotState& bot = e.bot;
-  const SkillDef& skill = skill_of(e);
+  const SkillDef skill = skill_of(e);
 
   InputCommand cmd = {};
   cmd.yaw = e.move.yaw;

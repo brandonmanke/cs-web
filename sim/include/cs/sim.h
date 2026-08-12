@@ -285,12 +285,13 @@ int sim_trace_ray(float start_x, float start_y, float start_z, float end_x,
 // Spawn points the match uses to place everyone. team is cs::Team; TeamNone
 // means "usable by anyone".
 void sim_add_spawn(float x, float y, float z, float yaw, std::uint32_t team);
-// Reset scores, create `bot_count` bots and place every player. skill is 0..2.
-void sim_start_match(std::uint32_t mode, std::uint32_t bot_count,
-                     std::uint32_t skill);
+// Reset scores, create `bot_count` bots and place every player. `skill` runs
+// 0..2 continuously — 0 easy, 1 normal, 2 hard, and anything between those is
+// interpolated, so difficulty is a dial rather than three presets.
+void sim_start_match(std::uint32_t mode, std::uint32_t bot_count, float skill);
 // Place a bot explicitly. Returns its player index, or kMaxPlayers if full.
 std::uint32_t sim_add_bot(float x, float y, float z, float yaw,
-                          std::uint32_t team, std::uint32_t skill);
+                          std::uint32_t team, float skill);
 // Teleport the local player. Dev/tooling hook (?spawn=, mapcheck drop probes).
 void sim_spawn(float x, float y, float z, float yaw);
 
