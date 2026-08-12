@@ -188,6 +188,16 @@ what makes the M-net server a compile target rather than a rewrite.
   easy/normal/hard as anchors and `skill_of` interpolates between the two a bot
   sits between, so the menu's slider and `?skill=1.4` are real settings rather
   than a rounded 1. Targets are re-scanned every 8 ticks, staggered by index.
+- **Skill 0 is passive**, and is not an anchor — it is the absence of
+  engagement. Those bots roam and never pull a trigger, so any map can be one
+  with company in it rather than empty or a firefight. Same rule `ModeRange`
+  uses, moved from per-mode to per-bot.
+
+  The anchors are calibrated against a stationary player who never shoots (4
+  bots, silo, 90 s): passive → never dies, 0.1 → one death in 90 s, 1.0 → a
+  life every 8 s, 2.0 → every 2.7 s. Before that pass, "easy" killed a
+  stationary player every 9 s and 1.0 and 2.0 were within 0.3 s of each other,
+  so most of the dial did nothing.
 - **Events**: the snapshot carries up to `kMaxEvents` per tick (shots, deaths)
   rather than one `last_shot`, because with ten guns firing the client needs all
   of them for tracers, impacts, audio and the killfeed. The client reads the

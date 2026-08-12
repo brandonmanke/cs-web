@@ -9,7 +9,7 @@ import { FOUNDRY } from "./map/maps/foundry";
 import { PRACTICE } from "./map/maps/practice";
 import { SILO } from "./map/maps/silo";
 import { DeathCam } from "./deathcam";
-import { loadSetting, Menu, Settings, type Roster } from "./menu";
+import { loadSetting, Menu, PASSIVE_SKILL, Settings, type Roster } from "./menu";
 import { Renderer } from "./renderer";
 import {
   EventKind, Flags, MAX_PLAYERS, Mode, ShotResult, Sim, Snapshot, StepKind, Team,
@@ -155,7 +155,10 @@ async function boot(): Promise<void> {
       Array.from({ length: curr.playerCount }, (_, i) => curr.players[i]!.team),
     );
     input.setYaw(curr.players[curr.localIndex]!.yaw);
-    const enemies = next.bots === 0 ? "NO ENEMIES" : `${next.bots} BOTS`;
+    // "4 BOTS" would imply a firefight; at the bottom of the dial they roam and
+    // never shoot, and that is worth saying before you walk in.
+    const passive = next.skill <= PASSIVE_SKILL ? " · PASSIVE" : "";
+    const enemies = next.bots === 0 ? "NO ENEMIES" : `${next.bots} BOTS${passive}`;
     menu.setMap(map.name, `${MODE_LABELS[map.mode] ?? "?"} · ${enemies}`);
   }
 

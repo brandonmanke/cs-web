@@ -22,7 +22,11 @@ const SKILL_BANDS: Array<[number, string]> = [
   [0.4, "EASY"], [0.8, "FAIR"], [1.2, "NORMAL"], [1.6, "TOUGH"], [Infinity, "EXPERT"],
 ];
 
+/** The bottom of the slider is its own thing, not the bottom of the ramp. */
+export const PASSIVE_SKILL = 0;
+
 function skillName(skill: number): string {
+  if (skill <= PASSIVE_SKILL) return "PASSIVE";
   return SKILL_BANDS.find(([upper]) => skill < upper)?.[1] ?? "NORMAL";
 }
 

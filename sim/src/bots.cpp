@@ -31,8 +31,8 @@ struct SkillDef {
 // interpolated, so the menu's slider is a real dial rather than three buttons
 // wearing a slider's clothes.
 constexpr SkillDef kSkills[3] = {
-    {4.5F, 0.070F, 28U, 7U, 30U, 0.075F},  // easy
-    {8.0F, 0.034F, 16U, 11U, 18U, 0.055F}, // normal
+    {2.6F, 0.150F, 52U, 4U, 56U, 0.130F},  // easy
+    {6.5F, 0.055F, 26U, 9U, 26U, 0.070F},  // normal
     {13.0F, 0.015F, 8U, 16U, 10U, 0.040F}, // hard
 };
 
@@ -168,7 +168,12 @@ InputCommand bot_think(SimState& s, std::uint32_t index) {
   if (bot.scan_ticks > 0U) {
     --bot.scan_ticks;
   }
-  const bool engages = s.mode != ModeRange;
+  // Skill 0 is passive: the bot roams and never pulls a trigger, so any map can
+  // be a map with company in it rather than an empty one or a firefight. It is
+  // not an interpolation anchor — it is the absence of engagement, which is why
+  // it reads the raw skill rather than the blended row. NaN and negatives land
+  // here too, which is the safe way for them to land.
+  const bool engages = s.mode != ModeRange && e.bot.skill > 0.0F;
   if (!engages) {
     bot.target = kMaxPlayers;
   } else if (bot.scan_ticks == 0U) {

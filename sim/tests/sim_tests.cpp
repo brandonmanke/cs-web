@@ -426,6 +426,50 @@ void test_bots_fight_back_and_you_respawn() {
   build_test_world();
 }
 
+/** Rounds fired by anyone who isn't the local player, over `ticks`. */
+int bot_shots_over(int ticks) {
+  int shots = 0;
+  for (int i = 0; i < ticks; ++i) {
+    sim_step(0.0F, 0.0F, 0.0F, 0.0F, 0, 0);
+    const cs::SimSnapshot* snap = sim_snapshot();
+    for (std::uint32_t e = 0; e < snap->event_count; ++e) {
+      if (snap->events[e].kind == cs::EventShot &&
+          snap->events[e].actor != cs::kLocalPlayer &&
+          snap->events[e].result != cs::ShotDry) {
+        ++shots;
+      }
+    }
+  }
+  return shots;
+}
+
+void test_passive_bots_hold_their_fire() {
+  // Skill 0 is passive: company in the map, not opposition. It has to be the
+  // sim that decides that, and it has to be per-bot rather than per-mode, or
+  // the bottom of the difficulty dial is just "easy but still lethal".
+  build_test_world();
+  sim_add_spawn(0.0F, cs::kHullHalfHeightStand + 2.0F, 0.0F, 0.0F, cs::TeamNone);
+  sim_start_match(cs::ModeDeathmatch, 0, 0.0F);
+  CHECK(sim_add_bot(0.0F, cs::kHullHalfHeightStand, -420.0F, 0.0F, cs::TeamNone,
+                    0.0F) == 1U);
+  CHECK(bot_shots_over(900) == 0);
+  CHECK_NEAR(sim_snapshot()->health, cs::kPlayerHealth, 0.01F);
+  CHECK(sim_snapshot()->deaths == 0);
+
+  // One notch up the same dial and the trigger works again, so "passive" is a
+  // real setting rather than the bots being broken.
+  sim_create();
+  build_test_world();
+  sim_add_spawn(0.0F, cs::kHullHalfHeightStand + 2.0F, 0.0F, 0.0F, cs::TeamNone);
+  sim_start_match(cs::ModeDeathmatch, 0, 0.1F);
+  CHECK(sim_add_bot(0.0F, cs::kHullHalfHeightStand, -420.0F, 0.0F, cs::TeamNone,
+                    0.1F) == 1U);
+  CHECK(bot_shots_over(900) > 0);
+
+  sim_create();
+  build_test_world();
+}
+
 void test_loadout_survives_death() {
   // Picking the AWP and then dying used to hand you a rifle back, so the scope
   // had to be re-selected every single life.
@@ -692,6 +736,7 @@ int main() {
   test_wallbang_penetration();
   test_shooting_kills_a_bot();
   test_bots_fight_back_and_you_respawn();
+  test_passive_bots_hold_their_fire();
   test_loadout_survives_death();
   test_team_mode_has_no_friendly_fire();
   test_determinism();
