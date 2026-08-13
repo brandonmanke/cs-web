@@ -3,7 +3,7 @@ import { Character } from "./art/character";
 import { canvasTexture } from "./art/textures";
 import { buildMapGeometry, sampleLight, type ShadowProbe } from "./map/build";
 import type { MapDef } from "./map/mapdef";
-import { TICK_SECONDS, type Snapshot } from "./sim";
+import { Flags, Team, TICK_SECONDS, type Snapshot } from "./sim";
 
 // Rendering only. The world is drawn with baked vertex lighting (MeshBasic), so
 // the map costs nothing at runtime and looks like the era it is aiming at;
@@ -12,6 +12,17 @@ import { TICK_SECONDS, type Snapshot } from "./sim";
 
 const MAX_TRACERS = 48;
 const MAX_DECALS = 96;
+/** Standing hull half-height (cs::kHullHalfHeightStand): origin -> feet. */
+const HULL_HALF_STAND = 36;
+const HULL_HALF_DUCK = 18;
+/** A per-tick jump further than this is a respawn, not movement — don't lerp. */
+const TELEPORT_DISTANCE = 200;
+/** Most the camera may lag the feet while climbing (cs::kStepHeight). */
+const MAX_STEP_LAG = 18;
+/** How fast that lag is paid back, u/s. A full step clears in ~0.1 s. */
+const STEP_CATCHUP = 180;
+/** Remaps baked irradiance onto the range a player model stays readable in. */
+const CHARACTER_LIFT = (v: number): number => 0.45 + v * 0.75;
 
 interface Tracer {
   mesh: THREE.Mesh;
@@ -59,6 +70,10 @@ export class Renderer {
   private mapLights: MapDef["lights"] = [];
   private mapAmbient: [number, number, number] = [0.2, 0.2, 0.2];
   private fov = 90;
+  /** Step smoothing: how far the camera is currently behind the eye, and where
+   *  the eye was last frame. */
+  private eyeLag = 0;
+  private lastEyeY = 0;
 
   constructor(container: HTMLElement) {
     this.gl = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
@@ -98,6 +113,7 @@ export class Renderer {
   }
 
   setFov(fov: number): void {
+    if (fov === this.fov) return; // called per frame; the matrix rebuild is not free
     this.fov = fov;
     this.camera.fov = fov;
     this.camera.updateProjectionMatrix();
@@ -116,48 +132,76 @@ export class Renderer {
     return built.shadowRays;
   }
 
-  buildTargets(count: number): void {
-    for (let i = 0; i < count; ++i) {
-      // Alternate teams so the two skins are both visible while bots are stubs.
-      const character = new Character(i % 2 === 0 ? "t" : "ct");
+  /**
+   * One body per roster slot, skinned by team. Slot `localIndex` is built too
+   * but never shown: keeping the array index-aligned with the snapshot is worth
+   * more than the geometry it costs.
+   */
+  buildPlayers(teams: readonly number[]): void {
+    for (const character of this.characters) {
+      this.scene.remove(character.root);
+      character.dispose();
+    }
+    this.characters.length = 0;
+    for (const team of teams) {
+      // Free-for-all has no teams; alternate the two skins so bodies are still
+      // distinguishable from each other at distance.
+      const character = new Character(team === Team.ct ? "ct" : "t");
       this.scene.add(character.root);
       this.characters.push(character);
     }
   }
 
-  updateTargets(prev: Snapshot, curr: Snapshot, alpha: number, dt: number): void {
-    for (let i = 0; i < this.characters.length && i < curr.targetCount; ++i) {
+  updatePlayers(prev: Snapshot, curr: Snapshot, alpha: number, dt: number,
+                localIndex: number): void {
+    for (let i = 0; i < this.characters.length; ++i) {
       const character = this.characters[i]!;
-      const from = prev.targets[i]!;
-      const view = curr.targets[i]!;
+      if (i === localIndex || i >= curr.playerCount) {
+        character.visible = false;
+        continue;
+      }
+      const from = prev.players[i]!;
+      const view = curr.players[i]!;
       character.visible = true;
 
-      // Interpolate between the last two ticks, exactly like the camera. The
-      // sim never teleports a target (patrols reverse in place, respawns keep
-      // the origin), so a straight lerp is always safe.
-      const x = from.x + (view.x - from.x) * alpha;
-      const y = from.y + (view.y - from.y) * alpha;
-      const z = from.z + (view.z - from.z) * alpha;
-      character.root.position.set(x, y, z);
+      // Interpolate between the last two ticks, exactly like the camera —
+      // except across a respawn, where the two ticks are on opposite sides of
+      // the map and a lerp would draw a body streaking through the level.
+      const jumped = Math.hypot(view.x - from.x, view.y - from.y, view.z - from.z) >
+        TELEPORT_DISTANCE;
+      const blend = jumped ? 1 : alpha;
+      const x = from.x + (view.x - from.x) * blend;
+      const y = from.y + (view.y - from.y) * blend;
+      const z = from.z + (view.z - from.z) * blend;
+      // The snapshot carries hull centres; the model is authored from the feet.
+      const half = (view.flags & Flags.ducked) !== 0 ? HULL_HALF_DUCK : HULL_HALF_STAND;
+      character.root.position.set(x, y - half, z);
 
       // Gait speed comes from the per-tick delta, not the per-frame one: at any
       // refresh rate above 64 Hz most frames advance no tick, so a frame delta
       // alternates between zero and a full step and the walk cycle strobes.
-      const speed = Math.hypot(view.x - from.x, view.z - from.z) / TICK_SECONDS;
+      const speed = jumped ? 0 : Math.hypot(view.x - from.x, view.z - from.z) / TICK_SECONDS;
 
-      // Patrol targets slide along X; face the way they are going.
-      const dx = view.x - from.x;
-      const yaw = Math.abs(dx) > 1e-4
-        ? (dx > 0 ? -Math.PI / 2 : Math.PI / 2)
-        : (character.root.userData.yaw as number | undefined) ?? 0;
-      character.root.userData.yaw = yaw;
+      character.update(dt, {
+        speed,
+        onGround: (view.flags & Flags.onGround) !== 0,
+        yaw: view.yaw,
+        pitch: view.pitch,
+        alive: (view.flags & Flags.alive) !== 0,
+      });
 
-      character.update(dt, { speed, onGround: true, yaw, pitch: 0, alive: view.alive });
-
-      const tint = sampleLight([x, y + 40, z], this.mapLights, this.mapAmbient);
       // Hit flash overrides the bake for a few ticks.
-      if (view.flash > 0) character.setTint(1.5, 0.5, 0.4);
-      else character.setTint(tint[0], tint[1], tint[2]);
+      if (view.flash > 0) {
+        character.setTint(1.5, 0.5, 0.4);
+      } else {
+        // Tint, not dim. Raw irradiance in a shadowed corner is ~0.2, and a CT
+        // skin is already dark navy — multiplied straight through, a body in
+        // shadow becomes an unreadable silhouette. Lifting the floor keeps the
+        // bake's relative light/dark while leaving the model legible, which for
+        // a shooter matters more than the physics of it.
+        const tint = sampleLight([x, y, z], this.mapLights, this.mapAmbient);
+        character.setTint(...(tint.map(CHARACTER_LIFT) as [number, number, number]));
+      }
     }
   }
 
@@ -229,11 +273,43 @@ export class Renderer {
     });
   }
 
-  render(prev: Snapshot, curr: Snapshot, alpha: number, yaw: number, pitch: number): void {
+  /**
+   * Absorb a step-up so a staircase doesn't strobe the camera.
+   *
+   * Stepping onto a stair teleports the hull to the top of it — that is what
+   * step height *is* — so climbing a 16u flight snaps the eye upward several
+   * times a second. This keeps a bounded amount of that snap as lag and pays it
+   * back at a fixed rate, which is what turns a flight of stairs into a slope
+   * from behind the eyes. Only the view moves: the sim's eye, and therefore
+   * where shots leave from and what the bots can see, is untouched.
+   *
+   * Rises bigger than a step are jumps, falls and respawns, and go through
+   * unsmoothed. Walking a ramp gains less per frame than the catch-up rate
+   * pays off, so slopes are left alone too.
+   */
+  private smoothStep(eyeY: number, grounded: boolean, dt: number): number {
+    const rise = eyeY - this.lastEyeY;
+    this.lastEyeY = eyeY;
+    if (grounded && rise > 0 && rise <= MAX_STEP_LAG) {
+      this.eyeLag = Math.min(this.eyeLag + rise, MAX_STEP_LAG);
+    }
+    this.eyeLag = Math.max(0, this.eyeLag - STEP_CATCHUP * dt);
+    return eyeY - this.eyeLag;
+  }
+
+  /** `eyeHeight` overrides the interpolated stance height — the death cam. */
+  render(prev: Snapshot, curr: Snapshot, alpha: number, dt: number, yaw: number,
+         pitch: number, eyeHeight?: number): void {
     const lerp = (a: number, b: number) => a + (b - a) * alpha;
+    const eyeY = lerp(prev.origin[1]!, curr.origin[1]!) +
+      (eyeHeight ?? lerp(prev.eyeHeight, curr.eyeHeight));
+    // The death cam flies the camera on its own terms; smoothing would fight it.
+    const cameraY = eyeHeight === undefined
+      ? this.smoothStep(eyeY, (curr.flags & Flags.onGround) !== 0, dt)
+      : eyeY;
+
     this.camera.position.set(
-      lerp(prev.origin[0]!, curr.origin[0]!),
-      lerp(prev.origin[1]!, curr.origin[1]!) + lerp(prev.eyeHeight, curr.eyeHeight),
+      lerp(prev.origin[0]!, curr.origin[0]!), cameraY,
       lerp(prev.origin[2]!, curr.origin[2]!),
     );
     this.camera.rotation.set(pitch + curr.punchPitch, yaw + curr.punchYaw, 0);

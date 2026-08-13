@@ -9,25 +9,59 @@ import { DEFAULT_VOLUME, type GameAudio } from "./audio";
 // pause.
 
 const VOLUME_KEY = "cs-web.volume";
+const BOTS_KEY = "cs-web.bots";
+const SKILL_KEY = "cs-web.skill";
+const SENS_KEY = "cs-web.sensitivity";
 
-function loadVolume(): number {
+/** Multiplier bounds on Input's base sensitivity; matches the slider in HTML. */
+const MIN_SENS = 0.3;
+const MAX_SENS = 4;
+
+/**
+ * Bands over the sim's continuous 0..2 skill. The number rides alongside the
+ * name because it is exactly what `?skill=` takes, and because a five-band name
+ * alone can't tell 1.25 from 1.55 — which, in aim error and reaction time, is a
+ * difference you feel.
+ */
+const SKILL_BANDS: Array<[number, string]> = [
+  [0.4, "EASY"], [0.8, "FAIR"], [1.2, "NORMAL"], [1.6, "TOUGH"], [Infinity, "EXPERT"],
+];
+
+/** The bottom of the slider is its own thing, not the bottom of the ramp. */
+export const PASSIVE_SKILL = 0;
+
+function skillName(skill: number): string {
+  if (skill <= PASSIVE_SKILL) return "PASSIVE";
+  return SKILL_BANDS.find(([upper]) => skill < upper)?.[1] ?? "NORMAL";
+}
+
+/** A stored number, clamped, or null when absent/unreadable. */
+export function loadSetting(key: string, min: number, max: number): number | null {
   try {
-    const stored = localStorage.getItem(VOLUME_KEY);
-    if (stored === null) return DEFAULT_VOLUME;
+    const stored = localStorage.getItem(key);
+    if (stored === null) return null;
     const value = Number(stored);
-    return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : DEFAULT_VOLUME;
+    return Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : null;
   } catch {
-    // Private browsing / disabled storage — the default is fine.
-    return DEFAULT_VOLUME;
+    // Private browsing / disabled storage.
+    return null;
   }
 }
 
-function saveVolume(value: number): void {
+function saveSetting(key: string, value: number): void {
   try {
-    localStorage.setItem(VOLUME_KEY, String(value));
+    localStorage.setItem(key, String(value));
   } catch {
     // Not worth surfacing; the setting just won't persist.
   }
+}
+
+/** Preference keys main.ts seeds the menu from. */
+export const Settings = { bots: BOTS_KEY, skill: SKILL_KEY } as const;
+
+export interface Roster {
+  bots: number;
+  skill: number;
 }
 
 export class Menu {
@@ -37,14 +71,33 @@ export class Menu {
   private readonly readout = document.getElementById("menu-volume-value")!;
   private readonly hint = document.getElementById("menu-hint")!;
   private readonly subtitle = document.getElementById("menu-map")!;
+  private readonly maps = document.getElementById("menu-maps")!;
+  private readonly bots = document.getElementById("menu-bots") as HTMLInputElement;
+  private readonly botsValue = document.getElementById("menu-bots-value")!;
+  private readonly skill = document.getElementById("menu-skill") as HTMLInputElement;
+  private readonly skillValue = document.getElementById("menu-skill-value")!;
+  private readonly sens = document.getElementById("menu-sens") as HTMLInputElement;
+  private readonly sensValue = document.getElementById("menu-sens-value")!;
 
   private started = false;
 
   constructor(
     private readonly audio: GameAudio,
     private readonly requestLock: (onGaveUp: () => void) => void,
+    /** Fired when the roster changes; the caller restarts the match. */
+    private readonly onRoster: (roster: Roster) => void,
+    /** Multiplier on the base look sensitivity. */
+    private readonly onSensitivity: (multiplier: number) => void,
   ) {
-    const volume = loadVolume();
+    const sensitivity = loadSetting(SENS_KEY, MIN_SENS, MAX_SENS) ?? 1;
+    this.sens.value = String(sensitivity);
+    this.applySensitivity();
+    this.sens.addEventListener("input", () => this.applySensitivity());
+    for (const event of ["change", "pointerup"] as const) {
+      this.sens.addEventListener(event, () => saveSetting(SENS_KEY, Number(this.sens.value)));
+    }
+
+    const volume = loadSetting(VOLUME_KEY, 0, 1) ?? DEFAULT_VOLUME;
     this.audio.setVolume(volume);
     this.slider.value = String(Math.round(volume * 100));
     this.renderVolume(volume);
@@ -56,7 +109,19 @@ export class Menu {
     });
     // Persist on release rather than per-pixel of drag.
     for (const event of ["change", "pointerup"] as const) {
-      this.slider.addEventListener(event, () => saveVolume(this.audio.getVolume()));
+      this.slider.addEventListener(event, () => saveSetting(VOLUME_KEY, this.audio.getVolume()));
+    }
+
+    // Restarting a match on every pixel of a drag would be silly, so the labels
+    // track "input" and the actual restart waits for "change".
+    for (const input of [this.bots, this.skill]) {
+      input.addEventListener("input", () => this.renderRoster());
+      input.addEventListener("change", () => {
+        const roster = this.roster();
+        saveSetting(BOTS_KEY, roster.bots);
+        saveSetting(SKILL_KEY, roster.skill);
+        this.onRoster(roster);
+      });
     }
 
     this.resume.addEventListener("click", () => this.dismiss());
@@ -81,9 +146,47 @@ export class Menu {
     this.readout.textContent = `${Math.round(value * 100)}%`;
   }
 
-  setMap(name: string): void {
-    this.subtitle.textContent = name.toUpperCase();
+  private applySensitivity(): void {
+    const value = Number(this.sens.value);
+    this.sensValue.textContent = `${value.toFixed(1)}×`;
+    this.onSensitivity(value);
+  }
+
+  private roster(): Roster {
+    return { bots: Number(this.bots.value), skill: Number(this.skill.value) };
+  }
+
+  private renderRoster(): void {
+    const { bots, skill } = this.roster();
+    this.botsValue.textContent = bots === 0 ? "OFF" : String(bots);
+    this.skillValue.textContent = `${skillName(skill)} ${skill.toFixed(1)}`;
+  }
+
+  /** Seed the controls without firing a restart. */
+  setRoster(roster: Roster): void {
+    this.bots.value = String(roster.bots);
+    this.skill.value = String(roster.skill);
+    this.renderRoster();
+  }
+
+  setMap(name: string, detail: string): void {
+    this.subtitle.textContent = `${name.toUpperCase()} · ${detail}`;
     document.title = `cs-web — ${name}`;
+  }
+
+  /**
+   * Switching maps rebuilds the world and re-bakes its lighting, both of which
+   * happen at boot — so these are links that reload rather than in-place
+   * swaps. Cheap, and it keeps map loading a single code path.
+   */
+  setMapList(names: readonly string[], current: string): void {
+    this.maps.replaceChildren(...names.map((name) => {
+      const link = document.createElement("a");
+      link.href = `?map=${encodeURIComponent(name)}`;
+      link.textContent = name;
+      if (name === current) link.classList.add("active");
+      return link;
+    }));
   }
 
   setVisible(visible: boolean): void {

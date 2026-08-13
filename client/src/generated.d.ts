@@ -21,11 +21,13 @@ declare module "*/generated/sim.mjs" {
       endX: number, endY: number, endZ: number,
       outPtr: number,
     ): number;
+    _sim_add_spawn(x: number, y: number, z: number, yaw: number, team: number): void;
+    _sim_start_match(mode: number, botCount: number, skill: number): void;
+    _sim_add_bot(
+      x: number, y: number, z: number, yaw: number,
+      team: number, skill: number,
+    ): number;
     _sim_spawn(x: number, y: number, z: number, yaw: number): void;
-    _sim_add_target(
-      x: number, y: number, z: number,
-      patrolMinX: number, patrolMaxX: number, speed: number,
-    ): void;
     _sim_step(
       forward: number, strafe: number, yaw: number, pitch: number,
       buttons: number, weapon: number,

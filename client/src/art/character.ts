@@ -13,9 +13,13 @@ import { canvasTexture, fill, grain, stains } from "./textures";
 
 export type Team = "ct" | "t";
 
+// Bright enough to read against a map lit by pools of light and deep shadow.
+// The first pass used real-kit colours (navy CT, dark webbing) and a CT body
+// standing off a light pool was a black cutout you could not tell was facing
+// you — which is the one thing the character art has to do.
 const PALETTE: Record<Team, { cloth: string; vest: string; skin: string; trim: string }> = {
-  ct: { cloth: "#39434f", vest: "#232a33", skin: "#c49a76", trim: "#5b6672" },
-  t: { cloth: "#8a7248", vest: "#3b3226", skin: "#b98a60", trim: "#6d5a38" },
+  ct: { cloth: "#5d6d80", vest: "#3c4957", skin: "#c49a76", trim: "#8794a4" },
+  t: { cloth: "#9d8352", vest: "#4c4130", skin: "#b98a60", trim: "#7d6941" },
 };
 
 function bodyTexture(team: Team): THREE.CanvasTexture {
@@ -52,6 +56,22 @@ function headTexture(team: Team): THREE.CanvasTexture {
     c.ctx.fillRect(38, 28, 16, 6);
     grain(c, 12, 1);
   });
+}
+
+/**
+ * Skins are per team, not per body, and the roster gets rebuilt whenever the
+ * bot count changes — so generate each canvas once and share it. Character
+ * disposal deliberately leaves these alone.
+ */
+const skins = new Map<string, THREE.CanvasTexture>();
+function skin(team: Team, part: "body" | "head"): THREE.CanvasTexture {
+  const key = `${team}:${part}`;
+  let texture = skins.get(key);
+  if (!texture) {
+    texture = part === "body" ? bodyTexture(team) : headTexture(team);
+    skins.set(key, texture);
+  }
+  return texture;
 }
 
 /** A box whose pivot sits at its top face, so limbs rotate from the joint. */
@@ -96,9 +116,9 @@ export class Character {
   private deathTime = 0;
 
   constructor(team: Team) {
-    const cloth = new THREE.MeshLambertMaterial({ map: bodyTexture(team) });
-    const skin = new THREE.MeshLambertMaterial({ map: headTexture(team) });
-    this.materials.push(cloth, skin);
+    const cloth = new THREE.MeshLambertMaterial({ map: skin(team, "body") });
+    const flesh = new THREE.MeshLambertMaterial({ map: skin(team, "head") });
+    this.materials.push(cloth, flesh);
 
     this.root.add(this.pivot);
     this.pivot.add(this.hips);
@@ -111,7 +131,7 @@ export class Character {
 
     this.torso.add(this.head);
     this.head.position.y = 20; // world y 58
-    this.head.add(block(12, 12, 12, 6, skin));
+    this.head.add(block(12, 12, 12, 6, flesh));
     // Brow ridge: gives the silhouette a facing direction at distance.
     this.head.add(block(13, 3, 3, 8, cloth).translateZ(-5.5));
 
@@ -223,9 +243,7 @@ export class Character {
       const mesh = object as THREE.Mesh;
       if (mesh.isMesh) mesh.geometry.dispose();
     });
-    for (const material of this.materials) {
-      material.map?.dispose();
-      material.dispose();
-    }
+    // Maps are shared across every body on a team and outlive this one.
+    for (const material of this.materials) material.dispose();
   }
 }

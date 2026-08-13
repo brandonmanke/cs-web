@@ -1,5 +1,6 @@
+import { Mode } from "../../sim";
 import { box, ramp, stairs, Surface, type Brush } from "../brush";
-import type { MapDef } from "../mapdef";
+import type { MapDef, SpawnDef } from "../mapdef";
 
 // PRACTICE — the movement/aim greybox, kept because it is the fastest way to
 // feel whether a pmove change broke something. Every obstacle here exists to
@@ -48,6 +49,24 @@ brushes.push(
   box([460, 0, -520], [620, 48, -360], Surface.concrete, "concrete"),
 );
 
+// Penetration range: four panels with a common near face at x = 700, so you can
+// stand west of them and walk the same shot across all four. Thicknesses are
+// picked to straddle the weapon budgets in sim/src/weapons.cpp — a plank every
+// gun goes through, a plank stack only rifles do, sheet steel that costs more
+// than twice its thickness, and a concrete wall that is the AWP's alone. The
+// backstop is there so you can see what came out the far side.
+const PANEL_X = 700;
+const PANELS: Array<[number, number, Surface, string]> = [
+  [16, 300, Surface.wood, "crate"],      // plank
+  [48, 428, Surface.wood, "crate"],      // plank stack
+  [8, 556, Surface.metal, "metal"],      // sheet steel
+  [32, 684, Surface.concrete, "concrete"], // wall
+];
+for (const [thickness, z, surface, tex] of PANELS) {
+  brushes.push(box([PANEL_X, 0, z], [PANEL_X + thickness, 112, z + 96], surface, tex));
+}
+brushes.push(box([880, 0, 280], [912, 160, 800], Surface.concrete, "concrete_dark"));
+
 // Ramp onto a platform: the slope case the brush trace has to get right.
 brushes.push(ramp([-80, 0, 200], [80, 64, 360], "+z", Surface.concrete, "concrete"));
 brushes.push(box([-80, 0, 360], [80, 64, 440], Surface.concrete, "concrete"));
@@ -59,18 +78,25 @@ const lights = [
   { pos: [0, 200, 600] as [number, number, number], color: [0.85, 0.92, 1.0] as [number, number, number], intensity: 0.9, radius: 1100 },
 ];
 
+// The first spawn is where you start; the rest are the range, and in ModeRange
+// the bots wander between them without ever shooting back.
+const spawns: SpawnDef[] = [
+  { pos: [0, 38, 640], yaw: 0 }, // facing -Z, toward the target range
+  { pos: [0, 38, -550], yaw: Math.PI },
+  { pos: [-300, 38, -700], yaw: Math.PI },
+  { pos: [300, 38, -700], yaw: Math.PI },
+  { pos: [-620, 38, -160], yaw: -Math.PI / 2 },
+  { pos: [620, 38, -160], yaw: Math.PI / 2 },
+];
+
 export const PRACTICE: MapDef = {
   name: "practice",
   brushes,
   lights,
   ambient: [0.30, 0.30, 0.32],
-  spawn: [0, 38, 640],
-  spawnYaw: 0, // facing -Z, toward the target range
-  targets: [
-    { x: 0, y: 0, z: -550, minX: 0, maxX: 0, speed: 0 },
-    { x: -150, y: 0, z: -680, minX: -380, maxX: 60, speed: 90 },
-    { x: 150, y: 0, z: -800, minX: -40, maxX: 380, speed: 150 },
-  ],
+  mode: Mode.range,
+  bots: 3,
+  spawns,
   background: 0x141a16,
   fog: [1400, 4200],
 };

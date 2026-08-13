@@ -126,6 +126,14 @@ export function ramp(min: Vec3, max: Vec3, dir: RampDir, surface: Surface,
   return { planes, surface, tex };
 }
 
+/**
+ * cs::kStepHeight. A step taller than this cannot be walked up — you have to
+ * jump every single one — so `stairs` refuses to emit one rather than shipping
+ * a staircase that is secretly a ladder. Both silo and depot had exactly that
+ * bug, and nothing in the build caught it because the geometry was valid.
+ */
+const MAX_STEP_RISE = 18;
+
 /** A run of `count` steps climbing `dir` across `min`..`max`. */
 export function stairs(min: Vec3, max: Vec3, count: number, dir: RampDir,
                        surface: Surface, tex: string): Brush[] {
@@ -135,6 +143,13 @@ export function stairs(min: Vec3, max: Vec3, count: number, dir: RampDir,
   const span = max[axis] - min[axis];
   const tread = span / count;
   const rise = (max[1] - min[1]) / count;
+  if (rise > MAX_STEP_RISE) {
+    throw new Error(
+      `stairs: ${count} steps over ${max[1] - min[1]}u rise ${rise.toFixed(1)}u each, ` +
+      `over the ${MAX_STEP_RISE}u step height — use ${Math.ceil((max[1] - min[1]) / MAX_STEP_RISE)} ` +
+      `steps or a ramp`,
+    );
+  }
 
   for (let i = 0; i < count; ++i) {
     const stepMin: Vec3 = [min[0], min[1], min[2]];

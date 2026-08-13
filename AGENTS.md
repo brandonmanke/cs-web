@@ -25,9 +25,14 @@ no third-party C dependencies and no binary assets.
 ## Architecture
 
 - `sim/` — all gameplay: movement (`pmove.cpp`), gunplay (`weapons.cpp`),
-  convex-brush collision (`world.cpp`), orchestration + C ABI (`sim.cpp`).
-  Fixed 64 Hz tick, flat POD state, `-fno-exceptions -fno-rtti`, deterministic
-  (xorshift RNG in state, `-ffp-contract=off`).
+  convex-brush collision (`world.cpp`), bot AI (`bots.cpp`), orchestration +
+  match rules + C ABI (`sim.cpp`). Fixed 64 Hz tick, flat POD state,
+  `-fno-exceptions -fno-rtti`, deterministic (xorshift RNG in state,
+  `-ffp-contract=off`).
+- **The sim is multi-player.** `SimState` holds a roster of `kMaxPlayers`
+  entities; index `kLocalPlayer` is the client's, the rest are bots. Bots emit
+  an `InputCommand` from `bot_think` and run through the *same* `pmove_run` and
+  `weapons_run` — never add a bot-only movement or accuracy path.
 - `sim/include/cs/sim.h` — public types, tuning constants, and the C ABI.
   **The TS mirror of the snapshot layout lives in `client/src/sim.ts` (WORDS
   table) — change them together.** A byte-size assert plus an `api_version`
@@ -36,7 +41,9 @@ no third-party C dependencies and no binary assets.
 - `client/` — rendering/input/HUD/audio only. **No gameplay logic in TS.**
 - `client/src/map/` — brushes are the single source of truth: the same plane
   sets feed `sim_add_brush` (collision) and the winding clipper (render
-  geometry). Never introduce a separate collision mesh.
+  geometry). Never introduce a separate collision mesh. A `MapDef` also carries
+  its `mode`, `bots` and team-tagged `spawns`; register new maps in both
+  `client/src/main.ts` and `tools/mapcheck.ts`.
 - `client/src/art/` — all textures, characters, and weapons are generated in
   code. Do not add binary assets.
 - Angles: radians, yaw 0 = −Z, +yaw = counter-clockwise; Y-up; GoldSrc units
@@ -47,10 +54,13 @@ no third-party C dependencies and no binary assets.
 - After sim changes: `npm run test` (movement invariants + determinism hash)
   and `npm run wasm` must both pass.
 - After map changes: `npm run mapcheck` — catches degenerate brushes, spawns
-  that drop you through the floor, and geometry that renders but isn't solid.
+  that drop you through the floor or sit buried in a brush, team maps missing a
+  side, and geometry that renders but isn't solid.
 - After client changes: `npm run typecheck`; for behavior, `npm run dev` and
   check the feel list in PLAN.md §3 (`?map=practice`).
-- Dev flags: `?map=`, `?spawn=x,y,z`, `?yaw=radians`, `?coords`.
+- Dev flags: `?map=`, `?bots=N`, `?skill=0..2`, `?spawn=x,y,z`, `?yaw=radians`,
+  `?coords`. Hostile maps default to zero bots, so geometry work needs no flag;
+  `?bots=N` overrides both the default and the stored menu preference.
 
 ## Assets
 

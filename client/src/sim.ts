@@ -2,43 +2,51 @@ import createSimModule, { type SimModule } from "./generated/sim.mjs";
 
 // Mirrors cs::SimSnapshot in sim/include/cs/sim.h: 4-byte fields only, so the
 // layout is a flat array of 32-bit words.
-const MAX_TARGETS = 8; // cs::kMaxTargets
-const API_VERSION = 1; // cs::kSimApiVersion
+export const MAX_PLAYERS = 10; // cs::kMaxPlayers
+const MAX_EVENTS = 12; // cs::kMaxEvents
+const API_VERSION = 3; // cs::kSimApiVersion
 
 /** cs::kTickSeconds. Anything converting snapshot deltas to rates needs this. */
 export const TICK_SECONDS = 1 / 64;
+/** cs::kBaseFov — the unscoped vertical-ish field of view the camera starts at. */
+export const BASE_FOV = 90;
+
+const PLAYER_WORDS = 14; // cs::PlayerSnapshot
+const EVENT_WORDS = 14;  // cs::SimEvent
 
 export const WORDS = {
   apiVersion: 0,
   tick: 1,
-  origin: 2,
-  velocity: 5,
-  eyeHeight: 8,
-  speedH: 9,
-  stamina: 10,
-  flags: 11,
-  weapon: 12,
-  magazine: 13,
-  reserve: 14,
-  cooldown: 15,
-  reload: 16,
-  punchPitch: 17,
-  punchYaw: 18,
-  kills: 19,
-  hits: 20,
-  shots: 21,
-  shotSequence: 22,
-  shotResult: 23,
-  shotHitGroup: 24,
-  shotTarget: 25,
-  shotMaterial: 26,
-  shotDamage: 27,
-  shotStart: 28,
-  shotEnd: 31,
-  targetCount: 34,
-  targets: 35, // 6 words per target
+  mode: 2,
+  localIndex: 3,
+  origin: 4,
+  velocity: 7,
+  eyeHeight: 10,
+  speedH: 11,
+  stamina: 12,
+  fov: 13,
+  flags: 14,
+  zoom: 15,
+  weapon: 16,
+  magazine: 17,
+  reserve: 18,
+  cooldown: 19,
+  reload: 20,
+  punchPitch: 21,
+  punchYaw: 22,
+  health: 23,
+  respawnTicks: 24,
+  kills: 25,
+  deaths: 26,
+  hits: 27,
+  shots: 28,
+  teamScore: 29, // 3 words
+  playerCount: 32,
+  eventCount: 33,
+  players: 34, // PLAYER_WORDS per player
+  events: 34 + MAX_PLAYERS * PLAYER_WORDS,
 } as const;
-const SNAPSHOT_WORDS = 35 + MAX_TARGETS * 6;
+const SNAPSHOT_WORDS = WORDS.events + MAX_EVENTS * EVENT_WORDS;
 
 export const Buttons = {
   jump: 1 << 0,
@@ -46,12 +54,14 @@ export const Buttons = {
   fire: 1 << 2,
   reload: 1 << 3,
   walk: 1 << 4,
+  zoom: 1 << 5,
 } as const;
 
-export interface TraceHit {
-  point: [number, number, number];
-  normal: [number, number, number];
-}
+export const Flags = {
+  onGround: 1 << 0,
+  ducked: 1 << 1,
+  alive: 1 << 2,
+} as const;
 
 export const ShotResult = {
   none: 0,
@@ -62,42 +72,110 @@ export const ShotResult = {
   dry: 5,
 } as const;
 
-export const Flags = {
-  onGround: 1 << 0,
-  ducked: 1 << 1,
+export const EventKind = {
+  none: 0,
+  shot: 1,
+  death: 2,
+  step: 3,
 } as const;
 
-export interface TargetView {
+/** cs::StepKind — an EventStep's `result`. */
+export const StepKind = {
+  walk: 0,
+  land: 1,
+} as const;
+
+// cs::Team
+export const Team = {
+  none: 0,
+  t: 1,
+  ct: 2,
+} as const;
+
+// cs::GameMode
+export const Mode = {
+  range: 0,
+  deathmatch: 1,
+  team: 2,
+} as const;
+export type Mode = (typeof Mode)[keyof typeof Mode];
+
+export interface TraceHit {
+  point: [number, number, number];
+  normal: [number, number, number];
+  /** cs::Material of the surface — what the impact sounds and looks like. */
+  material: number;
+}
+
+export interface PlayerView {
   x: number; y: number; z: number;
+  yaw: number;
+  pitch: number;
   health: number;
-  alive: boolean;
+  speedH: number;
+  team: number;
+  flags: number;
+  weapon: number;
+  kills: number;
+  deaths: number;
   flash: number;
+  isBot: boolean;
+}
+
+export interface EventView {
+  kind: number;
+  actor: number;
+  victim: number;
+  result: number;
+  hitGroup: number;
+  material: number;
+  weapon: number;
+  damage: number;
+  start: [number, number, number];
+  end: [number, number, number];
+}
+
+function emptyPlayer(): PlayerView {
+  return {
+    x: 0, y: 0, z: 0, yaw: 0, pitch: 0, health: 0, speedH: 0,
+    team: 0, flags: 0, weapon: 0, kills: 0, deaths: 0, flash: 0, isBot: false,
+  };
+}
+
+function emptyEvent(): EventView {
+  return {
+    kind: 0, actor: 0, victim: 0, result: 0, hitGroup: 0, material: 0,
+    weapon: 0, damage: 0, start: [0, 0, 0], end: [0, 0, 0],
+  };
 }
 
 export class Snapshot {
   tick = 0;
+  mode: number = Mode.range;
+  localIndex = 0;
   origin: [number, number, number] = [0, 0, 0];
   eyeHeight = 64;
   speedH = 0;
+  fov = BASE_FOV;
   flags = 0;
+  zoom = 0;
   weapon = 0;
   magazine = 0;
   reserve = 0;
   reload = 0;
   punchPitch = 0;
   punchYaw = 0;
+  health = 100;
+  respawnTicks = 0;
   kills = 0;
+  deaths = 0;
   hits = 0;
   shots = 0;
-  shotSequence = 0;
-  shotResult = 0;
-  shotMaterial = 0;
-  shotStart: [number, number, number] = [0, 0, 0];
-  shotEnd: [number, number, number] = [0, 0, 0];
-  targetCount = 0;
-  targets: TargetView[] = Array.from({ length: MAX_TARGETS }, () => ({
-    x: 0, y: 0, z: 0, health: 0, alive: false, flash: 0,
-  }));
+  teamScore: [number, number, number] = [0, 0, 0];
+  playerCount = 0;
+  eventCount = 0;
+  players: PlayerView[] = Array.from({ length: MAX_PLAYERS }, emptyPlayer);
+  events: EventView[] = Array.from({ length: MAX_EVENTS }, emptyEvent);
 
   /**
    * Copies the fields the renderer interpolates between ticks. Anything drawn
@@ -110,15 +188,19 @@ export class Snapshot {
     this.origin[1] = other.origin[1];
     this.origin[2] = other.origin[2];
     this.eyeHeight = other.eyeHeight;
-    this.targetCount = other.targetCount;
-    for (let i = 0; i < MAX_TARGETS; ++i) {
-      const from = other.targets[i]!;
-      const to = this.targets[i]!;
+    this.playerCount = other.playerCount;
+    for (let i = 0; i < MAX_PLAYERS; ++i) {
+      const from = other.players[i]!;
+      const to = this.players[i]!;
       to.x = from.x;
       to.y = from.y;
       to.z = from.z;
-      to.alive = from.alive;
+      to.yaw = from.yaw;
+      to.pitch = from.pitch;
+      to.team = from.team;
+      to.flags = from.flags;
       to.flash = from.flash;
+      to.weapon = from.weapon;
     }
   }
 }
@@ -133,14 +215,14 @@ export interface InputFrame {
 }
 
 export class Sim {
-  /** Scratch for sim_trace_ray results: [fraction, end xyz, normal xyz]. */
+  /** Scratch for sim_trace_ray: [fraction, end xyz, normal xyz, material]. */
   private readonly traceWord: number;
 
   private constructor(
     private readonly m: SimModule,
     private readonly snapshotWord: number,
   ) {
-    this.traceWord = m._malloc(7 * 4) >> 2;
+    this.traceWord = m._malloc(8 * 4) >> 2;
   }
 
   static async load(): Promise<Sim> {
@@ -184,7 +266,7 @@ export class Sim {
     ) !== 0;
   }
 
-  /** Impact point and surface normal, or null on a miss. */
+  /** Impact point, surface normal and material, or null on a miss. */
   traceRay(from: readonly number[], to: readonly number[]): TraceHit | null {
     const hit = this.m._sim_trace_ray(
       from[0]!, from[1]!, from[2]!, to[0]!, to[1]!, to[2]!, this.traceWord << 2,
@@ -195,15 +277,21 @@ export class Sim {
     return {
       point: [f32[w + 1]!, f32[w + 2]!, f32[w + 3]!],
       normal: [f32[w + 4]!, f32[w + 5]!, f32[w + 6]!],
+      material: f32[w + 7]!,
     };
+  }
+
+  addSpawn(origin: readonly number[], yaw: number, team: number): void {
+    this.m._sim_add_spawn(origin[0]!, origin[1]!, origin[2]!, yaw, team);
+  }
+
+  /** Resets scores, fills the roster with bots and places everyone. */
+  startMatch(mode: number, botCount: number, skill: number): void {
+    this.m._sim_start_match(mode, botCount, skill);
   }
 
   spawn(x: number, y: number, z: number, yaw: number): void {
     this.m._sim_spawn(x, y, z, yaw);
-  }
-
-  addTarget(x: number, y: number, z: number, minX: number, maxX: number, speed: number): void {
-    this.m._sim_add_target(x, y, z, minX, maxX, speed);
   }
 
   step(input: InputFrame): void {
@@ -216,38 +304,66 @@ export class Sim {
     const u32 = this.m.HEAPU32;
     const w = this.snapshotWord;
     out.tick = u32[w + WORDS.tick]!;
+    out.mode = u32[w + WORDS.mode]!;
+    out.localIndex = u32[w + WORDS.localIndex]!;
     out.origin[0] = f32[w + WORDS.origin]!;
     out.origin[1] = f32[w + WORDS.origin + 1]!;
     out.origin[2] = f32[w + WORDS.origin + 2]!;
     out.eyeHeight = f32[w + WORDS.eyeHeight]!;
     out.speedH = f32[w + WORDS.speedH]!;
+    out.fov = f32[w + WORDS.fov]!;
     out.flags = u32[w + WORDS.flags]!;
+    out.zoom = u32[w + WORDS.zoom]!;
     out.weapon = u32[w + WORDS.weapon]!;
     out.magazine = u32[w + WORDS.magazine]!;
     out.reserve = u32[w + WORDS.reserve]!;
     out.reload = u32[w + WORDS.reload]!;
     out.punchPitch = f32[w + WORDS.punchPitch]!;
     out.punchYaw = f32[w + WORDS.punchYaw]!;
+    out.health = f32[w + WORDS.health]!;
+    out.respawnTicks = u32[w + WORDS.respawnTicks]!;
     out.kills = u32[w + WORDS.kills]!;
+    out.deaths = u32[w + WORDS.deaths]!;
     out.hits = u32[w + WORDS.hits]!;
     out.shots = u32[w + WORDS.shots]!;
-    out.shotSequence = u32[w + WORDS.shotSequence]!;
-    out.shotResult = u32[w + WORDS.shotResult]!;
-    out.shotMaterial = u32[w + WORDS.shotMaterial]!;
-    for (let i = 0; i < 3; ++i) {
-      out.shotStart[i] = f32[w + WORDS.shotStart + i]!;
-      out.shotEnd[i] = f32[w + WORDS.shotEnd + i]!;
-    }
-    out.targetCount = u32[w + WORDS.targetCount]!;
-    for (let t = 0; t < MAX_TARGETS; ++t) {
-      const base = w + WORDS.targets + t * 6;
-      const view = out.targets[t]!;
+    for (let i = 0; i < 3; ++i) out.teamScore[i] = u32[w + WORDS.teamScore + i]!;
+    out.playerCount = u32[w + WORDS.playerCount]!;
+
+    for (let p = 0; p < MAX_PLAYERS; ++p) {
+      const base = w + WORDS.players + p * PLAYER_WORDS;
+      const view = out.players[p]!;
       view.x = f32[base]!;
       view.y = f32[base + 1]!;
       view.z = f32[base + 2]!;
-      view.health = f32[base + 3]!;
-      view.alive = u32[base + 4]! !== 0;
-      view.flash = u32[base + 5]!;
+      view.yaw = f32[base + 3]!;
+      view.pitch = f32[base + 4]!;
+      view.health = f32[base + 5]!;
+      view.speedH = f32[base + 6]!;
+      view.team = u32[base + 7]!;
+      view.flags = u32[base + 8]!;
+      view.weapon = u32[base + 9]!;
+      view.kills = u32[base + 10]!;
+      view.deaths = u32[base + 11]!;
+      view.flash = u32[base + 12]!;
+      view.isBot = u32[base + 13]! !== 0;
+    }
+
+    out.eventCount = u32[w + WORDS.eventCount]!;
+    for (let e = 0; e < out.eventCount; ++e) {
+      const base = w + WORDS.events + e * EVENT_WORDS;
+      const view = out.events[e]!;
+      view.kind = u32[base]!;
+      view.actor = u32[base + 1]!;
+      view.victim = u32[base + 2]!;
+      view.result = u32[base + 3]!;
+      view.hitGroup = u32[base + 4]!;
+      view.material = u32[base + 5]!;
+      view.weapon = u32[base + 6]!;
+      view.damage = f32[base + 7]!;
+      for (let i = 0; i < 3; ++i) {
+        view.start[i] = f32[base + 8 + i]!;
+        view.end[i] = f32[base + 11 + i]!;
+      }
     }
   }
 }
