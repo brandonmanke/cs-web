@@ -23,7 +23,6 @@ struct TraceResult {
 };
 
 void world_create();
-void world_destroy();
 void world_reset();
 void world_add_box(Vec3 mins, Vec3 maxs, std::uint32_t material);
 // planes: (nx, ny, nz, d) quads; interior is dot(n, x) <= d. Must be a bounded

@@ -222,11 +222,6 @@ bool bounds_overlap(const Brush& brush, Vec3 mins, Vec3 maxs) {
 
 void world_create() { world_reset(); }
 
-void world_destroy() {
-  g_plane_count = 0;
-  g_brush_count = 0;
-}
-
 void world_reset() {
   g_plane_count = 0;
   g_brush_count = 0;
