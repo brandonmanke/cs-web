@@ -4,5 +4,6 @@ build/
 client/src/generated/
 .codex
 
-# Valve-derived reference assets, dev-only (see assets/README.md)
-assets/**/*_ref.glb
+# The repo has no binary assets and no assets/ directory. If you ever drop
+# reference material somewhere to look at it, it does not belong in a commit.
+assets/

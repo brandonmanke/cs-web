@@ -2,10 +2,11 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   root: "client",
-  // Deliberately NOT ../assets. Vite copies publicDir verbatim into the build,
-  // which previously staged the Valve-derived *_ref.glb files (and raw .blend /
-  // .psd sources) into dist/ — shipping exactly what the repo forbids. All art
-  // is generated in code now, so the build has no runtime assets at all.
+  // Vite copies publicDir verbatim into the build. This once pointed at a
+  // directory of reference art, which staged Valve-derived *_ref.glb files (and
+  // raw .blend / .psd sources) into dist/ — shipping exactly what the repo
+  // forbids. That directory is gone and all art is generated in code, so the
+  // build has no runtime assets at all. Never repoint this at binaries.
   publicDir: "public",
   build: {
     outDir: "../dist",

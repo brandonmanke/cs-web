@@ -64,11 +64,14 @@ no third-party C dependencies and no binary assets.
 
 ## Assets
 
-- There are none, by design. Art is procedural (PLAN.md §5). Anything left
-  under `assets/` is unused reference — see `assets/README.md`.
-- `vite.config.ts` `publicDir` **must never** point at `assets/`: Vite copies
-  publicDir verbatim into `dist/`, which previously staged Valve-derived
-  `*_ref.glb` files into the deploy artifact.
+- There are none, by design, and there is no longer an `assets/` directory to
+  put any in. Art is procedural (PLAN.md §5).
+- `vite.config.ts` `publicDir` **must never** be repointed at a directory of
+  binaries: Vite copies publicDir verbatim into `dist/`, which once staged
+  Valve-derived `*_ref.glb` files into the deploy artifact.
+- Any new asset must be original or CC0 with provenance recorded in the commit.
+  Prefer generating it in code: it diffs, it has no licence, and it costs no
+  download.
 - Art direction: PSX/GoldSrc-era low-poly **with textures** — no modern
   flat-shaded stylized low-poly.
 
