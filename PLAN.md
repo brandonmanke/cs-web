@@ -61,6 +61,7 @@ client (TS + Three.js + Vite)          sim core (C++20 -> WASM via Emscripten)
 | bhop cap | 1.7 × maxspeed, excess ×0.65 | PM_PreventMegaBunnyJumping |
 | stamina | 1315.789429, −1400/s | scales jump impulse and landing speed |
 | jump buffer | 8 ticks (125 ms) | early tap still hops on landing |
+| auto-hop | held jump re-arms the buffer | holding space chains hops; cap still applies |
 | hull | 32×32×72, ducked 32×32×36 | eye +28 / +12 above hull center |
 | step height | 18u | step_slide_move up/down compare; `stairs()` enforces it |
 | ground slope | normal.y ≥ 0.7 | |
@@ -77,17 +78,25 @@ touchdown is audible regardless of +speed, so a silent bhop is not a thing;
 landings above `kLandingSpeed` (set clear of the jump impulse, so a hop is not a
 fall) report as heavier ones.
 
-**Two deliberate deviations from 1.6, both to make bhop learnable:**
+**Three deliberate deviations from 1.6, all to make bhop learnable:**
 
-1. **Jump buffering.** A jump pressed up to `kJumpBufferTicks` before touching
-   ground fires on the landing tick. The buffer is armed on the *press edge*
-   only, so holding space gives exactly one hop — the tap-per-hop rhythm (and
-   the scroll-wheel bind) survives, it just forgives being early. Both halves
-   are asserted by tests.
-2. **Faster stamina drain** (1400/s vs GoldSrc's 1000/s). A hop lasts ~0.53 s,
+1. **Auto-hop.** Every tick the jump button is down re-arms the buffer, so
+   holding space chains hops and never spends a tick in ground friction — the
+   `sv_autobunnyhopping` behaviour, not the frame-perfect 1.6 tap. Tapping and
+   the scroll-wheel bind are unchanged: a press arms the same buffer.
+2. **Jump buffering.** A jump pressed up to `kJumpBufferTicks` before touching
+   ground fires on the landing tick, so an early tap still hops.
+3. **Faster stamina drain** (1400/s vs GoldSrc's 1000/s). A hop lasts ~0.53 s,
    so most of the fatigue has bled off by landing and a chained hop keeps ~89%
    of its speed instead of ~85%. Bhop still decays without air-strafing; it just
    forgives a sloppier one.
+
+None of the three touch the speed rules. PreventMegaBunnyJumping still clamps a
+hop to 1.7x maxspeed and the landing stamina bleed still costs ~9% a hop, so
+holding space alone *loses* speed: 221 -> ~100 u/s over fifteen hops. Air-strafing
+is what pays it back and then some — turning into a held strafe key at ~3 rad/s
+climbs 221 -> ~366 u/s over the same fifteen, walking into the 375 cap. Easy to
+chain, still worth learning to steer.
 
 **Stairs are a step-height contract, and the camera pays for it.** A step taller
 than `kStepHeight` cannot be walked up at all — you have to jump every single
@@ -105,8 +114,9 @@ bots trace against — never moves. Rises bigger than a step are jumps, falls an
 respawns and go through unsmoothed, and a ramp gains less per frame than the
 catch-up rate, so slopes are untouched.
 
-Feel checklist (manual, `?map=practice`): strafe-jumping gains speed, bhop
-capped but chainable, duck-jump clears 36u crates, stairs don't launch you and
+Feel checklist (manual, `?map=practice`): strafe-jumping gains speed, holding
+space chains hops without stutter, bhop capped but chainable, duck-jump clears
+36u crates, stairs don't launch you and
 don't need jumping, no jitter resting against surfaces, ramps carry you
 smoothly.
 

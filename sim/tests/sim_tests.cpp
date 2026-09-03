@@ -129,9 +129,10 @@ void test_jump_buffer_hops_on_landing() {
   CHECK(sim_snapshot()->velocity.y > 200.0F);
 }
 
-void test_holding_jump_does_not_autohop() {
-  // The buffer is armed on the press edge only. Holding space must give one
-  // hop and then nothing, or the 1.6 tap-per-hop rhythm is gone.
+void test_holding_jump_autohops() {
+  // Auto-hop: the buffer is re-armed every tick the button is down, so holding
+  // space chains hops instead of landing into friction. A hop lasts ~34 ticks,
+  // so 192 ticks of holding is at least four more of them.
   spawn_at_origin();
   run_ticks(32, 0.0F, 0.0F, 0);
   sim_step(0.0F, 0.0F, 0.0F, 0.0F, cs::ButtonJump, 0);
@@ -145,8 +146,38 @@ void test_holding_jump_does_not_autohop() {
       ++extra_hops;
     }
   }
-  CHECK(extra_hops == 0);
-  CHECK((sim_snapshot()->flags & cs::SnapOnGround) != 0U);
+  CHECK(extra_hops >= 4);
+}
+
+void test_autohop_keeps_the_speed_cap() {
+  // Holding jump must not become a speed exploit. PreventMegaBunnyJumping and
+  // the landing stamina bleed apply to an auto-fired hop exactly as they do to
+  // a tapped one, so an injected 500 u/s decays across the chain instead of
+  // being carried by it.
+  spawn_at_origin();
+  run_ticks(32, 0.0F, 0.0F, cs::ButtonJump); // held down, already hopping
+  local_move().velocity.z = -500.0F;
+  run_ticks(128, 0.0F, 0.0F, cs::ButtonJump); // two more landings
+  CHECK(sim_snapshot()->speed_h < 1.7F * 221.0F * 0.65F);
+}
+
+void test_air_strafe_gains_speed() {
+  // The 1.6/Quake gain: hold one strafe key and turn the view the same way.
+  // Air accel is capped at a 30 u/s wishspeed but scales with the *uncapped*
+  // one, so each tick adds speed almost perpendicular to the current velocity
+  // and the resulting vector is longer than what went in.
+  spawn_at_origin();
+  run_ticks(32, 0.0F, 0.0F, 0);
+  local_move().velocity = {0.0F, 0.0F, -220.0F}; // running forward at 220
+  sim_step(0.0F, 0.0F, 0.0F, 0.0F, cs::ButtonJump, 0);
+  const float before = sim_snapshot()->speed_h;
+
+  float yaw = 0.0F;
+  for (int i = 0; i < 24 && (sim_snapshot()->flags & cs::SnapOnGround) == 0U; ++i) {
+    yaw += 0.03F;                            // turning left...
+    sim_step(0.0F, -1.0F, yaw, 0.0F, 0, 0);  // ...while holding +moveleft
+  }
+  CHECK(sim_snapshot()->speed_h > before + 20.0F);
 }
 
 void test_air_wishcap_no_gain() {
@@ -721,7 +752,9 @@ int main() {
   test_jump_height();
   test_bhop_speed_cap();
   test_jump_buffer_hops_on_landing();
-  test_holding_jump_does_not_autohop();
+  test_holding_jump_autohops();
+  test_autohop_keeps_the_speed_cap();
+  test_air_strafe_gains_speed();
   test_air_wishcap_no_gain();
   test_step_up_and_wall_block();
   test_duck_lowers_hull_and_blocks_unduck();

@@ -19,7 +19,6 @@ struct PlayerState {
   std::uint32_t ground_material;   // Material under the feet, from the last trace
   bool on_ground;
   bool ducked;
-  bool jump_held;
   /** Impact speed of a touchdown this tick, 0 if there wasn't one. */
   float land_speed;
   /** A footfall happened this tick. Both are consumed by sim.cpp as events. */

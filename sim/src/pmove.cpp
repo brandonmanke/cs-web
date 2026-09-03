@@ -353,17 +353,19 @@ void update_duck(PlayerState& p, bool wants_duck) {
 }
 
 /**
- * A jump tap arms a buffer that survives kJumpBufferTicks. The jump fires on
- * the first grounded tick while the buffer is live, so pressing slightly early
- * — which is what a human bhop actually does — still hops. Holding the button
- * never re-arms it: the buffer is set on the press edge only, so chaining hops
- * still costs one tap each and the 1.6 rhythm survives.
+ * Jumping goes through a buffer that survives kJumpBufferTicks and fires on the
+ * first grounded tick it is live for. Every tick the button is down re-arms it,
+ * which is auto-hop: hold space and you chain hops without ever landing into
+ * friction. A tap behaves the same as it always did — one press, one buffered
+ * hop, so an early press (which is what a human bhop actually is) still lands
+ * as a jump and the scroll-wheel bind is unaffected.
+ *
+ * Auto-hop buys the rhythm, not the speed: PreventMegaBunnyJumping below and
+ * the landing stamina bleed in categorize_position are untouched, so chained
+ * hops still decay unless you air-strafe them back up.
  */
 void try_jump(PlayerState& p, bool jump_pressed, float base_max_speed) {
-  if (!jump_pressed) {
-    p.jump_held = false;
-  } else if (!p.jump_held) {
-    p.jump_held = true;
+  if (jump_pressed) {
     p.jump_buffer_ticks = kJumpBufferTicks;
   }
   if (p.jump_buffer_ticks == 0U || !p.on_ground) {
