@@ -3,7 +3,8 @@ import { DEFAULT_VOLUME, type GameAudio } from "./audio";
 // Overlay menu, shown whenever the mouse isn't locked to the game. Escape is
 // reserved by the browser for releasing pointer lock, so "lock lost" is the
 // only trigger a browser game actually gets — the menu follows that state
-// rather than trying to own an Escape key it cannot have.
+// rather than trying to own an Escape key it cannot have. A touch device has
+// neither, so there the on-screen ☰ button is what brings this back.
 //
 // The sim keeps running behind it: this is a settings/controls panel, not a
 // pause.
@@ -83,12 +84,21 @@ export class Menu {
 
   constructor(
     private readonly audio: GameAudio,
-    private readonly requestLock: (onGaveUp: () => void) => void,
+    /** Whether the on-screen controls are driving; changes the wording. */
+    private readonly touch: boolean,
+    /**
+     * Start playing. On a mouse that means chasing pointer lock, which can be
+     * refused — hence the callback to put the menu back.
+     */
+    private readonly onStart: (onGaveUp: () => void) => void,
     /** Fired when the roster changes; the caller restarts the match. */
     private readonly onRoster: (roster: Roster) => void,
     /** Multiplier on the base look sensitivity. */
     private readonly onSensitivity: (multiplier: number) => void,
   ) {
+    if (touch) {
+      document.querySelector('label[for="menu-sens"]')!.textContent = "LOOK";
+    }
     const sensitivity = loadSetting(SENS_KEY, MIN_SENS, MAX_SENS) ?? 1;
     this.sens.value = String(sensitivity);
     this.applySensitivity();
@@ -139,7 +149,7 @@ export class Menu {
    */
   private dismiss(): void {
     this.setVisible(false);
-    this.requestLock(() => this.setVisible(true));
+    this.onStart(() => this.setVisible(true));
   }
 
   private renderVolume(value: number): void {
@@ -192,15 +202,16 @@ export class Menu {
   setVisible(visible: boolean): void {
     if (visible) {
       this.resume.textContent = this.started ? "RESUME" : "PLAY";
-      this.hint.textContent = this.started
-        ? "ESC returns here"
-        : "click anywhere to lock the mouse";
+      this.hint.textContent = this.touch
+        ? (this.started ? "the \u2630 button returns here" : "tap PLAY to start")
+        : (this.started ? "ESC returns here" : "click anywhere to lock the mouse");
     }
     this.root.classList.toggle("hidden", !visible);
   }
 
   /**
-   * Called once the mouse is actually locked. Hiding the menu optimistically is
+   * Called once play has actually begun — the mouse locked, or the on-screen
+   * controls shown. Hiding the menu optimistically is
    * not the same as having started — if the lock is refused and the menu comes
    * back, it should still say PLAY.
    */

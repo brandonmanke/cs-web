@@ -1,6 +1,7 @@
 import { Flags, Mode, ShotResult, Team, TICK_SECONDS, type Snapshot } from "./sim";
 
-const WEAPON_NAMES: Record<number, string> = {
+/** cs::WeaponId -> display name; the touch weapon button labels itself here. */
+export const WEAPON_NAMES: Record<number, string> = {
   1: "KNIFE", 2: "USP", 3: "GLOCK", 4: "AK-47", 5: "M4A1", 6: "AWP", 7: "MP5",
 };
 

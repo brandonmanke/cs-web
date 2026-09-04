@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { GameAudio } from "./audio";
 import { Hud } from "./hud";
-import { DEFAULT_SENSITIVITY, Input } from "./input";
+import { DEFAULT_SENSITIVITY, DEFAULT_TOUCH_SENSITIVITY, Input } from "./input";
 import { brushPlaneArray } from "./map/brush";
 import type { MapDef } from "./map/mapdef";
 import { DEPOT } from "./map/maps/depot";
@@ -11,6 +11,7 @@ import { SILO } from "./map/maps/silo";
 import { DeathCam } from "./deathcam";
 import { loadSetting, Menu, PASSIVE_SKILL, Settings, type Roster } from "./menu";
 import { Renderer } from "./renderer";
+import { TouchControls } from "./touch";
 import {
   EventKind, Flags, MAX_PLAYERS, Mode, ShotResult, Sim, Snapshot, StepKind, Team,
   TICK_SECONDS, type EventView, type TraceHit,
@@ -95,6 +96,15 @@ async function boot(): Promise<void> {
   const renderer = new Renderer(container);
   const sim = await Sim.load();
   const input = new Input(container);
+  const touch = new TouchControls(
+    (dx, dy) => input.addTouchLook(dx, dy),
+    () => {
+      touch.setVisible(false);
+      menu.setVisible(true);
+    },
+  );
+  // Wired before attach(): it is what tells Input not to chase pointer lock.
+  if (touch.active) input.touch = touch;
   input.attach();
   const audio = new GameAudio();
   const viewmodel = new Viewmodel(renderer.camera);
@@ -102,9 +112,25 @@ async function boot(): Promise<void> {
   const map = chooseMap();
   const menu = new Menu(
     audio,
-    (onGaveUp) => input.requestLock(onGaveUp),
+    touch.active,
+    (onGaveUp) => {
+      // The tap that started the game is the only gesture mobile browsers will
+      // accept an AudioContext from.
+      audio.unlock();
+      if (!touch.active) {
+        input.requestLock(onGaveUp);
+        return;
+      }
+      touch.setVisible(true);
+      menu.markStarted();
+      // Reclaims the address bar, which otherwise eats the button cluster.
+      void document.documentElement.requestFullscreen?.().catch(() => {});
+    },
     (next) => startMatch(next),
-    (multiplier) => { input.sensitivity = DEFAULT_SENSITIVITY * multiplier; },
+    (multiplier) => {
+      input.sensitivity = DEFAULT_SENSITIVITY * multiplier;
+      input.touchSensitivity = DEFAULT_TOUCH_SENSITIVITY * multiplier;
+    },
   );
   input.onLockChange = (locked) => {
     if (locked) menu.markStarted();

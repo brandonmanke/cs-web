@@ -269,7 +269,8 @@ sim/include/cs/sim.h  public types + tuning constants + C ABI
 sim/tests/            native ctest: movement invariants, gunplay, match rules,
                       determinism hash (18 tests)
 client/src/           main.ts loop, sim.ts (snapshot mirror), renderer.ts,
-                      input.ts, hud.ts, audio.ts, viewmodel.ts, menu.ts
+                      input.ts, touch.ts, hud.ts, audio.ts, viewmodel.ts,
+                      menu.ts
 client/src/map/       brush.ts, build.ts (geometry + light bake), maps/
 client/src/map/maps/  foundry (team), depot (team), silo (FFA), practice (range)
 client/src/art/       textures.ts, character.ts, weapons.ts
@@ -301,6 +302,10 @@ Done in v3:
   maps (`depot`, `silo`). Positional audio with wall-count occlusion; enemies
   opt-in; death camera; HUD health/killfeed/TAB scoreboard, in-game map
   switcher.
+- **R9** (client only) — on-screen controls for phones and tablets: floating
+  move stick, look pad, and a fire/jump/duck/reload/scope/weapon cluster, all
+  feeding the same `InputCommand` the keyboard does. Auto-hop makes bunny
+  hopping a held button rather than a tap the touchscreen can't deliver.
 - **R8** (api v3, unchanged snapshot) — wallbang penetration with per-material
   hardness and shootable cover in every map; bot skill as a continuous dial
   rather than three presets; stair rises brought under the step height (silo to

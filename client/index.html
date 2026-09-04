@@ -2,11 +2,21 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
     <title>cs-web</title>
     <style>
       * { box-sizing: border-box; margin: 0; padding: 0; }
-      html, body { width: 100%; height: 100%; overflow: hidden; background: #070908; }
+      html, body {
+        width: 100%; height: 100%; overflow: hidden; background: #070908;
+        /* A phone would otherwise pull-to-refresh, pinch-zoom and text-select
+           the moment a thumb starts dragging the view around. */
+        overscroll-behavior: none; touch-action: none;
+        -webkit-user-select: none; user-select: none;
+        -webkit-tap-highlight-color: transparent;
+      }
       body {
         font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
         color: #cfcab4;
@@ -132,15 +142,104 @@
         text-shadow: 0 0 6px #000;
       }
       #status.hidden { display: none; }
+      /* --- touch controls --------------------------------------------- */
+      /* Only ever built on a coarse pointer (or ?touch). The two pads are
+         invisible catch areas that fill the screen; every visible control sits
+         above them, so a thumb on a button never also drags the view. */
+      #touch {
+        position: fixed; inset: 0; z-index: 5;
+        touch-action: none; user-select: none;
+      }
+      #touch.hidden { display: none; }
+      #touch .pad { position: absolute; top: 0; bottom: 0; }
+      #touch .pad.move { left: 0; width: 45%; }
+      #touch .pad.look { left: 45%; right: 0; }
+
+      #touch .stick {
+        position: absolute; width: 132px; height: 132px; margin: -66px 0 0 -66px;
+        border: 2px solid rgba(134, 227, 154, 0.22); border-radius: 50%;
+        pointer-events: none; opacity: 0.55; transition: opacity 120ms linear;
+      }
+      #touch .stick.live { opacity: 1; }
+      #touch .knob {
+        position: absolute; left: 50%; top: 50%; width: 54px; height: 54px;
+        margin: -27px 0 0 -27px; border-radius: 50%; display: block;
+        background: rgba(134, 227, 154, 0.18);
+        border: 1px solid rgba(134, 227, 154, 0.45);
+      }
+
+      #touch button {
+        position: absolute; font: inherit; font-size: 11px; letter-spacing: 1px;
+        padding: 0; border-radius: 50%; touch-action: none;
+        color: #cfe6d2; background: rgba(10, 14, 11, 0.42);
+        border: 1px solid rgba(134, 227, 154, 0.32);
+        text-shadow: 0 0 3px #000;
+      }
+      #touch button.on {
+        color: #0d100b; background: rgba(134, 227, 154, 0.82);
+        border-color: #86e39a; text-shadow: none;
+      }
+      /* Right-hand cluster, sized and spaced to clear each other on a 375px
+         landscape phone; insets keep them off a notch. */
+      #touch .fire {
+        right: calc(20px + env(safe-area-inset-right)); bottom: 92px;
+        width: 96px; height: 96px; font-size: 13px;
+      }
+      #touch .jump {
+        right: calc(128px + env(safe-area-inset-right)); bottom: 40px;
+        width: 72px; height: 72px;
+      }
+      #touch .duck {
+        right: calc(128px + env(safe-area-inset-right)); bottom: 124px;
+        width: 72px; height: 72px;
+      }
+      #touch .reload {
+        right: calc(36px + env(safe-area-inset-right)); bottom: 200px;
+        width: 64px; height: 64px; font-size: 10px;
+      }
+      #touch .scope {
+        right: calc(212px + env(safe-area-inset-right)); bottom: 56px;
+        width: 64px; height: 64px; font-size: 10px;
+      }
+      #touch .weapon {
+        right: calc(20px + env(safe-area-inset-right));
+        top: calc(62px + env(safe-area-inset-top));
+        width: 86px; height: 44px; border-radius: 3px;
+      }
+      #touch .menu {
+        left: 50%; top: calc(10px + env(safe-area-inset-top));
+        transform: translateX(-50%);
+        width: 48px; height: 34px; border-radius: 3px; font-size: 15px;
+      }
+
+      /* The ammo readout lives where the fire button now is. */
+      body.touch #ammo { left: 26px; right: auto; bottom: 88px; }
+      body.touch #coords { bottom: 126px; }
+
+      /* A landscape game on a portrait phone is unplayable, so say so. */
+      #rotate {
+        position: fixed; inset: 0; z-index: 20; display: none;
+        align-items: center; justify-content: center; padding: 0 40px;
+        background: #070908; color: #9aa38c; text-align: center;
+        font-size: 13px; letter-spacing: 3px; line-height: 2;
+      }
+      @media (orientation: portrait) { body.touch #rotate { display: flex; } }
+
       /* --- menu ------------------------------------------------------- */
       #menu {
         position: fixed; inset: 0; z-index: 10;
-        display: flex; align-items: center; justify-content: center;
+        display: flex; padding: 14px;
         background: rgba(6, 8, 7, 0.72);
         backdrop-filter: blur(2px);
+        /* The panel is taller than a phone in landscape, and body sets
+           touch-action: none, so the overlay has to allow its own scroll.
+           Centring is margin:auto rather than align-items, which would put the
+           top of an overflowing panel out of reach. */
+        overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
       }
       #menu.hidden { display: none; }
       #menu-panel {
+        margin: auto;
         min-width: 340px; padding: 26px 30px 22px;
         background: #12140f;
         border: 1px solid #3b4034;
@@ -190,9 +289,24 @@
       }
       #menu dt { color: #d8d2b4; white-space: nowrap; }
       #menu dd { color: #808a76; }
+      #menu dl.touch-only { display: none; }
+      body.touch #menu dl.keys-only { display: none; }
+      body.touch #menu dl.touch-only { display: grid; }
       #menu-hint {
         margin-top: 16px; font-size: 10px; letter-spacing: 1px;
         color: #5c6553; text-align: center;
+      }
+      /* A phone held sideways is ~390px tall: tighten up so the panel fits
+         without scrolling at all. */
+      @media (max-height: 480px) {
+        #menu-panel { padding: 14px 20px 12px; }
+        #menu h1 { font-size: 17px; letter-spacing: 4px; }
+        #menu .sub { margin-bottom: 12px; }
+        #menu-resume { padding: 9px 0; margin-bottom: 12px; font-size: 14px; }
+        #menu .row { margin-bottom: 11px; }
+        #menu .divider { padding-top: 9px; margin-bottom: 8px; }
+        #menu dl { gap: 3px 16px; }
+        #menu-hint { margin-top: 10px; }
       }
     </style>
   </head>
@@ -218,6 +332,20 @@
       <div id="respawn" class="hidden">RESPAWNING</div>
       <div id="status">LOADING</div>
     </div>
+
+    <div id="touch" class="hidden">
+      <div class="pad move"><div class="stick"><i class="knob"></i></div></div>
+      <div class="pad look"></div>
+      <button class="menu" type="button" data-act="menu">&#9776;</button>
+      <button class="weapon" type="button" data-act="weapon">AK-47</button>
+      <button class="scope" type="button" data-act="zoom">SCOPE</button>
+      <button class="reload" type="button" data-act="reload">RELOAD</button>
+      <button class="duck" type="button" data-act="duck">DUCK</button>
+      <button class="jump" type="button" data-act="jump">JUMP</button>
+      <button class="fire" type="button" data-act="fire">FIRE</button>
+    </div>
+
+    <div id="rotate">TURN YOUR DEVICE SIDEWAYS</div>
 
     <div id="menu" class="hidden">
       <div id="menu-panel">
@@ -256,7 +384,7 @@
         </div>
 
         <div class="divider">CONTROLS</div>
-        <dl>
+        <dl class="keys-only">
           <dt>WASD</dt><dd>move</dd>
           <dt>SPACE / WHEEL</dt><dd>jump</dd>
           <dt>SHIFT</dt><dd>walk &mdash; silent</dd>
@@ -266,6 +394,15 @@
           <dt>R</dt><dd>reload</dd>
           <dt>1&ndash;7 / Q</dt><dd>weapons</dd>
           <dt>TAB</dt><dd>scoreboard</dd>
+        </dl>
+        <dl class="touch-only">
+          <dt>LEFT THUMB</dt><dd>move &mdash; the stick lands where you press</dd>
+          <dt>RIGHT DRAG</dt><dd>look</dd>
+          <dt>FIRE</dt><dd>hold to spray</dd>
+          <dt>JUMP</dt><dd>hold to bunny hop</dd>
+          <dt>DUCK</dt><dd>toggles</dd>
+          <dt>WEAPON</dt><dd>tap to cycle</dd>
+          <dt>&#9776;</dt><dd>back to this menu</dd>
         </dl>
 
         <div id="menu-hint">click anywhere to lock the mouse</div>

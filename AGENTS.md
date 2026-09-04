@@ -39,6 +39,8 @@ no third-party C dependencies and no binary assets.
   check catch drift at load; neither catches a same-size field reshuffle, so
   bump `kSimApiVersion` when you reorder fields.
 - `client/` — rendering/input/HUD/audio only. **No gameplay logic in TS.**
+  `touch.ts` is input too: on-screen controls that produce the same axes and
+  button mask a keyboard does and hand them to `Input`.
 - `client/src/map/` — brushes are the single source of truth: the same plane
   sets feed `sim_add_brush` (collision) and the winding clipper (render
   geometry). Never introduce a separate collision mesh. A `MapDef` also carries
@@ -59,8 +61,9 @@ no third-party C dependencies and no binary assets.
 - After client changes: `npm run typecheck`; for behavior, `npm run dev` and
   check the feel list in PLAN.md §3 (`?map=practice`).
 - Dev flags: `?map=`, `?bots=N`, `?skill=0..2`, `?spawn=x,y,z`, `?yaw=radians`,
-  `?coords`. Hostile maps default to zero bots, so geometry work needs no flag;
-  `?bots=N` overrides both the default and the stored menu preference.
+  `?coords`, `?touch` (forces the on-screen controls on a desktop; `?touch=0`
+  forces them off). Hostile maps default to zero bots, so geometry work needs
+  no flag; `?bots=N` overrides both the default and the stored menu preference.
 
 ## Assets
 

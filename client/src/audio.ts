@@ -91,6 +91,15 @@ export class GameAudio {
     return this.ctx;
   }
 
+  /**
+   * Build (or resume) the context from inside a user gesture. Mobile Safari
+   * only ever resumes audio in a real tap handler, and the first actual sound
+   * is several frames after one.
+   */
+  unlock(): void {
+    this.ensure();
+  }
+
   private out(): AudioNode {
     this.ensure();
     return this.master!;

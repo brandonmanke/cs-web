@@ -8,28 +8,44 @@ const PITCH_LIMIT = (89 * Math.PI) / 180;
  * only real fix is letting people pick their own number.
  */
 export const DEFAULT_SENSITIVITY = 0.0022;
+/**
+ * Radians of view per pixel of thumb drag. A thumb covers far fewer pixels than
+ * a wrist does, so touch gets its own gain; the menu slider multiplies both.
+ */
+export const DEFAULT_TOUCH_SENSITIVITY = 0.0045;
 /** A single pointer-lock event this large is a browser glitch, not a flick. */
 const MAX_MOUSE_DELTA = 400;
 /** Long enough to outlast the post-Escape re-lock cooldown (~1s in Chrome). */
 const LOCK_RETRY_WINDOW = 1800;
 const LOCK_RETRY_INTERVAL = 150;
 
-// 1-7 -> cs::WeaponId
-const WEAPON_KEYS: Record<string, number> = {
-  Digit1: 4, // AK-47
-  Digit2: 5, // M4A1
-  Digit3: 6, // AWP
-  Digit4: 7, // MP5
-  Digit5: 3, // Glock
-  Digit6: 2, // USP
-  Digit7: 1, // Knife
-};
+/**
+ * cs::WeaponId in pick order: rifles, then pistols, then the knife. The number
+ * keys index it and the touch layer's weapon button cycles through it.
+ */
+export const WEAPON_ORDER = [4, 5, 6, 7, 3, 2, 1];
+// Digit1..Digit7 -> cs::WeaponId
+const WEAPON_KEYS: Record<string, number> = Object.fromEntries(
+  WEAPON_ORDER.map((id, i) => [`Digit${i + 1}`, id]),
+);
+
+/** What Input needs from the on-screen controls; see touch.ts. */
+export interface TouchSource {
+  readonly forward: number;
+  readonly strafe: number;
+  readonly buttons: number;
+  takeWeapon(): number;
+  notifyWeapon(id: number): void;
+}
 
 export class Input {
   yaw = 0;
   pitch = 0;
   locked = false;
   sensitivity = DEFAULT_SENSITIVITY;
+  touchSensitivity = DEFAULT_TOUCH_SENSITIVITY;
+  /** Set when on-screen controls are live; they feed the same command. */
+  touch: TouchSource | null = null;
 
   /** View delta since the last sample, for viewmodel sway. */
   yawDelta = 0;
@@ -94,7 +110,9 @@ export class Input {
   }
 
   attach(): void {
-    this.el.addEventListener("click", () => this.requestLock());
+    // Touch controls do their own thing with a press on the game surface, and
+    // pointer lock would eat the look drags, so it is never asked for there.
+    if (!this.touch) this.el.addEventListener("click", () => this.requestLock());
     document.addEventListener("pointerlockchange", () => {
       this.locked = document.pointerLockElement === this.el;
       if (this.locked) {
@@ -111,12 +129,7 @@ export class Input {
       if (!this.locked) return;
       const dx = Math.max(-MAX_MOUSE_DELTA, Math.min(MAX_MOUSE_DELTA, e.movementX));
       const dy = Math.max(-MAX_MOUSE_DELTA, Math.min(MAX_MOUSE_DELTA, e.movementY));
-      const gain = this.sensitivity * this.fovScale;
-      this.yaw -= dx * gain;
-      this.pitch -= dy * gain;
-      this.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, this.pitch));
-      this.accumYaw -= dx * gain;
-      this.accumPitch -= dy * gain;
+      this.applyLook(dx, dy, this.sensitivity);
     });
     document.addEventListener("mousedown", (e) => {
       if (!this.locked) return;
@@ -152,6 +165,24 @@ export class Input {
     });
   }
 
+  /**
+   * Turn a raw pointer delta into view angles. Shared by the mouse and the
+   * on-screen look pad so both get the same pitch clamp and FOV scaling.
+   */
+  private applyLook(dx: number, dy: number, sensitivity: number): void {
+    const gain = sensitivity * this.fovScale;
+    this.yaw -= dx * gain;
+    this.pitch -= dy * gain;
+    this.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, this.pitch));
+    this.accumYaw -= dx * gain;
+    this.accumPitch -= dy * gain;
+  }
+
+  /** A drag on the on-screen look pad, in CSS pixels. */
+  addTouchLook(dx: number, dy: number): void {
+    this.applyLook(dx, dy, this.touchSensitivity);
+  }
+
   setYaw(yaw: number): void {
     this.yaw = yaw;
   }
@@ -172,6 +203,7 @@ export class Input {
       if (this.currentWeapon !== 0) this.lastWeapon = this.currentWeapon;
       this.currentWeapon = id;
     }
+    this.touch?.notifyWeapon(id);
   }
 
   sample(): InputFrame {
@@ -194,7 +226,14 @@ export class Input {
     if (this.fire) buttons |= Buttons.fire;
     if (this.zoom) buttons |= Buttons.zoom;
 
-    const weapon = this.pendingWeapon;
+    if (this.touch) {
+      forward = Math.max(-1, Math.min(1, forward + this.touch.forward));
+      strafe = Math.max(-1, Math.min(1, strafe + this.touch.strafe));
+      buttons |= this.touch.buttons;
+    }
+    // Always consumed, so a queued pick can't sit there behind a key press.
+    const touchWeapon = this.touch?.takeWeapon() ?? 0;
+    const weapon = this.pendingWeapon || touchWeapon;
     this.pendingWeapon = 0;
     return { forward, strafe, yaw: this.yaw, pitch: this.pitch, buttons, weapon };
   }
