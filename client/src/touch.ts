@@ -74,6 +74,15 @@ export class TouchControls {
     this.bindStick();
     this.bindLook();
     this.bindButtons();
+
+    // OS gestures, app switches and rotation can interrupt a finger without
+    // delivering pointerup to its pad. Never carry held input across them.
+    window.addEventListener("blur", () => this.releaseAll());
+    window.addEventListener("pagehide", () => this.releaseAll());
+    window.addEventListener("resize", () => this.releaseAll());
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) this.releaseAll();
+    });
   }
 
   /** Shown while playing, hidden behind the menu. */
@@ -103,9 +112,11 @@ export class TouchControls {
     this.forward = 0;
     this.strafe = 0;
     this.buttons = 0;
+    this.pendingWeapon = 0;
     this.stickPointer = -1;
     this.lookPointer = -1;
     this.stick.classList.remove("live");
+    this.homeStick();
     for (const button of this.root.querySelectorAll(".on")) {
       button.classList.remove("on");
     }
@@ -139,6 +150,7 @@ export class TouchControls {
     };
     this.movePad.addEventListener("pointerup", end);
     this.movePad.addEventListener("pointercancel", end);
+    this.movePad.addEventListener("lostpointercapture", end);
   }
 
   private moveStick(x: number, y: number): void {
@@ -189,6 +201,7 @@ export class TouchControls {
     };
     this.lookPad.addEventListener("pointerup", end);
     this.lookPad.addEventListener("pointercancel", end);
+    this.lookPad.addEventListener("lostpointercapture", end);
   }
 
   private bindButtons(): void {
@@ -223,6 +236,7 @@ export class TouchControls {
       };
       button.addEventListener("pointerup", release);
       button.addEventListener("pointercancel", release);
+      button.addEventListener("lostpointercapture", release);
     }
   }
 }

@@ -52,6 +52,9 @@ jobs:
       - name: Validate maps
         run: npm run mapcheck
 
+      - name: Test touch controls
+        run: npm run test:touch
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
