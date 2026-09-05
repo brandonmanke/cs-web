@@ -1,17 +1,26 @@
 import { Mode, Team } from "../../sim";
-import { box, planeThrough, ramp, room, Surface, type Brush } from "../brush";
+import { box, planeThrough, ramp, Surface, type Brush } from "../brush";
 import type { MapDef, SpawnDef } from "../mapdef";
 import type { MapLight } from "../build";
 
-// RELAY — an original orbital transfer hall. A broad bridge and two side
+// RELAY — an original open-air orbital transfer station. A bridge and two side
 // galleries connect the end decks; four ramps lead to a continuous lower
 // maintenance floor. Falling off a bridge always leaves a walkable way back.
 const X = 896;
 const Z = 1024;
 const DECK = 192;
-const CEIL = 704;
-const brushes: Brush[] = room([-X, 0, -Z], [X, CEIL, Z], 32,
-  Surface.metal, "alloy", "concrete_dark", "tech");
+const FRAME = 704;
+const WALL = 512;
+const TOWER = 384;
+// Open roof, solid perimeter. Even from a tower, the outer wall is too high
+// to jump over; the sky never needs an invisible collision ceiling.
+const brushes: Brush[] = [
+  box([-X - 32, -32, -Z - 32], [X + 32, 0, Z + 32], Surface.metal, "concrete_dark"),
+  box([-X - 32, 0, -Z - 32], [-X, WALL, Z + 32], Surface.metal, "alloy"),
+  box([X, 0, -Z - 32], [X + 32, WALL, Z + 32], Surface.metal, "alloy"),
+  box([-X, 0, -Z - 32], [X, WALL, -Z], Surface.metal, "alloy"),
+  box([-X, 0, Z], [X, WALL, Z + 32], Surface.metal, "alloy"),
+];
 
 // End decks, the 320u main bridge, and 256u side galleries.
 brushes.push(
@@ -39,19 +48,63 @@ for (const z of [-400, 400]) {
     box([96, 0, z - 24], [144, DECK - 24, z + 24], Surface.metal, "metal"),
   );
 }
+// Shield the lower crossing from the towers. The 128u passage between these
+// bulkheads stays open east/west, and both ramp lanes pass around their ends.
+for (const z of [-80, 80]) {
+  brushes.push(box([-144, 0, z - 16], [144, 128, z + 16], Surface.metal, "alloy"));
+}
 
 // Alternating bridge cover leaves at least 240u of usable width. Side routes
 // have cover against the wall, and the end decks have room behind each block.
 brushes.push(
   box([-152, DECK, -272], [-80, DECK + 64, -144], Surface.metal, "tech"),
   box([80, DECK, 144], [152, DECK + 64, 272], Surface.metal, "tech"),
+  box([80, DECK, -544], [152, DECK + 48, -448], Surface.metal, "alloy"),
+  box([-152, DECK, 448], [-80, DECK + 48, 544], Surface.metal, "alloy"),
 );
 for (const side of [-1, 1]) {
   const x = side * 848;
   brushes.push(box([x - 32, DECK, -64], [x + 32, DECK + 80, 64], Surface.metal, "tech"));
-  for (const z of [-816, 816]) {
-    brushes.push(box([side * 288 - 56, DECK, z - 48], [side * 288 + 56, DECK + 80, z + 48],
+  // Inner-edge cover shields the side galleries from the opposite towers,
+  // leaving a 160u lane between it and the outer wall ribs.
+  for (const z of [-304, 304]) {
+    brushes.push(box([side * 668 - 28, DECK, z - 64], [side * 668 + 28, DECK + 72, z + 64],
       Surface.metal, "alloy"));
+  }
+  for (const z of [-752, 752]) {
+    brushes.push(box([side * 288 - 56, DECK, z - 32], [side * 288 + 56, DECK + 80, z + 32],
+      Surface.metal, "alloy"));
+  }
+}
+
+// Four corner sniper platforms. The 192u rise is reached by a 448u ramp,
+// with a 144u-wide entrance; ordinary walking reaches every firing position.
+for (const side of [-1, 1]) {
+  const lo = side < 0 ? -848 : 608;
+  const hi = side < 0 ? -608 : 848;
+  for (const end of [-1, 1]) {
+    const z = end * 880;
+    brushes.push(
+      box([lo, DECK, z - 112], [hi, TOWER, z + 112], Surface.metal, "alloy", { 2: "deck" }),
+      ramp([side < 0 ? -608 : 160, DECK, z - 72],
+        [side < 0 ? -160 : 608, TOWER, z + 72], side < 0 ? "-x" : "+x", Surface.metal, "deck"),
+      // Front and back parapets: crouch to hide, stand to take the shot.
+      box([lo, TOWER, z - 112], [hi, TOWER + 44, z - 100], Surface.metal, "metal"),
+      box([lo, TOWER, z + 100], [hi, TOWER + 44, z + 112], Surface.metal, "metal"),
+      box([lo - 8, TOWER + 160, z - 120], [hi + 8, TOWER + 176, z + 120], Surface.metal, "tech"),
+    );
+    for (const x of [lo + 8, hi - 8]) {
+      for (const cornerZ of [z - 104, z + 104]) {
+        brushes.push(box([x - 8, TOWER, cornerZ - 8], [x + 8, TOWER + 160, cornerZ + 8],
+          Surface.metal, "metal"));
+      }
+    }
+    // A narrow outside screen gives flank cover without closing the ramp.
+    const outside = side < 0 ? lo : hi - 12;
+    brushes.push(box([outside, TOWER, z - 100], [outside + 12, TOWER + 96, z + 100],
+      Surface.metal, "alloy"));
+    brushes.push(box([lo + 80, TOWER + 152, z - 24], [hi - 80, TOWER + 160, z + 24],
+      Surface.metal, "light_cool"));
   }
 }
 
@@ -61,7 +114,7 @@ for (const z of [-768, -384, 384, 768]) {
   for (const side of [-1, 1]) {
     const x = side * 880;
     brushes.push(
-      box([x - 16, DECK, z - 24], [x + 16, CEIL, z + 24], Surface.metal, "metal"),
+      box([x - 16, DECK, z - 24], [x + 16, FRAME, z + 24], Surface.metal, "metal"),
       box([x - 16, 352, z + 72], [x + 16, 512, z + 200], Surface.metal, "tech"),
     );
     // Sloped arch shoulders break the rectangular roof line. Their underside
@@ -71,7 +124,7 @@ for (const z of [-768, -384, 384, 768]) {
     shoulder.planes.push(planeThrough([-side * 176, -256, 0], [side * X, 448, z]));
     brushes.push(shoulder);
   }
-  brushes.push(box([-X, 624, z - 24], [X, CEIL, z + 24], Surface.metal, "metal"));
+  brushes.push(box([-X, 624, z - 24], [X, 656, z + 24], Surface.metal, "metal"));
 }
 
 // The relay banks sit high on the end walls: layered frames and cool panels,
@@ -89,9 +142,14 @@ for (const side of [-1, 1]) {
 
 const lights: MapLight[] = [];
 for (const x of [-720, 0, 720]) {
-  for (const z of [-560, 560]) {
-    brushes.push(box([x - 40, CEIL - 12, z - 96], [x + 40, CEIL, z + 96], Surface.metal, "light_cool"));
-    lights.push({ pos: [x, CEIL - 28, z], color: [0.66, 0.86, 1], intensity: 2.2, radius: 1150 });
+  for (const z of [-384, 384]) {
+    brushes.push(box([x - 48, 612, z - 24], [x + 48, 624, z + 24], Surface.metal, "light_cool"));
+    lights.push({ pos: [x, 592, z], color: [0.66, 0.86, 1], intensity: 2.2, radius: 1150 });
+  }
+}
+for (const x of [-728, 728]) {
+  for (const z of [-880, 880]) {
+    lights.push({ pos: [x, TOWER + 136, z], color: [0.66, 0.86, 1], intensity: 1.2, radius: 460 });
   }
 }
 for (const x of [-608, 608]) {
@@ -107,7 +165,9 @@ lights.push(
 const spawns: SpawnDef[] = [];
 for (const side of [-1, 1]) {
   for (const x of [0, -736, -480, 480, 736]) {
-    spawns.push({ pos: [x, DECK + 40, side * 880], yaw: side < 0 ? Math.PI : 0,
+    // Two tower starts per team; the remaining spawns stay clear of the ramps.
+    const tower = Math.abs(x) === 736;
+    spawns.push({ pos: [x, (tower ? TOWER : DECK) + 40, side * (tower ? 880 : 696)], yaw: side < 0 ? Math.PI : 0,
       team: side < 0 ? Team.ct : Team.t });
   }
 }
@@ -117,4 +177,5 @@ export const RELAY: MapDef = {
   ambient: [0.14, 0.17, 0.21],
   mode: Mode.team, bots: 7,
   background: 0x0d1520, fog: [1600, 4200],
+  sky: "orbital",
 };

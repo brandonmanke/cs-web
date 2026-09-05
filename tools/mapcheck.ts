@@ -170,6 +170,18 @@ async function checkMap(name: string, map: MapDef): Promise<void> {
 
   // Valid brushes and clean spawns do not guarantee a player can cross a map.
   for (const failure of checkRoutes(name, sim, snapshot)) fail(failure);
+  if (name === "relay") {
+    const before = failures;
+    for (const x of [-736, 736]) {
+      for (const z of [-800, 800]) {
+        const eye = [x, 448, z];
+        if (sim.isBlocked(eye, [0, 256, 0])) fail(`tower ${x},${z} cannot see the bridge`);
+        if (!sim.isBlocked(eye, [0, 64, 0])) fail(`tower ${x},${z} exposes the sheltered lower crossing`);
+      }
+    }
+    if (sim.isBlocked([0, 256, 0], [0, 2000, 0])) fail("Relay's open sky is blocked by a ceiling");
+    if (before === failures) pass("four useful tower sightlines, sheltered lower crossing and open sky");
+  }
 }
 
 const requested = process.argv[2];

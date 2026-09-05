@@ -330,6 +330,12 @@ hall with three upper routes and a continuous lower floor, four return ramps,
 sloped roof supports and procedural alloy/deck/cool-light textures. The map
 checker walks both maps' main routes in both directions using the real sim,
 including all ramps; a spawn/drop check alone cannot detect a blocked corridor.
+Relay's open roof now reveals a procedural starfield and ringed planet. Four
+corner sniper platforms have walkable ramps, canopies and crouch cover. Extra
+bridge/gallery cover and two lower bulkheads leave a sheltered route across the
+arena. Map checks verify access to each firing position and its sightline onto
+the bridge, plus the lower crossing's protection from all four towers. The sky
+is a cached 256px-per-face cubemap generated once at load, with no binary assets.
 
 Next, in order:
 

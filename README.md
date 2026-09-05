@@ -33,7 +33,7 @@ is the knob to reach for on a trackpad. Every choice is remembered.
 | `foundry` (default) | team | pit arena, three heights |
 | `depot` | team | loading hall, long lanes — AWP country |
 | `silo` | deathmatch | open industrial loop, central passage, four balcony ramps |
-| `relay` | team | orbital bridge hall, side galleries and a lower maintenance route |
+| `relay` | team | open orbital bridge, four sniper towers and sheltered lower routes |
 | `practice` | range | movement/aim greybox; bots roam but never shoot |
 
 Dev flags: `?bots=N`, `?skill=0..2` (fractions welcome), `?spawn=x,y,z`,

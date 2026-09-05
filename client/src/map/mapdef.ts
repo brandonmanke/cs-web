@@ -25,5 +25,7 @@ export interface MapDef {
   /** At least one; the first doubles as the dev/fallback spawn. */
   spawns: SpawnDef[];
   background: number;
+  /** Optional procedural sky; maps without one keep their solid background. */
+  sky?: "orbital";
   fog: [number, number];
 }
