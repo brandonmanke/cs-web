@@ -184,7 +184,8 @@ export function buildMapGeometry(
         groups.set(face.tex, group);
       }
       // Light panels read as emissive; skip the bake and keep them bright.
-      const emissive = face.tex === "light";
+      const emission: Vec3 | null = face.tex === "light" ? [1.35, 1.28, 1.05]
+        : face.tex === "light_cool" ? [1.05, 1.28, 1.35] : null;
 
       for (const tri of faceTriangles(face)) {
         for (const point of [tri.a, tri.b, tri.c]) {
@@ -192,9 +193,7 @@ export function buildMapGeometry(
           group.normals.push(face.normal[0], face.normal[1], face.normal[2]);
           const [u, v] = faceUv(point, face.normal);
           group.uvs.push(u, v);
-          const colour = emissive
-            ? ([1.35, 1.28, 1.05] as [number, number, number])
-            : bakeVertex(point, face.normal, lights, ambient, countingProbe);
+          const colour = emission ?? bakeVertex(point, face.normal, lights, ambient, countingProbe);
           group.colors.push(colour[0], colour[1], colour[2]);
         }
       }

@@ -284,7 +284,7 @@ client/src/           main.ts loop, sim.ts (snapshot mirror), renderer.ts,
                       input.ts, touch.ts, hud.ts, audio.ts, viewmodel.ts,
                       menu.ts
 client/src/map/       brush.ts, build.ts (geometry + light bake), maps/
-client/src/map/maps/  foundry (team), depot (team), silo (FFA), practice (range)
+client/src/map/maps/  foundry/depot/relay (team), silo (FFA), practice (range)
 client/src/art/       textures.ts, geometry.ts, character.ts, weapons.ts
 client/src/generated/ sim.mjs wasm artifact (gitignored, `npm run wasm`)
 tools/mapcheck.ts     headless map validation against the real sim
@@ -323,6 +323,13 @@ Done in v3:
   rather than three presets; stair rises brought under the step height (silo to
   ramps, depot to ten steps) with `stairs()` enforcing it, plus camera step
   smoothing so a climb reads as a slope.
+
+Content update (2026-09-05): Silo now has a 1536u square floor, a 224u central
+crosscut and four 192u-wide balcony ramps. Relay adds an original orbital bridge
+hall with three upper routes and a continuous lower floor, four return ramps,
+sloped roof supports and procedural alloy/deck/cool-light textures. The map
+checker walks both maps' main routes in both directions using the real sim,
+including all ramps; a spawn/drop check alone cannot detect a blocked corridor.
 
 Next, in order:
 

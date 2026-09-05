@@ -32,7 +32,8 @@ is the knob to reach for on a trackpad. Every choice is remembered.
 |---|---|---|
 | `foundry` (default) | team | pit arena, three heights |
 | `depot` | team | loading hall, long lanes — AWP country |
-| `silo` | deathmatch | tight FFA donut |
+| `silo` | deathmatch | open industrial loop, central passage, four balcony ramps |
+| `relay` | team | orbital bridge hall, side galleries and a lower maintenance route |
 | `practice` | range | movement/aim greybox; bots roam but never shoot |
 
 Dev flags: `?bots=N`, `?skill=0..2` (fractions welcome), `?spawn=x,y,z`,
@@ -57,7 +58,7 @@ Controls: **WASD** move · **Space**/**wheel** jump · **Shift** walk (silent) �
 npm run test        # native build + movement/determinism tests (ctest)
 npm run test:touch  # touch interruption/recovery regressions (after npm run wasm)
 npm run test:art    # knee direction and corpse floor clearance
-npm run mapcheck    # headless map validation against the real sim
+npm run mapcheck    # geometry, spawn and walking-route checks against the real sim
 npm run typecheck   # client TS
 npm run build       # wasm + typecheck + production bundle
 ```

@@ -7,6 +7,7 @@ import type { MapDef } from "./map/mapdef";
 import { DEPOT } from "./map/maps/depot";
 import { FOUNDRY } from "./map/maps/foundry";
 import { PRACTICE } from "./map/maps/practice";
+import { RELAY } from "./map/maps/relay";
 import { SILO } from "./map/maps/silo";
 import { DeathCam } from "./deathcam";
 import { loadSetting, Menu, PASSIVE_SKILL, Settings, type Roster } from "./menu";
@@ -49,6 +50,7 @@ const MAPS: Record<string, MapDef> = {
   foundry: FOUNDRY,
   depot: DEPOT,
   silo: SILO,
+  relay: RELAY,
   practice: PRACTICE,
 };
 

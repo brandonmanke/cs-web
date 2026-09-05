@@ -14,13 +14,16 @@ import type { MapDef } from "../client/src/map/mapdef";
 import { DEPOT } from "../client/src/map/maps/depot";
 import { FOUNDRY } from "../client/src/map/maps/foundry";
 import { PRACTICE } from "../client/src/map/maps/practice";
+import { RELAY } from "../client/src/map/maps/relay";
 import { SILO } from "../client/src/map/maps/silo";
 import { Flags, MAX_PLAYERS, Mode, Sim, Snapshot, Team } from "../client/src/sim";
+import { checkRoutes } from "./maproutes";
 
 const MAPS: Record<string, MapDef> = {
   foundry: FOUNDRY,
   depot: DEPOT,
   silo: SILO,
+  relay: RELAY,
   practice: PRACTICE,
 };
 
@@ -164,6 +167,9 @@ async function checkMap(name: string, map: MapDef): Promise<void> {
     `${standable}/${total} probe points found ground`,
   );
   if (standable === 0) fail("no probe point found ground — the map has no floor");
+
+  // Valid brushes and clean spawns do not guarantee a player can cross a map.
+  for (const failure of checkRoutes(name, sim, snapshot)) fail(failure);
 }
 
 const requested = process.argv[2];

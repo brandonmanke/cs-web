@@ -268,16 +268,63 @@ function techPanel(seed: number): THREE.CanvasTexture {
 }
 
 /** Bright sodium panel. Paired with a real light so it reads as the source. */
-function lightPanel(seed: number): THREE.CanvasTexture {
+function lightPanel(seed: number, cool = false): THREE.CanvasTexture {
   return draw(seed, (c) => {
-    fill(c, "#f2d89a");
+    fill(c, cool ? "#a3e3ee" : "#f2d89a");
     grain(c, 16, 2);
-    c.ctx.fillStyle = "#8a7038";
+    c.ctx.fillStyle = cool ? "#3a6979" : "#8a7038";
     c.ctx.fillRect(0, 0, SIZE, 10);
     c.ctx.fillRect(0, SIZE - 10, SIZE, 10);
     c.ctx.fillStyle = "rgba(255,255,255,0.5)";
     c.ctx.fillRect(0, 42, SIZE, 44);
     grain(c, 8, 1);
+  });
+}
+
+/** Original station cladding: bevelled plates, vents and rubbed edges. */
+function alloy(seed: number): THREE.CanvasTexture {
+  return draw(seed, (c) => {
+    fill(c, "#303d49");
+    for (const y of [0, 64]) {
+      c.ctx.fillStyle = "#73818a";
+      c.ctx.fillRect(4, y + 4, 120, 56);
+      c.ctx.fillStyle = "#566671";
+      c.ctx.fillRect(8, y + 8, 112, 48);
+      c.ctx.fillStyle = "#202c36";
+      c.ctx.fillRect(8, y + 54, 112, 4);
+      for (let x = 76; x < 112; x += 6) c.ctx.fillRect(x, y + 20, 3, 20);
+      c.ctx.fillStyle = "#b4ac82";
+      c.ctx.fillRect(16, y + 18, 24, 3);
+      c.ctx.fillStyle = "#354550";
+      c.ctx.fillRect(16, y + 28, 40, 16);
+    }
+    rivets(c, 56, 10, "#adb4b1", "#27323b");
+    grain(c, 20, 2);
+    stains(c, 10, "#20262a", 20);
+    drips(c, 6, "#29241c");
+    grain(c, 8, 1);
+  });
+}
+
+function deck(seed: number): THREE.CanvasTexture {
+  return draw(seed, (c) => {
+    fill(c, "#535f65");
+    for (let y = 0; y < SIZE; y += 32) {
+      c.ctx.fillStyle = "#252e35";
+      c.ctx.fillRect(0, y, SIZE, 3);
+      c.ctx.fillStyle = "#879093";
+      c.ctx.fillRect(0, y + 3, SIZE, 1);
+      for (let x = 8; x < SIZE; x += 16) {
+        c.ctx.fillStyle = "#303b43";
+        c.ctx.fillRect(x, y + 12, 8, 3);
+        c.ctx.fillStyle = "#727e82";
+        c.ctx.fillRect(x, y + 15, 8, 1);
+      }
+    }
+    rivets(c, 32, 5, "#9ba29f", "#2b3338");
+    grain(c, 22, 2);
+    stains(c, 9, "#191e21", 26);
+    grain(c, 10, 1);
   });
 }
 
@@ -306,7 +353,7 @@ function hazard(seed: number): THREE.CanvasTexture {
 
 export type TextureKey =
   | "concrete" | "concrete_dark" | "metal" | "rust" | "grate" | "brick"
-  | "sand" | "crate" | "tech" | "light" | "hazard";
+  | "sand" | "crate" | "tech" | "light" | "hazard" | "alloy" | "deck" | "light_cool";
 
 let cache: Map<TextureKey, THREE.CanvasTexture> | null = null;
 
@@ -324,6 +371,9 @@ export function textures(): Map<TextureKey, THREE.CanvasTexture> {
     ["tech", techPanel(66)],
     ["light", lightPanel(9)],
     ["hazard", hazard(404)],
+    ["alloy", alloy(702)],
+    ["deck", deck(703)],
+    ["light_cool", lightPanel(704, true)],
   ]);
   return cache;
 }

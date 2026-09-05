@@ -2,146 +2,109 @@ import { Mode } from "../../sim";
 import { box, ramp, room, Surface, type Brush } from "../brush";
 import type { MapDef, SpawnDef } from "../mapdef";
 
-// SILO — a tight free-for-all donut.
-//
-// One room, one full-height core, and a ring corridor around it. Nothing here
-// has a sightline longer than half a lap, which is the point: foundry is the
-// map you hold an angle on, this is the map you keep moving on. Two raised
-// terraces on the east and west give height without giving anyone the whole
-// room, and the only ways up are at diagonally opposite corners, so taking
-// height always costs you the lap you were in the middle of.
+// SILO — a roomy industrial loop with a crosscut through the central tower.
+// Lower lanes are 320u wide before cover; 192u ramps have approaches at both
+// ends. No required route depends on jumping or squeezing past crates.
+const HALF = 768;
+const CEIL = 512;
+const TERRACE = 128;
+const brushes: Brush[] = room([-HALF, 0, -HALF], [HALF, CEIL, HALF], 32,
+  Surface.concrete, "brick", "concrete", "tech");
 
-const HALF = 512;
-const CEIL = 384;
-const CORE = 128;    // central block half-extent
-const TERRACE = 144; // terrace surface height
-const TERRACE_EDGE = 288;
-
-const brushes: Brush[] = [];
-
-// --- shell ------------------------------------------------------------------
-
-brushes.push(...room([-HALF, 0, -HALF], [HALF, CEIL, HALF], 32, Surface.concrete,
-                     "brick", "concrete_dark", "tech"));
-
-// The core. Full height on purpose: a block you can see over is a block that
-// doesn't break the room into a ring.
-brushes.push(box([-CORE, 0, -CORE], [CORE, CEIL, CORE], Surface.metal, "rust"));
-
-// Ribs and a mid band, so a 256-wide face of one texture doesn't read as a
-// flat wall you can't judge distance against. Purely silhouette — they stand
-// 12u proud, which is under the 18u step height and so never catches anyone.
-for (const [x, z] of [[-CORE, -CORE], [CORE, -CORE], [-CORE, CORE], [CORE, CORE]]) {
-  brushes.push(box([x! - 12, 0, z! - 12], [x! + 12, CEIL, z! + 12],
-                   Surface.metal, "metal"));
+// Supporting walls leave a 224u-wide, 160u-high east/west passage.
+brushes.push(
+  box([-192, 0, -192], [192, 160, -112], Surface.concrete, "concrete_dark"),
+  box([-192, 0, 112], [192, 160, 192], Surface.concrete, "concrete_dark"),
+  box([-192, 160, -192], [192, CEIL, 192], Surface.metal, "rust"),
+  box([-200, 160, -200], [200, 180, 200], Surface.metal, "hazard", { 2: "metal", 3: "metal" }),
+  box([-200, 352, -200], [200, 372, 200], Surface.metal, "metal"),
+);
+for (const x of [-192, 192]) {
+  for (const z of [-192, 192]) {
+    brushes.push(box([x - 8, 0, z - 8], [x + 8, CEIL, z + 8], Surface.metal, "metal"));
+  }
 }
+
+// Short balconies leave the north and south ends open. Four shallow ramps
+// replace the old diagonal choke points and dead-end terraces.
+for (const side of [-1, 1]) {
+  const lo = side < 0 ? -768 : 512;
+  const hi = side < 0 ? -512 : 768;
+  const x = side * 640;
+  brushes.push(
+    box([lo, 0, -288], [hi, TERRACE, 288], Surface.concrete, "concrete_dark", { 2: "grate" }),
+    ramp([x - 96, 0, -672], [x + 96, TERRACE, -288], "+z", Surface.metal, "metal"),
+    ramp([x - 96, 0, 288], [x + 96, TERRACE, 672], "-z", Surface.metal, "metal"),
+    box([side < 0 ? hi - 8 : lo, TERRACE, -288],
+        [side < 0 ? hi : lo + 8, TERRACE + 8, 288], Surface.metal, "hazard"),
+    // Cover at the back leaves the inner balcony lane clear.
+    box([x + side * 64 - 40, TERRACE, -48], [x + side * 64 + 40, TERRACE + 64, 48],
+        Surface.wood, "crate"),
+  );
+}
+
+// Offset cover breaks long angles without fencing off the ring. The main
+// north/south lanes at x = +/-368 and crosscut at z = 0 stay unobstructed.
 brushes.push(
-  box([-CORE - 10, 152, -CORE - 10], [CORE + 10, 176, CORE + 10],
-      Surface.metal, "hazard"),
-  box([-CORE - 8, 300, -CORE - 8], [CORE + 8, 316, CORE + 8],
-      Surface.metal, "metal"),
+  box([-192, 0, -448], [-64, 64, -352], Surface.wood, "crate"),
+  box([64, 0, 352], [192, 64, 448], Surface.wood, "crate"),
+  box([208, 0, -240], [272, 80, -144], Surface.metal, "rust"),
+  box([-272, 0, 144], [-208, 80, 240], Surface.metal, "rust"),
+  box([-528, 0, -464], [-516, 72, -336], Surface.wood, "crate"),
+  box([516, 0, 336], [528, 72, 464], Surface.wood, "crate"),
 );
 
-// --- terraces ---------------------------------------------------------------
+// Wall bays, structural ribs and high pipework give the larger room detail
+// without projecting obstacles into its walking routes.
+for (const z of [-576, -192, 192, 576]) {
+  for (const side of [-1, 1]) {
+    const x = side * 756;
+    brushes.push(
+      box([x - 12, 0, z - 16], [x + 12, CEIL, z + 16], Surface.concrete, "concrete_dark"),
+      box([x - 12, 304, z + 48], [x + 12, 400, z + 160], Surface.metal, "tech"),
+    );
+  }
+}
+for (const z of [-752, 720]) {
+  brushes.push(box([-HALF, 400, z], [HALF, 424, z + 32], Surface.metal, "rust"));
+}
+for (const z of [-576, 576]) {
+  brushes.push(box([-HALF, 464, z - 16], [HALF, CEIL, z + 16], Surface.metal, "metal"));
+}
 
-brushes.push(
-  box([-HALF, 0, -HALF], [-TERRACE_EDGE, TERRACE, HALF], Surface.concrete,
-      "concrete", { 2: "grate" }),
-  box([TERRACE_EDGE, 0, -HALF], [HALF, TERRACE, HALF], Surface.concrete,
-      "concrete", { 2: "grate" }),
-);
-
-// Toe-rails so the drop reads at speed, inset into the terrace top.
-brushes.push(
-  box([-TERRACE_EDGE - 8, TERRACE, -HALF], [-TERRACE_EDGE, TERRACE + 12, HALF],
-      Surface.metal, "hazard"),
-  box([TERRACE_EDGE, TERRACE, -HALF], [TERRACE_EDGE + 8, TERRACE + 12, HALF],
-      Surface.metal, "hazard"),
-);
-
-// Ramps up, diagonally opposite: north-west onto the west terrace, south-east
-// onto the east one.
-//
-// These were six 24u stairs, which is over the 18u step height — every one of
-// them had to be jumped. Ramps rather than more steps because this is the map
-// you keep moving on: a slope carries your speed and gives the terrace a
-// run-up, where a staircase would still cost you the momentum. They reach
-// further into the ring than the stairs did (224u of run for 144u of rise, so
-// about 33 degrees) because that is what a walkable slope costs.
-const RAMP_TOE = 64; // how far the foot of each ramp reaches past the core
-
-brushes.push(
-  ramp([-TERRACE_EDGE, 0, -HALF], [-RAMP_TOE, TERRACE, -352], "-x",
-       Surface.metal, "metal"),
-  ramp([RAMP_TOE, 0, 352], [TERRACE_EDGE, TERRACE, HALF], "+x",
-       Surface.metal, "metal"),
-);
-
-// --- cover ------------------------------------------------------------------
-
-// Plank screens on the two ramp-less corners. On a map this tight the ring is
-// the only thing to hold, so the cover on it should be shootable — 12u of wood
-// is a silhouette breaker, not protection.
-brushes.push(
-  box([-208, 0, -344], [-196, 76, -168], Surface.wood, "crate"),
-  box([196, 0, 168], [208, 76, 344], Surface.wood, "crate"),
-);
-
-brushes.push(
-  box([-256, 0, -96], [-160, 64, 0], Surface.wood, "crate"),
-  box([160, 0, 0], [256, 64, 96], Surface.wood, "crate"),
-  box([-64, 0, -320], [64, 36, -224], Surface.wood, "crate"),
-  box([-64, 0, 224], [64, 36, 320], Surface.wood, "crate"),
-  box([-224, 0, 224], [-128, 72, 320], Surface.metal, "rust"),
-  box([128, 0, -320], [224, 72, -224], Surface.metal, "rust"),
-);
-
-// --- lights -----------------------------------------------------------------
-
-const FIXTURES: Array<[number, number]> = [
-  [-384, -384], [384, -384], [-384, 384], [384, 384],
-  [0, -352], [0, 352], [-352, 0], [352, 0],
+const fixtures: Array<[number, number]> = [
+  [-368, -448], [368, -448], [-368, 448], [368, 448], [-640, 0], [640, 0],
 ];
-for (const [x, z] of FIXTURES) {
-  brushes.push(box([x - 64, CEIL - 10, z - 64], [x + 64, CEIL, z + 64],
-                   Surface.metal, "light"));
+for (const [x, z] of fixtures) {
+  brushes.push(box([x - 48, CEIL - 12, z - 80], [x + 48, CEIL, z + 80], Surface.metal, "light"));
 }
-
-const COOL: [number, number, number] = [0.86, 0.93, 1.0];
-const lights = FIXTURES.map(([x, z]) => ({
-  pos: [x, CEIL - 24, z] as [number, number, number],
-  color: COOL,
-  intensity: 1.15,
-  radius: 780,
+brushes.push(box([-112, 152, -16], [112, 160, 16], Surface.metal, "light"));
+const lights = fixtures.map(([x, z]) => ({
+  pos: [x, CEIL - 28, z] as [number, number, number],
+  color: [1, 0.84, 0.62] as [number, number, number], intensity: 1.8, radius: 1050,
 }));
-// Two warm accents at floor level so the ring corridor isn't uniformly cold.
 lights.push(
-  { pos: [0, 120, -300], color: [1.0, 0.62, 0.3], intensity: 0.8, radius: 480 },
-  { pos: [0, 120, 300], color: [1.0, 0.62, 0.3], intensity: 0.8, radius: 480 },
+  { pos: [0, 132, 0], color: [1, 0.78, 0.48], intensity: 1.0, radius: 480 },
+  { pos: [0, 192, -600], color: [0.62, 0.80, 1], intensity: 1.0, radius: 680 },
+  { pos: [0, 192, 600], color: [0.62, 0.80, 1], intensity: 1.0, radius: 680 },
 );
-
-// --- spawns -----------------------------------------------------------------
 
 const spawns: SpawnDef[] = [
-  { pos: [-208, 40, 200], yaw: Math.PI },
-  { pos: [208, 40, -200], yaw: 0 },
-  // Clear the plank screens by more than the standing hull's 16u half-width.
-  { pos: [-248, 40, -200], yaw: 0 },
-  { pos: [248, 40, 200], yaw: Math.PI },
-  { pos: [0, 40, -400], yaw: Math.PI },
-  { pos: [0, 40, 400], yaw: 0 },
-  { pos: [-400, TERRACE + 40, -200], yaw: -Math.PI / 2 },
-  { pos: [400, TERRACE + 40, 200], yaw: Math.PI / 2 },
+  { pos: [-368, 40, 544], yaw: 0 },
+  { pos: [368, 40, -544], yaw: Math.PI },
+  { pos: [-368, 40, -544], yaw: Math.PI },
+  { pos: [368, 40, 544], yaw: 0 },
+  { pos: [0, 40, -640], yaw: Math.PI },
+  { pos: [0, 40, 640], yaw: 0 },
+  { pos: [-600, TERRACE + 40, -160], yaw: -Math.PI / 2 },
+  { pos: [600, TERRACE + 40, 160], yaw: Math.PI / 2 },
+  { pos: [-368, 40, 0], yaw: -Math.PI / 2 },
+  { pos: [368, 40, 0], yaw: Math.PI / 2 },
 ];
 
 export const SILO: MapDef = {
-  name: "silo",
-  brushes,
-  lights,
-  ambient: [0.10, 0.105, 0.12],
-  mode: Mode.deathmatch,
-  bots: 5,
-  spawns,
-  background: 0x0b0d10,
-  fog: [700, 2600],
+  name: "silo", brushes, lights, spawns,
+  ambient: [0.13, 0.135, 0.15],
+  mode: Mode.deathmatch, bots: 5,
+  background: 0x11151b, fog: [1200, 3400],
 };
