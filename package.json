@@ -13,6 +13,7 @@
     "wasm": "emcmake cmake -B build/wasm -DCMAKE_BUILD_TYPE=Release && cmake --build build/wasm -j",
     "test": "cmake --preset native && cmake --build --preset native -j && ctest --preset native",
     "test:touch": "esbuild tools/touch.test.ts --bundle --platform=node --format=esm --outfile=build/touch.test.mjs --log-level=error && node --test build/touch.test.mjs",
+    "test:art": "esbuild tools/character.test.ts --bundle --platform=node --format=esm --outfile=build/character.test.mjs --log-level=error && node --test build/character.test.mjs",
     "mapcheck": "esbuild tools/mapcheck.ts --bundle --platform=node --format=esm --outfile=build/mapcheck.mjs --log-level=error && node build/mapcheck.mjs",
     "typecheck": "tsc --noEmit"
   },

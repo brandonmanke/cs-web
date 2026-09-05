@@ -125,8 +125,9 @@ lights.push(
 const spawns: SpawnDef[] = [
   { pos: [-208, 40, 200], yaw: Math.PI },
   { pos: [208, 40, -200], yaw: 0 },
-  { pos: [-208, 40, -200], yaw: 0 },
-  { pos: [208, 40, 200], yaw: Math.PI },
+  // Clear the plank screens by more than the standing hull's 16u half-width.
+  { pos: [-248, 40, -200], yaw: 0 },
+  { pos: [248, 40, 200], yaw: Math.PI },
   { pos: [0, 40, -400], yaw: Math.PI },
   { pos: [0, 40, 400], yaw: 0 },
   { pos: [-400, TERRACE + 40, -200], yaw: -Math.PI / 2 },

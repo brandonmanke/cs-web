@@ -82,6 +82,7 @@ export class Character {
   private readonly materials: THREE.MeshLambertMaterial[] = [];
   private readonly direction = new THREE.Vector3();
   private readonly down = new THREE.Vector3(0, -1, 0);
+  private readonly deathBounds = new THREE.Box3();
   private phase = 0;
   private deathTime = 0;
 
@@ -188,20 +189,29 @@ export class Character {
     if (!pose.alive) {
       this.deathTime = Math.min(this.deathTime + dt, 1);
       const t = 1 - (1 - this.deathTime) ** 2;
-      this.pivot.rotation.x = t * -Math.PI * 0.5;
-      this.pivot.position.y = -t * 12;
+      // Fall onto the side so the held weapon stays alongside the body.
+      // Keep the whole pose above the snapshot's feet plane instead of sinking
+      // it below the floor. This is visual placement, not corpse physics.
+      this.pivot.rotation.z = t * Math.PI * 0.5;
+      this.pivot.position.y = 0;
+      this.root.updateMatrixWorld(true);
+      this.deathBounds.setFromObject(this.pivot);
+      this.pivot.position.y = Math.max(0,
+        (this.root.position.y - this.deathBounds.min.y) / this.root.scale.y);
       return;
     }
     this.deathTime = 0;
-    this.pivot.rotation.x = 0; this.pivot.position.y = 0;
+    this.pivot.rotation.z = 0; this.pivot.position.y = 0;
     const moving = pose.speed > 12;
     const gait = Math.min(pose.speed / 250, 1.4);
     this.phase += dt * (moving && pose.onGround ? 4 + gait * 7 : 1.2);
     const sin = Math.sin(this.phase), cos = Math.cos(this.phase);
     for (let i = 0; i < 2; ++i) {
       const side = i === 0 ? -1 : 1;
-      this.legs[i]!.rotation.x = pose.onGround ? sin * side * gait * 0.9 : 0.3 * side - 0.2;
-      this.knees[i]!.rotation.x = pose.onGround ? Math.max(0, -sin * side) * gait * 1.1 : 0.8;
+      // Bones point -Y and the body faces -Z: positive hip rotation lifts the
+      // thigh forward; negative knee rotation folds the heel back toward +Z.
+      this.legs[i]!.rotation.x = pose.onGround ? sin * side * gait * 0.9 : 0.55 + 0.15 * side;
+      this.knees[i]!.rotation.x = pose.onGround ? -Math.max(0, -sin * side) * gait * 1.1 : -0.8;
       const wrist: V3 = i === 0 ? supportGrip(pose.weapon) : [1.2, -3, 1];
       wrist[0] += 2.5; wrist[1] += 9; wrist[2] -= 5;
       if (pose.weapon === WeaponId.none || (i === 0 && pose.weapon === WeaponId.knife)) {

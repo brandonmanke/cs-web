@@ -94,6 +94,17 @@ async function checkMap(name: string, map: MapDef): Promise<void> {
   if (map.bots + 1 > MAX_PLAYERS) fail(`${map.bots} bots exceeds the roster limit`);
   let badSpawns = 0;
   for (const [i, spawn] of map.spawns.entries()) {
+    // A drop can settle at the correct height while still buried in a wall.
+    // Check the standing hull against each brush's expanded planes first.
+    const embedded = map.brushes.some((brush) => brush.planes.every(({ n, d }) => {
+      const support = 16 * (Math.abs(n[0]) + Math.abs(n[2])) + 36 * Math.abs(n[1]);
+      return n[0] * spawn.pos[0] + n[1] * spawn.pos[1] + n[2] * spawn.pos[2] - d <
+        support - 0.01;
+    }));
+    if (embedded) {
+      fail(`spawn ${i} ${spawn.pos.join(",")} overlaps a solid brush`);
+      ++badSpawns;
+    }
     const probe = dropProbe(sim, snapshot, spawn.pos[0], spawn.pos[1], spawn.pos[2]);
     if (!probe.grounded) {
       fail(`spawn ${i} ${spawn.pos.join(",")} never lands (rests at y=${probe.y.toFixed(1)})`);
