@@ -238,10 +238,9 @@
         display: flex; padding: 14px;
         background: rgba(6, 8, 7, 0.72);
         backdrop-filter: blur(2px);
-        /* The panel is taller than a phone in landscape, and body sets
-           this overlay has to scroll on its own. Centring is margin:auto
-           rather than align-items, which would put the top of an overflowing
-           panel out of reach. */
+        /* The panel is taller than a phone held in landscape, so the overlay
+           scrolls on its own. Centring is margin:auto rather than align-items,
+           which would put the top of an overflowing panel out of reach. */
         overflow-y: auto; overscroll-behavior: contain;
       }
       #menu.hidden { display: none; }
