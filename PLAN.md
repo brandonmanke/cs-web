@@ -335,7 +335,13 @@ corner sniper platforms have walkable ramps, canopies and crouch cover. Extra
 bridge/gallery cover and two lower bulkheads leave a sheltered route across the
 arena. Map checks verify access to each firing position and its sightline onto
 the bridge, plus the lower crossing's protection from all four towers. The sky
-is a cached 256px-per-face cubemap generated once at load, with no binary assets.
+is a cached 512px-per-face cubemap generated once at load, with no binary assets.
+Its inclined rings compare depth against the planet, and a cratered moon in a
+second direction carries city lights on its dark side. Relay also has two flush
+glass floor viewports and two observation alcoves through the side galleries.
+The glass is a solid brush with a translucent procedural texture; map checks
+verify both walkable collision and the absence of opaque geometry behind it.
+Two bridge cover blocks now rise 112u, shielding players from elevated angles.
 
 Next, in order:
 

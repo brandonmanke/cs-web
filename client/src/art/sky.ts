@@ -3,7 +3,7 @@ import * as THREE from "three";
 // Original orbital sky, painted once into six small cube faces. Sampling a
 // direction (rather than six unrelated pictures) keeps nebulae and stars
 // continuous across cube edges. No downloaded assets or per-frame effects.
-const SIZE = 256;
+const SIZE = 512;
 let orbital: THREE.CubeTexture | null = null;
 
 function hash(x: number, y: number, z: number): number {
@@ -33,6 +33,13 @@ export function orbitalSky(): THREE.CubeTexture {
   const planet = new THREE.Vector3(0.25, 0.48, 0.84).normalize();
   const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), planet).normalize();
   const up = new THREE.Vector3().crossVectors(planet, right);
+  const moon = new THREE.Vector3(-0.92, 0.28, -0.25).normalize();
+  const moonRight = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), moon).normalize();
+  const moonUp = new THREE.Vector3().crossVectors(moon, moonRight);
+  const craters = Array.from({ length: 24 }, (_, i) => ({
+    x: hash(i, 19, 3) * 1.7 - 0.85, y: hash(i, 31, 9) * 1.7 - 0.85,
+    radius: 0.035 + hash(i, 7, 21) * 0.13,
+  }));
   const direction = new THREE.Vector3();
   const faces: HTMLCanvasElement[] = [];
   for (let face = 0; face < 6; ++face) {
@@ -72,12 +79,6 @@ export function orbitalSky(): THREE.CubeTexture {
         if (facing > 0.88) {
           const px = direction.dot(right) / 0.18;
           const py = direction.dot(up) / 0.18;
-          const ringY = py + px * 0.28;
-          const ringRadius = Math.hypot(px, ringY / 0.28);
-          if (ringRadius > 1.24 && ringRadius < 1.92) {
-            const stripe = 0.72 + Math.sin(ringRadius * 105) * 0.15;
-            r = 126 * stripe; g = 144 * stripe; b = 157 * stripe;
-          }
           const disc = px * px + py * py;
           if (disc < 1) {
             const pz = Math.sqrt(1 - disc);
@@ -87,6 +88,50 @@ export function orbitalSky(): THREE.CubeTexture {
             r = (96 * bands) * light + rim * 0.4;
             g = (153 * bands) * light + rim * 0.8;
             b = (189 * bands) * light + rim;
+          }
+          // Project an inclined ring plane, then compare its depth with the
+          // front of the sphere. The near arc crosses the planet; the far arc
+          // disappears behind it instead of both arcs being painted over.
+          const ringX = px * 0.963 - py * 0.270;
+          const ringY = px * 0.270 + py * 0.963;
+          const ringRadius = Math.hypot(ringX, ringY / 0.38);
+          const ringDepth = -ringY * Math.sqrt(1 - 0.38 ** 2) / 0.38;
+          if (ringRadius > 1.24 && ringRadius < 1.92 &&
+              (disc >= 1 || ringDepth > Math.sqrt(1 - disc))) {
+            const stripe = 0.78 + Math.sin(ringRadius * 55) * 0.10;
+            r = 126 * stripe; g = 144 * stripe; b = 157 * stripe;
+          }
+        }
+
+        // An inhabited moon in a different bearing. Crater rims catch the
+        // crescent light; amber city grids cluster on its dark hemisphere.
+        if (direction.dot(moon) > 0.97) {
+          const mx = direction.dot(moonRight) / 0.16;
+          const my = direction.dot(moonUp) / 0.16;
+          const disc = mx * mx + my * my;
+          if (disc < 1) {
+            const mz = Math.sqrt(1 - disc);
+            const sun = -mx * 0.90 + my * 0.20 + mz * 0.22;
+            let rock = 115 + noise(mx * 9, my * 9, mz * 9) * 55;
+            for (const crater of craters) {
+              const distance = Math.hypot(mx - crater.x, my - crater.y) / crater.radius;
+              if (distance < 1) rock *= 0.62 + distance * 0.25;
+              else if (distance < 1.18) rock *= 1.14;
+            }
+            const light = 0.13 + Math.max(0, sun) * 0.86;
+            r = rock * light; g = rock * light * 1.02; b = rock * light * 1.12;
+            const settlement = Math.max(
+              Math.exp(-((mx - 0.32) ** 2 + (my - 0.18) ** 2) / 0.030),
+              Math.exp(-((mx - 0.52) ** 2 + (my + 0.32) ** 2) / 0.040),
+              Math.exp(-((mx - 0.58) ** 2 + (my - 0.45) ** 2) / 0.018),
+            );
+            const gridX = (mx + my * 0.17) * 70, gridY = my * 70;
+            const street = Math.abs(gridX - Math.round(gridX)) < 0.17 ||
+              Math.abs(gridY - Math.round(gridY)) < 0.17;
+            if (street && hash(Math.floor(mx * 96), Math.floor(my * 96), 490) > 0.35) {
+              const city = settlement * Math.min(1, Math.max(0, (0.12 - sun) * 5)) * Math.sqrt(mz);
+              r += city * 235; g += city * 164; b += city * 64;
+            }
           }
         }
         const index = (y * SIZE + x) * 4;

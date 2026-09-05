@@ -183,9 +183,10 @@ export function buildMapGeometry(
         group = { positions: [], normals: [], uvs: [], colors: [] };
         groups.set(face.tex, group);
       }
-      // Light panels read as emissive; skip the bake and keep them bright.
+      // Keep light panels bright and glass untinted by the shadow bake.
       const emission: Vec3 | null = face.tex === "light" ? [1.35, 1.28, 1.05]
-        : face.tex === "light_cool" ? [1.05, 1.28, 1.35] : null;
+        : face.tex === "light_cool" ? [1.05, 1.28, 1.35]
+        : face.tex === "glass" ? [1, 1, 1] : null;
 
       for (const tri of faceTriangles(face)) {
         for (const point of [tri.a, tri.b, tri.c]) {
@@ -217,6 +218,8 @@ export function buildMapGeometry(
     const material = new THREE.MeshBasicMaterial({
       map: atlas.get(tex as TextureKey) ?? null,
       vertexColors: true,
+      transparent: tex === "glass",
+      depthWrite: tex !== "glass",
     });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.frustumCulled = true;

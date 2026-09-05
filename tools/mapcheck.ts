@@ -175,12 +175,36 @@ async function checkMap(name: string, map: MapDef): Promise<void> {
     for (const x of [-736, 736]) {
       for (const z of [-800, 800]) {
         const eye = [x, 448, z];
-        if (sim.isBlocked(eye, [0, 256, 0])) fail(`tower ${x},${z} cannot see the bridge`);
+        // Tall bridge cover intentionally shields the midpoint from some
+        // angles; each tower must still see its half's bridge approach.
+        if (sim.isBlocked(eye, [0, 256, Math.sign(z) * 320])) fail(`tower ${x},${z} cannot see the bridge approach`);
         if (!sim.isBlocked(eye, [0, 64, 0])) fail(`tower ${x},${z} exposes the sheltered lower crossing`);
       }
     }
     if (sim.isBlocked([0, 256, 0], [0, 2000, 0])) fail("Relay's open sky is blocked by a ceiling");
-    if (before === failures) pass("four useful tower sightlines, sheltered lower crossing and open sky");
+    for (const side of [-1, 1]) {
+      if (!sim.isBlocked([side * 116, 320, side * 400], [side * 116, 256, side * 100])) {
+        fail("tall bridge cover does not protect against elevated fire");
+      }
+    }
+    // Removing just the glass must expose space, proving no opaque floor or
+    // wall was left behind the pane. The full world must still block the ray.
+    const withoutGlass = await Sim.load();
+    for (const brush of map.brushes) {
+      if (brush.tex !== "glass") withoutGlass.addBrush(brushPlaneArray(brush), brush.surface);
+    }
+    withoutGlass.finalizeWorld();
+    for (const side of [-1, 1]) {
+      const windows = [
+        { label: "floor", from: [side * 416, 64, 0], to: [side * 416, -256, 0] },
+        { label: "wall", from: [side * 864, 64, 0], to: [side * 1100, 64, 0] },
+      ];
+      for (const window of windows) {
+        if (!sim.isBlocked(window.from, window.to)) fail(`${window.label} viewport has no solid glass`);
+        if (withoutGlass.isBlocked(window.from, window.to)) fail(`${window.label} viewport has an opaque backing`);
+      }
+    }
+    if (before === failures) pass("tower sightlines, tall cover, sheltered crossing and four solid viewports");
   }
 }
 

@@ -353,7 +353,7 @@ function hazard(seed: number): THREE.CanvasTexture {
 
 export type TextureKey =
   | "concrete" | "concrete_dark" | "metal" | "rust" | "grate" | "brick"
-  | "sand" | "crate" | "tech" | "light" | "hazard" | "alloy" | "deck" | "light_cool";
+  | "sand" | "crate" | "tech" | "light" | "hazard" | "alloy" | "deck" | "light_cool" | "glass";
 
 let cache: Map<TextureKey, THREE.CanvasTexture> | null = null;
 
@@ -374,6 +374,18 @@ export function textures(): Map<TextureKey, THREE.CanvasTexture> {
     ["alloy", alloy(702)],
     ["deck", deck(703)],
     ["light_cool", lightPanel(704, true)],
+    ["glass", draw(705, (c) => {
+      fill(c, "rgba(115,191,214,0.08)");
+      // Faint rubbed streaks leave the space beyond the pane readable.
+      c.ctx.strokeStyle = "rgba(207,237,244,0.07)";
+      c.ctx.lineWidth = 1;
+      for (const offset of [-64, 24, 108]) {
+        c.ctx.beginPath();
+        c.ctx.moveTo(offset, 16); c.ctx.lineTo(offset + 16, 64);
+        c.ctx.stroke();
+      }
+      grain(c, 10, 1);
+    })],
   ]);
   return cache;
 }

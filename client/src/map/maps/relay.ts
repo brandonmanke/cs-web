@@ -15,21 +15,56 @@ const TOWER = 384;
 // Open roof, solid perimeter. Even from a tower, the outer wall is too high
 // to jump over; the sky never needs an invisible collision ceiling.
 const brushes: Brush[] = [
-  box([-X - 32, -32, -Z - 32], [X + 32, 0, Z + 32], Surface.metal, "concrete_dark"),
-  box([-X - 32, 0, -Z - 32], [-X, WALL, Z + 32], Surface.metal, "alloy"),
-  box([X, 0, -Z - 32], [X + 32, WALL, Z + 32], Surface.metal, "alloy"),
+  // Leave two real openings for flush, load-bearing floor viewports.
+  box([-X - 32, -32, -Z - 32], [X + 32, 0, -64], Surface.metal, "concrete_dark"),
+  box([-X - 32, -32, 64], [X + 32, 0, Z + 32], Surface.metal, "concrete_dark"),
+  box([-X - 32, -32, -64], [-544, 0, 64], Surface.metal, "concrete_dark"),
+  box([-288, -32, -64], [288, 0, 64], Surface.metal, "concrete_dark"),
+  box([544, -32, -64], [X + 32, 0, 64], Surface.metal, "concrete_dark"),
   box([-X, 0, -Z - 32], [X, WALL, -Z], Surface.metal, "alloy"),
   box([-X, 0, Z], [X, WALL, Z + 32], Surface.metal, "alloy"),
 ];
+for (const side of [-1, 1]) {
+  const lo = side < 0 ? -X - 32 : X;
+  const hi = side < 0 ? -X : X + 32;
+  // Lower observation alcoves look through the shell into the same sky seen
+  // overhead. The glass brush itself provides collision and bullet resistance.
+  brushes.push(
+    box([lo, 0, -Z - 32], [hi, WALL, -128], Surface.metal, "alloy"),
+    box([lo, 0, 128], [hi, WALL, Z + 32], Surface.metal, "alloy"),
+    box([lo, 0, -128], [hi, 32, 128], Surface.metal, "metal"),
+    box([lo, 144, -128], [hi, WALL, 128], Surface.metal, "metal"),
+    box([lo, 32, -128], [hi, 144, -116], Surface.metal, "metal"),
+    box([lo, 32, 116], [hi, 144, 128], Surface.metal, "metal"),
+    box([side < 0 ? -904 : 896, 32, -116], [side < 0 ? -896 : 904, 144, 116],
+      Surface.metal, "glass"),
+  );
+  const x0 = side < 0 ? -544 : 288;
+  const x1 = x0 + 256;
+  brushes.push(
+    box([x0, -32, -64], [x1, 0, -52], Surface.metal, "metal"),
+    box([x0, -32, 52], [x1, 0, 64], Surface.metal, "metal"),
+    box([x0, -32, -52], [x0 + 12, 0, 52], Surface.metal, "metal"),
+    box([x1 - 12, -32, -52], [x1, 0, 52], Surface.metal, "metal"),
+    box([x0 + 12, -8, -52], [x1 - 12, 0, 52], Surface.metal, "glass"),
+  );
+}
 
 // End decks, the 320u main bridge, and 256u side galleries.
 brushes.push(
   box([-X, 0, -Z], [X, DECK, -640], Surface.metal, "alloy", { 2: "deck" }),
   box([-X, 0, 640], [X, DECK, Z], Surface.metal, "alloy", { 2: "deck" }),
   box([-160, DECK - 24, -640], [160, DECK, 640], Surface.metal, "metal", { 2: "deck" }),
-  box([-X, 0, -640], [-640, DECK, 640], Surface.metal, "alloy", { 2: "deck" }),
-  box([640, 0, -640], [X, DECK, 640], Surface.metal, "alloy", { 2: "deck" }),
 );
+for (const side of [-1, 1]) {
+  const lo = side < 0 ? -X : 640;
+  const hi = side < 0 ? -640 : X;
+  brushes.push(
+    box([lo, 0, -640], [hi, DECK, -128], Surface.metal, "alloy", { 2: "deck" }),
+    box([lo, 0, 128], [hi, DECK, 640], Surface.metal, "alloy", { 2: "deck" }),
+    box([lo, 160, -128], [hi, DECK, 128], Surface.metal, "metal", { 2: "deck" }),
+  );
+}
 for (const x of [-416, 416]) {
   brushes.push(
     ramp([x - 96, 0, -640], [x + 96, DECK, -160], "-z", Surface.metal, "deck"),
@@ -57,8 +92,8 @@ for (const z of [-80, 80]) {
 // Alternating bridge cover leaves at least 240u of usable width. Side routes
 // have cover against the wall, and the end decks have room behind each block.
 brushes.push(
-  box([-152, DECK, -272], [-80, DECK + 64, -144], Surface.metal, "tech"),
-  box([80, DECK, 144], [152, DECK + 64, 272], Surface.metal, "tech"),
+  box([-152, DECK, -272], [-80, DECK + 112, -144], Surface.metal, "tech"),
+  box([80, DECK, 144], [152, DECK + 112, 272], Surface.metal, "tech"),
   box([80, DECK, -544], [152, DECK + 48, -448], Surface.metal, "alloy"),
   box([-152, DECK, 448], [-80, DECK + 48, 544], Surface.metal, "alloy"),
 );
@@ -152,9 +187,9 @@ for (const x of [-728, 728]) {
     lights.push({ pos: [x, TOWER + 136, z], color: [0.66, 0.86, 1], intensity: 1.2, radius: 460 });
   }
 }
-for (const x of [-608, 608]) {
-  brushes.push(box([x - 8, 32, -96], [x + 8, 112, 96], Surface.metal, "light_cool"));
-  lights.push({ pos: [x - Math.sign(x) * 24, 128, 0], color: [0.35, 0.85, 1], intensity: 1.3, radius: 620 });
+for (const x of [-656, 656]) {
+  brushes.push(box([x - 8, 152, -80], [x + 8, 160, 80], Surface.metal, "light_cool"));
+  lights.push({ pos: [x, 132, 0], color: [0.35, 0.85, 1], intensity: 1.3, radius: 620 });
 }
 lights.push(
   { pos: [0, 112, 0], color: [0.58, 0.76, 1], intensity: 0.9, radius: 480 },
