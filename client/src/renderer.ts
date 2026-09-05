@@ -59,6 +59,8 @@ function decalTexture(): THREE.CanvasTexture {
 export class Renderer {
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
+  readonly weaponCamera: THREE.PerspectiveCamera;
+  private readonly weaponScene = new THREE.Scene();
   private readonly gl: THREE.WebGLRenderer;
 
   private readonly characters: Character[] = [];
@@ -86,10 +88,21 @@ export class Renderer {
       this.fov, window.innerWidth / window.innerHeight, 1, 16384,
     );
     this.camera.rotation.order = "YXZ";
-    this.scene.add(this.camera); // the viewmodel rides on the camera
+    this.scene.add(this.camera);
 
-    // These only touch Lambert materials — players and weapons — because the
-    // world is fully baked into vertex colours.
+    // A separate pass keeps nearby walls from cutting off the hands, and gives
+    // the weapon consistent readable light as the player turns through the map.
+    this.weaponCamera = new THREE.PerspectiveCamera(70, this.camera.aspect, 0.1, 256);
+    this.weaponCamera.rotation.order = "YXZ";
+    this.weaponScene.add(this.weaponCamera);
+    this.weaponScene.add(new THREE.HemisphereLight(0xcbd9ec, 0x555049, 1.5));
+    const weaponKey = new THREE.DirectionalLight(0xffe4c4, 2.1);
+    weaponKey.position.set(-15, 25, 10);
+    weaponKey.target.position.set(0, 0, -25);
+    this.weaponCamera.add(weaponKey, weaponKey.target);
+
+    // These light player bodies and their held weapons; the world is fully
+    // baked into vertex colours.
     this.scene.add(new THREE.HemisphereLight(0x8899aa, 0x2a2620, 0.55));
     const key = new THREE.DirectionalLight(0xfff0d8, 0.75);
     key.position.set(0.3, 1, 0.45);
@@ -109,6 +122,8 @@ export class Renderer {
   private resize(): void {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
+    this.weaponCamera.aspect = this.camera.aspect;
+    this.weaponCamera.updateProjectionMatrix();
     this.gl.setSize(window.innerWidth, window.innerHeight);
   }
 
@@ -188,6 +203,8 @@ export class Renderer {
         yaw: view.yaw,
         pitch: view.pitch,
         alive: (view.flags & Flags.alive) !== 0,
+        weapon: view.weapon,
+        ducked: (view.flags & Flags.ducked) !== 0,
       });
 
       // Hit flash overrides the bake for a few ticks.
@@ -314,5 +331,11 @@ export class Renderer {
     );
     this.camera.rotation.set(pitch + curr.punchPitch, yaw + curr.punchYaw, 0);
     this.gl.render(this.scene, this.camera);
+    this.weaponCamera.position.copy(this.camera.position);
+    this.weaponCamera.quaternion.copy(this.camera.quaternion);
+    this.gl.autoClear = false;
+    this.gl.clearDepth();
+    this.gl.render(this.weaponScene, this.weaponCamera);
+    this.gl.autoClear = true;
   }
 }

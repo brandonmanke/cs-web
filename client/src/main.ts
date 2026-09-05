@@ -107,7 +107,7 @@ async function boot(): Promise<void> {
   if (touch.active) input.touch = touch;
   input.attach();
   const audio = new GameAudio();
-  const viewmodel = new Viewmodel(renderer.camera);
+  const viewmodel = new Viewmodel(renderer.weaponCamera);
   const deathCam = new DeathCam();
   const map = chooseMap();
   const menu = new Menu(
@@ -366,7 +366,7 @@ async function boot(): Promise<void> {
     // the shot should leave from the middle of the sight picture instead.
     const start = local && curr.zoom === 0
       ? (() => {
-          const muzzle = viewmodel.muzzleWorld(scratch);
+          const muzzle = viewmodel.muzzleWorld(scratch, renderer.camera);
           return [muzzle.x, muzzle.y, muzzle.z] as const;
         })()
       : event.start;

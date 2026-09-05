@@ -1,108 +1,74 @@
 import * as THREE from "three";
 import { canvasTexture, fill, grain, stains } from "./textures";
+import { batchParts, bevelBox, disposeParts, meshPart, type V3 } from "./geometry";
+import { buildWeapon, supportGrip, WeaponId } from "./weapons";
 
-// Procedural low-poly humanoid, built as a hierarchy of rigid boxes rather than
-// a skinned mesh — which is how PSX and GoldSrc models actually worked, and
-// what makes the walk cycle a handful of sine waves instead of an animation
-// pipeline.
-//
-// Proportions follow the sim hitboxes in sim/src/weapons.cpp (head 58-72,
-// chest 38-58, stomach 26-38, legs 0-26) so the silhouette you shoot at is the
-// silhouette the sim tests. Arms are visual only: the sim's "limbs" box covers
-// the legs, so they are kept tucked near the torso.
-
+// Rigid articulated bodies, authored from the feet. Head 58–72, chest 38–58,
+// stomach 26–38, legs 0–26 follow the sim hitboxes. Arms are still visual only.
 export type Team = "ct" | "t";
-
-// Bright enough to read against a map lit by pools of light and deep shadow.
-// The first pass used real-kit colours (navy CT, dark webbing) and a CT body
-// standing off a light pool was a black cutout you could not tell was facing
-// you — which is the one thing the character art has to do.
-const PALETTE: Record<Team, { cloth: string; vest: string; skin: string; trim: string }> = {
-  ct: { cloth: "#5d6d80", vest: "#3c4957", skin: "#c49a76", trim: "#8794a4" },
-  t: { cloth: "#9d8352", vest: "#4c4130", skin: "#b98a60", trim: "#7d6941" },
+const PALETTE = {
+  ct: { cloth: "#637c96", vest: "#46545e", trim: "#9caab1", mask: "#3a444b" },
+  t: { cloth: "#a58e68", vest: "#635744", trim: "#c1a779", mask: "#775950" },
 };
-
-function bodyTexture(team: Team): THREE.CanvasTexture {
-  const palette = PALETTE[team];
-  return canvasTexture(64, team === "ct" ? 21 : 22, (c) => {
-    fill(c, palette.cloth);
-    grain(c, 30, 2);
-    // Webbing and pouches across the chest.
-    c.ctx.fillStyle = palette.vest;
-    c.ctx.fillRect(0, 18, 64, 26);
-    c.ctx.fillStyle = palette.trim;
-    c.ctx.fillRect(0, 22, 64, 3);
-    c.ctx.fillRect(0, 37, 64, 3);
-    c.ctx.fillStyle = palette.vest;
-    c.ctx.fillRect(8, 26, 12, 10);
-    c.ctx.fillRect(44, 26, 12, 10);
-    grain(c, 16, 1);
-    stains(c, 6, "#14110c", 14);
-  });
-}
-
-function headTexture(team: Team): THREE.CanvasTexture {
-  const palette = PALETTE[team];
-  return canvasTexture(64, team === "ct" ? 31 : 32, (c) => {
-    fill(c, palette.skin);
-    grain(c, 20, 2);
-    // Balaclava over the top and back of the head.
-    c.ctx.fillStyle = palette.vest;
-    c.ctx.fillRect(0, 0, 64, 26);
-    c.ctx.fillRect(0, 44, 64, 20);
-    // Eye slit.
-    c.ctx.fillStyle = "#15120e";
-    c.ctx.fillRect(10, 28, 16, 6);
-    c.ctx.fillRect(38, 28, 16, 6);
-    grain(c, 12, 1);
-  });
-}
-
-/**
- * Skins are per team, not per body, and the roster gets rebuilt whenever the
- * bot count changes — so generate each canvas once and share it. Character
- * disposal deliberately leaves these alone.
- */
+type SkinPart = "cloth" | "vest" | "trim" | "mask" | "face" | "boot";
 const skins = new Map<string, THREE.CanvasTexture>();
-function skin(team: Team, part: "body" | "head"): THREE.CanvasTexture {
+function skin(team: Team, part: SkinPart): THREE.CanvasTexture {
   const key = `${team}:${part}`;
   let texture = skins.get(key);
-  if (!texture) {
-    texture = part === "body" ? bodyTexture(team) : headTexture(team);
-    skins.set(key, texture);
-  }
+  if (texture) return texture;
+  texture = canvasTexture(64, team === "ct" ? 21 : 22, (c) => {
+    fill(c, part === "face" ? "#c39776" : part === "boot" ? "#393b3b" : PALETTE[team][part]);
+    grain(c, 18, 1);
+    if (part === "face") {
+      // This texture is used only on the forward-facing eye opening.
+      c.ctx.fillStyle = "#604d40";
+      c.ctx.fillRect(7, 15, 18, 5); c.ctx.fillRect(39, 15, 18, 5);
+      c.ctx.fillStyle = "#292624";
+      c.ctx.fillRect(10, 23, 14, 7); c.ctx.fillRect(40, 23, 14, 7);
+      c.ctx.fillStyle = "#d4b294";
+      c.ctx.fillRect(12, 23, 4, 2); c.ctx.fillRect(42, 23, 4, 2);
+      c.ctx.fillStyle = "#8e6951";
+      c.ctx.fillRect(29, 26, 6, 25);
+    } else {
+      // Small weave, seams and folds, without chest details repeating on limbs.
+      c.ctx.fillStyle = "rgba(0,0,0,0.06)";
+      for (let i = 0; i < 64; i += 4) {
+        c.ctx.fillRect(i, 0, 1, 64); c.ctx.fillRect(0, i, 64, 1);
+      }
+      c.ctx.fillStyle = "rgba(0,0,0,0.18)";
+      c.ctx.fillRect(3, 0, 2, 64); c.ctx.fillRect(59, 0, 2, 64);
+      for (let i = 0; i < 8; ++i) c.ctx.fillRect(7 + c.random() * 40, c.random() * 64, 10 + c.random() * 16, 1);
+      stains(c, 5, "#272520", 12);
+    }
+  });
+  skins.set(key, texture);
   return texture;
 }
 
-/** A box whose pivot sits at its top face, so limbs rotate from the joint. */
-function limb(w: number, h: number, d: number, material: THREE.Material): THREE.Mesh {
-  const geometry = new THREE.BoxGeometry(w, h, d);
-  geometry.translate(0, -h / 2, 0);
-  return new THREE.Mesh(geometry, material);
+function block(group: THREE.Group, material: THREE.Material, size: V3, at: V3): void {
+  meshPart(group, bevelBox(...size, 0.7), material, at);
 }
 
-function block(w: number, h: number, d: number, y: number,
-               material: THREE.Material): THREE.Mesh {
-  const geometry = new THREE.BoxGeometry(w, h, d);
-  geometry.translate(0, y, 0);
-  return new THREE.Mesh(geometry, material);
+/** Tapered joint, local -Y is the bone direction. */
+function limb(group: THREE.Group, material: THREE.Material, width: number, length: number): void {
+  const geometry = new THREE.CylinderGeometry(width * 0.52, width * 0.4, length, 8);
+  geometry.translate(0, -length / 2, 0);
+  meshPart(group, geometry, material, [0, 0, 0]);
 }
 
 export interface CharacterPose {
-  /** Horizontal speed in u/s — drives the walk cycle. */
   speed: number;
   onGround: boolean;
   yaw: number;
   pitch: number;
   alive: boolean;
+  weapon: number;
+  ducked: boolean;
 }
 
 export class Character {
-  /** Placement only — the owner sets this. */
   readonly root = new THREE.Group();
-  /** Carries the death transform, so it can't fight the root's position. */
   private readonly pivot = new THREE.Group();
-
   private readonly hips = new THREE.Group();
   private readonly torso = new THREE.Group();
   private readonly head = new THREE.Group();
@@ -110,140 +76,153 @@ export class Character {
   private readonly knees: THREE.Group[] = [];
   private readonly shoulders: THREE.Group[] = [];
   private readonly elbows: THREE.Group[] = [];
+  private readonly weaponSlot = new THREE.Group();
+  private weapon: THREE.Group | null = null;
+  private weaponId = -1;
   private readonly materials: THREE.MeshLambertMaterial[] = [];
-
+  private readonly direction = new THREE.Vector3();
+  private readonly down = new THREE.Vector3(0, -1, 0);
   private phase = 0;
   private deathTime = 0;
 
   constructor(team: Team) {
-    const cloth = new THREE.MeshLambertMaterial({ map: skin(team, "body") });
-    const flesh = new THREE.MeshLambertMaterial({ map: skin(team, "head") });
-    this.materials.push(cloth, flesh);
-
+    const mat = (part: SkinPart) => {
+      const material = new THREE.MeshLambertMaterial({ map: skin(team, part) });
+      this.materials.push(material);
+      return material;
+    };
+    const cloth = mat("cloth"), vest = mat("vest"), trim = mat("trim");
+    const mask = mat("mask"), face = mat("face"), boot = mat("boot");
     this.root.add(this.pivot);
     this.pivot.add(this.hips);
     this.hips.position.y = 28;
-    this.hips.add(block(22, 12, 13, 4, cloth)); // pelvis, world y 26-38
-
+    block(this.hips, cloth, [19, 10, 12], [0, 4, 0]);
+    block(this.hips, boot, [21, 2.2, 13], [0, 9, 0]);
+    block(this.hips, trim, [3, 2, 0.8], [0, 9, -6.7]);
     this.hips.add(this.torso);
-    this.torso.position.y = 10; // world y 38
-    this.torso.add(block(24, 20, 14, 10, cloth)); // chest, world y 38-58
+    this.torso.position.y = 10;
+    block(this.torso, cloth, [23, 19, 13], [0, 10, 0]);
+    block(this.torso, vest, [20, 15, 15], [0, 9, -0.2]);
+    for (const x of [-7, 7]) {
+      block(this.torso, vest, [3, 6, 15], [x, 17, 0]); // shoulder webbing
+      block(this.torso, trim, [2.7, 1.6, 0.7], [x, 16, -7.8]);
+    }
+    for (const x of [-6, 0, 6]) {
+      block(this.torso, vest, [5, 6.5, 2.8], [x, 5.5, -8.8]);
+      block(this.torso, trim, [4.6, 1, 0.4], [x, 7.5, -10.2]);
+    }
+    block(this.torso, trim, [7, 2.3, 0.4], [0, 14, -7.9]);
+    block(this.torso, vest, [13, 12, 3], [0, 10, 8.4]); // back plate
+    block(this.torso, boot, [2.4, 4, 2], [-9, 13, -8.1]); // radio
+    block(this.torso, boot, [0.4, 5, 0.4], [-9, 17, -8.1]);
 
     this.torso.add(this.head);
-    this.head.position.y = 20; // world y 58
-    this.head.add(block(12, 12, 12, 6, flesh));
-    // Brow ridge: gives the silhouette a facing direction at distance.
-    this.head.add(block(13, 3, 3, 8, cloth).translateZ(-5.5));
-
-    for (const side of [-1, 1]) {
-      const shoulder = new THREE.Group();
-      shoulder.position.set(side * 14, 18, 0);
-      const elbow = new THREE.Group();
-      elbow.position.y = -13;
-      shoulder.add(limb(7, 13, 7, cloth), elbow);
-      elbow.add(limb(6, 13, 6, cloth));
-      this.torso.add(shoulder);
-      this.shoulders.push(shoulder);
-      this.elbows.push(elbow);
-
-      const hip = new THREE.Group();
-      hip.position.set(side * 6, 0, 0);
-      const knee = new THREE.Group();
-      knee.position.y = -14;
-      hip.add(limb(10, 14, 10, cloth), knee);
-      knee.add(limb(9, 14, 9, cloth));
-      // Boot.
-      knee.add(block(10, 4, 12, -12, cloth).translateZ(1));
-      this.hips.add(hip);
-      this.legs.push(hip);
-      this.knees.push(knee);
+    this.head.position.y = 20;
+    meshPart(this.head, bevelBox(10.8, 12, 10.8, 1.8), mask, [0, 6, 0]);
+    meshPart(this.head, new THREE.PlaneGeometry(8.6, 3.6), face, [0, 7.3, -5.43], [0, Math.PI, 0]);
+    if (team === "ct") {
+      const helmet = meshPart(this.head, new THREE.SphereGeometry(7.1, 10, 4, 0, Math.PI * 2, 0, Math.PI / 2), vest, [0, 9, 0]);
+      helmet.scale.y = 0.65;
+      meshPart(this.head, bevelBox(13.4, 1.2, 12.5, 0.25), vest, [0, 9.1, 0]);
+      for (const x of [-5.7, 5.7]) block(this.head, boot, [1.5, 4, 3.5], [x, 5.7, 0]);
+    } else {
+      block(this.head, mask, [11.4, 2, 11.4], [0, 10, 0]);
+      block(this.head, trim, [12.3, 3.6, 12], [0, 0.4, 0]); // wrapped scarf
     }
+
+    this.weaponSlot.position.set(2.5, 9, -5);
+    this.torso.add(this.weaponSlot);
+    for (const side of [-1, 1]) {
+      const upper = new THREE.Group(), lower = new THREE.Group();
+      limb(upper, cloth, 6.8, 13);
+      block(upper, vest, [5.7, 4, 5.7], [0, -3, 0]);
+      limb(lower, cloth, 5.8, 13);
+      block(lower, boot, [5, 4, 5], [0, -11, 0]);
+      this.torso.add(upper, lower);
+      this.shoulders.push(upper); this.elbows.push(lower);
+
+      const hip = new THREE.Group(), knee = new THREE.Group();
+      hip.position.set(side * 5.7, 0, 0);
+      knee.position.y = -14;
+      limb(hip, cloth, 10, 14);
+      block(hip, vest, [2, 6, 6], [side * 4.1, -5, 0]); // cargo pocket
+      limb(knee, cloth, 8.4, 12);
+      block(knee, vest, [6.4, 4.5, 2], [0, -1.7, -3.4]);
+      block(knee, boot, [8.5, 5.5, 12], [0, -11.3, -1.2]);
+      block(knee, boot, [8.7, 1.1, 12.2], [0, -13.4, -1.2]);
+      hip.add(knee); this.hips.add(hip);
+      this.legs.push(hip); this.knees.push(knee);
+    }
+    batchParts(this.pivot);
   }
 
-  /** Modulate by the baked light where the character stands. */
   setTint(r: number, g: number, b: number): void {
     for (const material of this.materials) material.color.setRGB(r, g, b);
   }
 
-  set visible(value: boolean) {
-    this.root.visible = value;
+  set visible(value: boolean) { this.root.visible = value; }
+
+  private setWeapon(id: number): void {
+    if (id === this.weaponId) return;
+    if (this.weapon) {
+      this.weaponSlot.remove(this.weapon);
+      disposeParts(this.weapon);
+    }
+    this.weapon = buildWeapon(id);
+    this.weaponSlot.add(this.weapon);
+    this.weaponId = id;
+  }
+
+  private aimBone(bone: THREE.Group, from: V3, to: V3): void {
+    bone.position.set(...from);
+    this.direction.set(to[0] - from[0], to[1] - from[1], to[2] - from[2]);
+    bone.scale.y = this.direction.length() / 13;
+    bone.quaternion.setFromUnitVectors(this.down, this.direction.normalize());
   }
 
   update(dt: number, pose: CharacterPose): void {
+    this.setWeapon(pose.weapon);
     this.root.rotation.y = pose.yaw;
-
+    // The sim squashes hitboxes while ducked; keep the rendered target aligned.
+    this.root.scale.y = pose.ducked ? 0.5 : 1;
     if (!pose.alive) {
-      // Fall forward and settle — cheap, readable, no ragdoll needed.
       this.deathTime = Math.min(this.deathTime + dt, 1);
-      const t = 1 - (1 - this.deathTime) * (1 - this.deathTime);
+      const t = 1 - (1 - this.deathTime) ** 2;
       this.pivot.rotation.x = t * -Math.PI * 0.5;
       this.pivot.position.y = -t * 12;
       return;
     }
     this.deathTime = 0;
-    this.pivot.rotation.x = 0;
-    this.pivot.position.y = 0;
-
+    this.pivot.rotation.x = 0; this.pivot.position.y = 0;
     const moving = pose.speed > 12;
     const gait = Math.min(pose.speed / 250, 1.4);
-    if (moving && pose.onGround) {
-      this.phase += dt * (4 + gait * 7);
-    } else if (!moving) {
-      this.phase += dt * 1.2; // idle breathing keeps the same clock
-    }
-
-    const swing = pose.onGround ? gait * 0.9 : 0.35;
-    const sin = Math.sin(this.phase);
-    const cos = Math.cos(this.phase);
-
-    if (pose.onGround) {
-      for (let i = 0; i < 2; ++i) {
-        const side = i === 0 ? 1 : -1;
-        this.legs[i]!.rotation.x = sin * side * swing;
-        // Knees only bend backwards, and only on the return stroke.
-        this.knees[i]!.rotation.x = Math.max(0, -sin * side) * gait * 1.1;
-        this.shoulders[i]!.rotation.x = -sin * side * swing * 0.7;
-        this.elbows[i]!.rotation.x = -0.35 - Math.max(0, sin * side) * 0.4;
+    this.phase += dt * (moving && pose.onGround ? 4 + gait * 7 : 1.2);
+    const sin = Math.sin(this.phase), cos = Math.cos(this.phase);
+    for (let i = 0; i < 2; ++i) {
+      const side = i === 0 ? -1 : 1;
+      this.legs[i]!.rotation.x = pose.onGround ? sin * side * gait * 0.9 : 0.3 * side - 0.2;
+      this.knees[i]!.rotation.x = pose.onGround ? Math.max(0, -sin * side) * gait * 1.1 : 0.8;
+      const wrist: V3 = i === 0 ? supportGrip(pose.weapon) : [1.2, -3, 1];
+      wrist[0] += 2.5; wrist[1] += 9; wrist[2] -= 5;
+      if (pose.weapon === WeaponId.none || (i === 0 && pose.weapon === WeaponId.knife)) {
+        wrist[0] = side * 12; wrist[1] = -4; wrist[2] = -2;
       }
-      // Vertical bob and a slight roll, scaled by gait.
-      this.hips.position.y = 28 + Math.abs(cos) * gait * 2.2;
-      this.torso.rotation.z = sin * gait * 0.06;
-      this.torso.rotation.y = -sin * gait * 0.12;
-    } else {
-      // Airborne: legs tuck, arms come up.
-      for (let i = 0; i < 2; ++i) {
-        const side = i === 0 ? 1 : -1;
-        this.legs[i]!.rotation.x = 0.5 * side * 0.6 - 0.2;
-        this.knees[i]!.rotation.x = 0.8;
-        this.shoulders[i]!.rotation.x = -0.9;
-        this.elbows[i]!.rotation.x = -0.7;
-      }
-      this.hips.position.y = 28;
+      const shoulder: V3 = [side * 12, 17, 0];
+      const elbow: V3 = [side * 12.8, (17 + wrist[1]) / 2 - 4, wrist[2] * 0.35];
+      this.aimBone(this.shoulders[i]!, shoulder, elbow);
+      this.aimBone(this.elbows[i]!, elbow, wrist);
     }
-
-    if (!moving) {
-      // Idle: shoulders drop, weapon comes down, slow sway.
-      const breath = Math.sin(this.phase) * 0.03;
-      this.torso.rotation.z = breath;
-      this.torso.rotation.y = breath * 0.5;
-      for (let i = 0; i < 2; ++i) {
-        this.shoulders[i]!.rotation.x = -0.25 + breath;
-        this.elbows[i]!.rotation.x = -0.5;
-      }
-    }
-
-    // Aim: the torso carries most of the pitch, the head the rest.
+    this.hips.position.y = 28 + (pose.onGround ? Math.abs(cos) * gait * 1.4 : 0);
+    this.torso.rotation.z = sin * (moving ? gait * 0.035 : 0.015);
+    this.torso.rotation.y = -sin * (moving ? gait * 0.05 : 0.008);
     const pitch = Math.max(-0.9, Math.min(0.9, pose.pitch));
-    this.torso.rotation.x = pitch * 0.35;
-    this.head.rotation.x = pitch * 0.5;
+    this.torso.rotation.x = pitch * 0.65;
+    this.head.rotation.x = pitch * 0.35;
   }
 
   dispose(): void {
-    this.root.traverse((object) => {
-      const mesh = object as THREE.Mesh;
-      if (mesh.isMesh) mesh.geometry.dispose();
-    });
-    // Maps are shared across every body on a team and outlive this one.
+    disposeParts(this.root);
     for (const material of this.materials) material.dispose();
+    // Cached team textures and weapon materials outlive a roster rebuild.
   }
 }

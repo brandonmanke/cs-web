@@ -237,14 +237,26 @@ No binary assets. Nothing to license, nothing to download, everything diffs.
   runtime and correct for the era.
 - **Textures** (`client/src/art/textures.ts`): seeded canvas generators —
   grain, stains, drips, rivets — at 128², nearest-filtered.
-- **Characters** (`client/src/art/character.ts`): rigid box hierarchy (what PSX
-  and GoldSrc actually did), proportioned to the sim hitboxes, animated with
-  sines. Tinted by `sampleLight` so they sit inside the baked lighting — but
+- **Characters** (`client/src/art/character.ts`): rigid joint hierarchy with
+  tapered limbs, chamfered bodies, boots, plate carriers and team headgear.
+  Faces appear only on the front of the head; cloth and gear have separate
+  procedural skins. The snapshot selects the held weapon and ducked scale;
+  arms reach its grip and handguard while the legs animate with sines.
+  Proportioned to the sim hitboxes. Tinted by `sampleLight` so they sit inside
+  the baked lighting — but
   the tint is remapped onto a readable band rather than applied raw, because a
   body in shadow that reads as a black cutout defeats the point of the art.
   Skins are cached per team, so a roster rebuild is cheap.
-- **Weapons** (`client/src/art/weapons.ts`): per-weapon box assemblies with
-  distinct silhouettes, plus muzzle offsets for flashes and tracers.
+- **Weapons** (`client/src/art/weapons.ts`): chamfered receivers, faceted barrels,
+  open sights and guards, bent magazines, optics and original 128² worn metal,
+  wood and polymer textures. Sleeved forearms taper into gloved palms and
+  fingers; support grips differ for rifles and pistols, and the knife uses one
+  hand. `art/geometry.ts` batches static parts by material while preserving
+  animated joints; each weapon uses 4–7 draws and fewer than 1,800 triangles.
+  Shared textures/materials survive swaps; each assembly owns its geometry.
+  The first-person rig renders in a separate depth-cleared pass with a fixed
+  70° FOV and camera-relative lighting, so walls cannot slice through the arms.
+  Tracer origins compensate for the difference from the world camera's FOV.
 - **Audio** (`client/src/audio.ts`): Web Audio synthesis — per-weapon voices,
   per-material impacts and footsteps, no samples. Anything happening at a place
   in the world goes through an HRTF `PannerNode`; only the gun in your own hands
@@ -273,7 +285,7 @@ client/src/           main.ts loop, sim.ts (snapshot mirror), renderer.ts,
                       menu.ts
 client/src/map/       brush.ts, build.ts (geometry + light bake), maps/
 client/src/map/maps/  foundry (team), depot (team), silo (FFA), practice (range)
-client/src/art/       textures.ts, character.ts, weapons.ts
+client/src/art/       textures.ts, geometry.ts, character.ts, weapons.ts
 client/src/generated/ sim.mjs wasm artifact (gitignored, `npm run wasm`)
 tools/mapcheck.ts     headless map validation against the real sim
 ```

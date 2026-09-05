@@ -1,5 +1,6 @@
 import * as THREE from "three";
-import { buildArms, buildWeapon, muzzleOffset } from "./art/weapons";
+import { buildArms, buildWeapon, muzzleOffset, WeaponId } from "./art/weapons";
+import { disposeParts } from "./art/geometry";
 
 // First-person weapon rig. Everything here is cosmetic: the sim decides where
 // bullets go, this decides how it feels to hold the thing. Bob sells speed,
@@ -8,7 +9,7 @@ import { buildArms, buildWeapon, muzzleOffset } from "./art/weapons";
 
 // Far enough forward that the stock isn't pressed against the near plane, and
 // angled across the view the way a held weapon actually sits.
-const BASE = new THREE.Vector3(7.4, -7.2, -22);
+const BASE = new THREE.Vector3(5.8, -6.5, -17);
 const LOWERED = new THREE.Vector3(9.5, -17, -20);
 const BASE_ROTATION = new THREE.Euler(-0.02, 0.14, 0.02);
 
@@ -28,6 +29,8 @@ export class Viewmodel {
   private readonly flashLight: THREE.PointLight;
 
   private model: THREE.Group | null = null;
+  private arms: THREE.Group | null = null;
+  private readonly target = new THREE.Vector3();
   private weaponId = -1;
   private kick = 0;
   private draw = 0;
@@ -37,15 +40,13 @@ export class Viewmodel {
   private flashTime = 0;
   private reloadTime = 0;
 
-  constructor(camera: THREE.Camera) {
+  constructor(private readonly camera: THREE.PerspectiveCamera) {
     this.rig.add(this.slot);
-    this.rig.add(buildArms());
     this.rig.position.copy(BASE);
-    this.rig.scale.setScalar(0.55);
+    this.rig.scale.setScalar(0.62);
     camera.add(this.rig);
 
-    // Muzzle flash: a crossed pair of emissive quads plus a real light, which
-    // is what makes it read on the surrounding geometry.
+    // Muzzle flash: an emissive quad and a brief light on the weapon and hands.
     const flashMaterial = new THREE.MeshBasicMaterial({
       color: 0xffd88a,
       transparent: true,
@@ -67,18 +68,22 @@ export class Viewmodel {
     this.weaponId = id;
     if (this.model) {
       this.slot.remove(this.model);
-      this.model.traverse((object) => {
-        const mesh = object as THREE.Mesh;
-        if (mesh.isMesh) mesh.geometry.dispose();
-      });
+      disposeParts(this.model);
+    }
+    if (this.arms) {
+      this.rig.remove(this.arms);
+      disposeParts(this.arms);
     }
     this.model = buildWeapon(id);
     this.slot.add(this.model);
+    this.arms = buildArms(id);
+    this.rig.add(this.arms);
 
     const muzzle = muzzleOffset(id);
     this.flash.position.set(muzzle[0], muzzle[1], muzzle[2] - 1);
     this.flashLight.position.set(muzzle[0], muzzle[1], muzzle[2] - 2);
     this.draw = 1; // play the raise
+    this.kick = this.flashTime = this.reloadTime = 0;
   }
 
   /** Down the scope, or dead: the weapon has no business in the frame. */
@@ -94,9 +99,15 @@ export class Viewmodel {
     this.flash.scale.setScalar(scale);
   }
 
-  /** Muzzle position in world space, for tracer origins. */
-  muzzleWorld(out: THREE.Vector3): THREE.Vector3 {
-    return this.flash.getWorldPosition(out);
+  /** Match the overlay's screen position when the tracer uses the world FOV. */
+  muzzleWorld(out: THREE.Vector3, worldCamera: THREE.PerspectiveCamera): THREE.Vector3 {
+    this.flash.getWorldPosition(out);
+    this.camera.worldToLocal(out);
+    const scale = Math.tan(THREE.MathUtils.degToRad(worldCamera.fov / 2)) /
+      Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
+    out.x *= scale;
+    out.y *= scale;
+    return worldCamera.localToWorld(out);
   }
 
   update(dt: number, pose: ViewmodelPose): void {
@@ -129,7 +140,14 @@ export class Viewmodel {
     this.reloadTime += (Number(pose.reloading) - this.reloadTime) * Math.min(1, dt * 7);
     const reload = this.reloadTime;
 
-    const target = new THREE.Vector3().copy(BASE).lerp(LOWERED, Math.max(reload, this.draw));
+    const target = this.target.copy(BASE);
+    if (this.weaponId >= WeaponId.knife && this.weaponId <= WeaponId.glock) {
+      // Short weapons need the grip higher in frame to keep both hands visible.
+      target.x -= 1.3;
+      target.y += 1.4;
+      target.z -= 1.5;
+    }
+    target.lerp(LOWERED, Math.max(reload, this.draw));
     this.rig.position.set(
       target.x + bobX + swayX,
       target.y - bobY + swayY - (pose.onGround ? 0 : 0.8),
