@@ -2,18 +2,22 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
-    />
+    <!-- No maximum-scale/user-scalable: iOS ignores both, so they only ever
+         took the pinch escape hatch away on the browsers that honour them.
+         Double-tap zoom is killed by touch-action: manipulation instead. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>cs-web</title>
     <style>
-      * { box-sizing: border-box; margin: 0; padding: 0; }
+      /* `manipulation` is "pan and pinch, but no double-tap zoom" — the whole
+         page, so a mistimed second tap on a button can never zoom you in. It
+         deliberately leaves pinch alone: that is the way back out if anything
+         ever does zoom the page. Surfaces that must not pan at all say so
+         themselves below. */
+      * { box-sizing: border-box; margin: 0; padding: 0; touch-action: manipulation; }
       html, body {
         width: 100%; height: 100%; overflow: hidden; background: #070908;
-        /* A phone would otherwise pull-to-refresh, pinch-zoom and text-select
-           the moment a thumb starts dragging the view around. */
-        overscroll-behavior: none; touch-action: none;
+        /* No pull-to-refresh, no text selection when a thumb drags the view. */
+        overscroll-behavior: none;
         -webkit-user-select: none; user-select: none;
         -webkit-tap-highlight-color: transparent;
       }
@@ -151,7 +155,10 @@
         touch-action: none; user-select: none;
       }
       #touch.hidden { display: none; }
-      #touch .pad { position: absolute; top: 0; bottom: 0; }
+      /* Stated on the pads and buttons themselves, not left to the layer:
+         touch-action doesn't inherit, and these are the elements a thumb
+         actually lands on. */
+      #touch .pad { position: absolute; top: 0; bottom: 0; touch-action: none; }
       #touch .pad.move { left: 0; width: 45%; }
       #touch .pad.look { left: 45%; right: 0; }
 
@@ -232,10 +239,10 @@
         background: rgba(6, 8, 7, 0.72);
         backdrop-filter: blur(2px);
         /* The panel is taller than a phone in landscape, and body sets
-           touch-action: none, so the overlay has to allow its own scroll.
-           Centring is margin:auto rather than align-items, which would put the
-           top of an overflowing panel out of reach. */
-        overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
+           this overlay has to scroll on its own. Centring is margin:auto
+           rather than align-items, which would put the top of an overflowing
+           panel out of reach. */
+        overflow-y: auto; overscroll-behavior: contain;
       }
       #menu.hidden { display: none; }
       #menu-panel {
