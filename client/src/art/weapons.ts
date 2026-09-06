@@ -63,6 +63,14 @@ function part(g: THREE.Group, mat: MatKey, size: V3, at: V3, rotX = 0): void {
   meshPart(g, bevelBox(...size), mats()[mat], at, [rotX, 0, 0]);
 }
 
+function joint(g: THREE.Group, name: string, at: V3): THREE.Group {
+  const group = new THREE.Group();
+  group.name = name;
+  group.position.set(...at);
+  g.add(group);
+  return group;
+}
+
 /** Faceted cylinder along the barrel axis; caps remain solid except the dark bore. */
 function tube(g: THREE.Group, mat: MatKey, radius: number, length: number, at: V3,
               frontRadius = radius): void {
@@ -96,9 +104,11 @@ function sights(g: THREE.Group, front: number, rear: number, y = 3.5): void {
   part(g, "edge", [0.2, 0.9, 0.25], [0, y - 0.3, front]);
 }
 
-function receiverDetails(g: THREE.Group, z: number): void {
+function receiverDetails(g: THREE.Group, z: number, chargingHandle = true): void {
   part(g, "dark", [0.08, 1, 3.8], [1.31, 1.4, z]); // ejection port
-  part(g, "edge", [0.7, 0.35, 1.1], [1.6, 1.1, z + 1.6]);
+  if (chargingHandle) {
+    part(joint(g, "action", [1.6, 1.1, z + 1.6]), "edge", [0.7, 0.35, 1.1], [0, 0, 0]);
+  }
   for (const x of [-1.32, 1.32]) {
     for (const offset of [-2, 2]) part(g, "edge", [0.1, 0.3, 0.3], [x, 0, z + offset]);
     part(g, "dark", [0.1, 0.28, 2.5], [x, -0.2, z + 3.5]);
@@ -107,9 +117,7 @@ function receiverDetails(g: THREE.Group, z: number): void {
 
 /** Continuous bent magazine, with ribs following the same three sections. */
 function magazine(g: THREE.Group, z: number, width: number, depth: number, bend: number): void {
-  const mag = new THREE.Group();
-  mag.position.set(0, -0.5, z);
-  g.add(mag);
+  const mag = joint(g, "magazine", [0, -0.5, z]);
   let y = 0, front = 0;
   for (let i = 0; i < 3; ++i) {
     const angle = -bend * (i + 0.3), length = 2.3;
@@ -180,7 +188,7 @@ function awp(): THREE.Group {
   part(g, "olive", [3, 4.2, 1.4], [0, -1.2, 14]);
   part(g, "dark", [3.2, 4.5, 0.65], [0, -1.2, 15]);
   part(g, "polymer", [3, 0.9, 5], [0, 1.8, 10]);
-  part(g, "metal", [2, 2.4, 3.6], [0, -2.3, -2.4]);
+  part(joint(g, "magazine", [0, -2.3, -2.4]), "metal", [2, 2.4, 3.6], [0, 0, 0]);
   for (const z of [-7.5, -2.2]) {
     part(g, "metal", [1.5, 1.3, 1], [0, 2.5, z]);
     tube(g, "edge", 1.06, 0.65, [0, 3.6, z]);
@@ -191,8 +199,9 @@ function awp(): THREE.Group {
   tube(g, "metal", 1.2, 2.6, [0, 3.6, 0.8]);
   tube(g, "glass", 1.05, 0.04, [0, 3.6, 2.12]);
   part(g, "metal", [1.5, 1.2, 1.5], [0, 4.9, -4.8]);
-  part(g, "edge", [2.1, 0.5, 0.5], [1.5, 1.6, 1.8]);
-  meshPart(g, new THREE.IcosahedronGeometry(0.65, 0), mats().polymer, [2.5, 1.3, 1.8]);
+  const bolt = joint(g, "action", [1.5, 1.6, 1.8]);
+  part(bolt, "edge", [2.1, 0.5, 0.5], [0, 0, 0]);
+  meshPart(bolt, new THREE.IcosahedronGeometry(0.65, 0), mats().polymer, [1, -0.3, 0]);
   for (const x of [-0.9, 0.9]) part(g, "metal", [0.45, 0.55, 6], [x, -1.6, -12]);
   grip(g, "olive");
   muzzle(g, 0.7, 1.4, -29);
@@ -206,14 +215,14 @@ function mp5(): THREE.Group {
   tube(g, "metal", 0.6, 7, [0, 1.4, -10]);
   part(g, "polymer", [2.8, 2.5, 5.5], [0, 0.4, -8.5]);
   tube(g, "metal", 0.45, 7, [0, 2.5, -8]);
-  part(g, "edge", [1.4, 0.45, 0.6], [-0.9, 2.6, -9.4]);
+  part(joint(g, "action", [-0.9, 2.6, -9.4]), "edge", [1.4, 0.45, 0.6], [0, 0, 0]);
   for (const x of [-1, 1]) part(g, "metal", [0.3, 0.55, 8], [x, 0.9, 6]);
   part(g, "polymer", [2.3, 4, 1], [0, -0.2, 10]);
   magazine(g, -2.8, 1.6, 2.5, 0.12);
   meshPart(g, new THREE.TorusGeometry(0.9, 0.2, 4, 10), mats().metal, [0, 3.1, -12.2]);
   part(g, "edge", [0.18, 0.75, 0.2], [0, 2.8, -12.2]);
   tube(g, "metal", 0.6, 0.9, [0, 3, 1]);
-  receiverDetails(g, -2);
+  receiverDetails(g, -2, false);
   grip(g);
   muzzle(g, 0.67, 1.4, -13.5);
   return g;
@@ -221,21 +230,24 @@ function mp5(): THREE.Group {
 
 function pistol(suppressed: boolean): THREE.Group {
   const g = new THREE.Group();
+  const slide = joint(g, "action", [0, 0, 0]);
   const length = suppressed ? 9 : 8;
-  part(g, "metal", [1.9, 2, length], [0, 1.4, -2.2]);
+  part(slide, "metal", [1.9, 2, length], [0, 1.4, -2.2]);
   part(g, "polymer", [1.85, 1.3, 6.2], [0, -0.15, -1]);
   part(g, "polymer", [2, 5.6, 2.6], [0, -3.1, 1.3], 0.18);
-  part(g, "dark", [2.2, 0.5, 2.9], [0, -5.8, 1.8]);
+  const mag = joint(g, "magazine", [0, -1, 1.3]);
+  part(mag, "metal", [1.5, 4.7, 2.1], [0, -2.3, 0.2], 0.18);
+  part(mag, "dark", [2.2, 0.5, 2.9], [0, -4.8, 0.5]);
   guard(g);
   for (const side of [-1, 1]) {
-    for (let z = -0.1; z < 1.5; z += 0.35) part(g, "dark", [0.05, 1.4, 0.12], [side * 0.97, 1.3, z]);
+    for (let z = -0.1; z < 1.5; z += 0.35) part(slide, "dark", [0.05, 1.4, 0.12], [side * 0.97, 1.3, z]);
     part(g, "edge", [0.15, 0.3, 1], [side, 0.1, 0.2]);
   }
-  part(g, "dark", [1.1, 0.08, 1.8], [0.2, 2.42, -1.9]);
-  part(g, "dark", [0.3, 0.4, 0.6], [0, 2.6, -5.3]);
+  part(slide, "dark", [1.1, 0.08, 1.8], [0.2, 2.42, -1.9]);
+  part(slide, "dark", [0.3, 0.4, 0.6], [0, 2.6, -5.3]);
   for (const x of [-0.6, 0.6]) {
-    part(g, "dark", [0.45, 0.4, 0.6], [x, 2.6, 1.4]);
-    part(g, "edge", [0.15, 0.15, 0.05], [x, 2.65, 1.72]);
+    part(slide, "dark", [0.45, 0.4, 0.6], [x, 2.6, 1.4]);
+    part(slide, "edge", [0.15, 0.15, 0.05], [x, 2.65, 1.72]);
   }
   if (suppressed) tube(g, "metal", 0.8, 6, [0, 1.4, -8.5]);
   else tube(g, "metal", 0.52, 0.4, [0, 1.4, -6.3]);
@@ -325,14 +337,33 @@ export function buildArms(id: number): THREE.Group {
   }
   if (id !== WeaponId.knife) {
     const at = supportGrip(id);
-    forearm(g, [-8, -10, 12], [at[0] - 1, at[1] - 1.8, at[2] + 1.4]);
-    part(g, "glove", [3.5, 1.6, 3.5], [at[0], at[1] - 1, at[2]]);
+    const sleeve = joint(g, "support_sleeve", [0, 0, 0]);
+    meshPart(sleeve, new THREE.CylinderGeometry(1.6, 2.65, 1, 8), mats().sleeve, [0, 0, 0]);
+    const hand = joint(g, "support_hand", at);
+    part(hand, "glove", [3.3, 2.3, 2.5], [-1, -1.8, 1.4]);
+    part(hand, "dark", [3.4, 0.5, 2.6], [-1, -2.3, 2]);
+    part(hand, "glove", [3.5, 1.6, 3.5], [0, -1, 0]);
     for (let i = 0; i < 4; ++i) {
-      part(g, "glove", [0.8, 2.2, 0.7], [at[0] - 1.2, at[1], at[2] - 1.2 + i * 0.8], 0.16);
-      part(g, "polymer", [0.85, 0.7, 0.6], [at[0] - 1.55, at[1], at[2] - 1.2 + i * 0.8]);
+      part(hand, "glove", [0.8, 2.2, 0.7], [-1.2, 0, -1.2 + i * 0.8], 0.16);
+      part(hand, "polymer", [0.85, 0.7, 0.6], [-1.55, 0, -1.2 + i * 0.8]);
     }
-    part(g, "glove", [0.8, 2, 1.2], [at[0] + 1.7, at[1], at[2] + 0.5], -0.4);
+    part(hand, "glove", [0.8, 2, 1.2], [1.7, 0, 0.5], -0.4);
+    poseSupportSleeve(sleeve, hand);
   }
   batchParts(g);
   return g;
+}
+
+const elbow = new THREE.Vector3(-8, -10, 12);
+const wrist = new THREE.Vector3();
+const sleeveDirection = new THREE.Vector3();
+const up = new THREE.Vector3(0, 1, 0);
+
+/** Keep the sleeve attached to the wrist as the support hand reaches/reloads. */
+export function poseSupportSleeve(sleeve: THREE.Object3D, hand: THREE.Object3D): void {
+  wrist.set(-1, -1.8, 1.4).applyQuaternion(hand.quaternion).add(hand.position);
+  sleeve.position.copy(elbow).add(wrist).multiplyScalar(0.5);
+  sleeveDirection.copy(wrist).sub(elbow);
+  sleeve.scale.y = sleeveDirection.length();
+  sleeve.quaternion.setFromUnitVectors(up, sleeveDirection.normalize());
 }

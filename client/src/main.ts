@@ -231,6 +231,8 @@ async function boot(): Promise<void> {
       sim.step(input.sample());
       sim.read(curr);
       input.notifyWeapon(curr.weapon);
+      viewmodel.setWeapon(curr.weapon);
+      viewmodel.setReloadTicks(curr.reload);
       // Events are per-tick, not cumulative: read them before the next step
       // overwrites them, which is exactly what this loop does.
       for (let i = 0; i < curr.eventCount; ++i) handleEvent(curr.events[i]!);
@@ -240,7 +242,10 @@ async function boot(): Promise<void> {
       // command onward. Catching it here rather than at render time means it
       // survives a frame that advanced several ticks.
       const alive = (curr.flags & Flags.alive) !== 0;
-      if (alive && !wasAlive) input.setYaw(curr.players[curr.localIndex]!.yaw);
+      if (alive && !wasAlive) {
+        input.setYaw(curr.players[curr.localIndex]!.yaw);
+        viewmodel.reset();
+      }
       wasAlive = alive;
     }
 
@@ -256,7 +261,7 @@ async function boot(): Promise<void> {
     viewmodel.update(dt, {
       speedH: curr.speedH,
       onGround: (curr.flags & Flags.onGround) !== 0,
-      reloading: curr.reload > 0,
+      tickAlpha: alpha,
       yawDelta: input.yawDelta,
       pitchDelta: input.pitchDelta,
     });

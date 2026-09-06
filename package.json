@@ -14,7 +14,7 @@
     "test": "cmake --preset native && cmake --build --preset native -j && ctest --preset native",
     "test:touch": "esbuild tools/touch.test.ts --bundle --platform=node --format=esm --outfile=build/touch.test.mjs --log-level=error && node --test build/touch.test.mjs",
     "test:bots": "esbuild tools/bots.test.ts --bundle --platform=node --format=esm --outfile=build/bots.test.mjs --log-level=error && node --test build/bots.test.mjs",
-    "test:art": "esbuild tools/character.test.ts tools/sky.test.ts --bundle --platform=node --format=esm --outdir=build --out-extension:.js=.mjs --log-level=error && node --test build/character.test.mjs build/sky.test.mjs",
+    "test:art": "esbuild tools/character.test.ts tools/sky.test.ts tools/viewmodel.test.ts --bundle --platform=node --format=esm --outdir=build --out-extension:.js=.mjs --log-level=error && node --test build/character.test.mjs build/sky.test.mjs build/viewmodel.test.mjs",
     "mapcheck": "esbuild tools/mapcheck.ts --bundle --platform=node --format=esm --outfile=build/mapcheck.mjs --log-level=error && node build/mapcheck.mjs",
     "typecheck": "tsc --noEmit"
   },

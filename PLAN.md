@@ -257,11 +257,15 @@ No binary assets. Nothing to license, nothing to download, everything diffs.
   wood and polymer textures. Sleeved forearms taper into gloved palms and
   fingers; support grips differ for rifles and pistols, and the knife uses one
   hand. `art/geometry.ts` batches static parts by material while preserving
-  animated joints; each weapon uses 4–7 draws and fewer than 1,800 triangles.
+  animated joints, including magazines and slides/bolts.
   Shared textures/materials survive swaps; each assembly owns its geometry.
   The first-person rig renders in a separate depth-cleared pass with a fixed
   70° FOV and camera-relative lighting, so walls cannot slice through the arms.
   Tracer origins compensate for the difference from the world camera's FOV.
+  Reloads now reach, extract, insert and rack in time with the sim countdown;
+  the support sleeve stretches between the fixed elbow and moving wrist.
+  Rifle, pistol and knife draws settle over 0.25s. A switch, cancellation or
+  respawn clears the pose, and an accepted shot ends any remaining draw.
 - **Audio** (`client/src/audio.ts`): Web Audio synthesis — per-weapon voices,
   per-material impacts and footsteps, no samples. Anything happening at a place
   in the world goes through an HRTF `PannerNode`; only the gun in your own hands
@@ -367,8 +371,9 @@ Next, in order:
 - **M-modes+** — round loop, buy menu, defuse.
 - **M-content** — more maps; a TrenchBroom `.map` importer feeding
   `sim_add_brush` if hand-authoring in TS gets tiring; armour.
-- **M-polish** — reload/draw viewmodel anims, reverb sized to the room the
-  listener is standing in, perf pass (instancing, draw batching).
+- **M-polish** — reload/draw viewmodel animations landed in September 2026.
+  Next: reverb sized to the room the listener is standing in, perf pass
+  (instancing, draw batching).
 
 ## 8. Rules that don't change
 
