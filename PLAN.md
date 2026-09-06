@@ -191,9 +191,13 @@ what makes the M-net server a compile target rather than a rewrite.
 - **Spawns** are authored per map and team-tagged. The first spawn is where the
   level wants you to enter, so the opening placement is authored; every respawn
   after that picks the point furthest from a living enemy.
-- **Bot AI** is reactive, not a nav mesh: goals are drawn from the map's spawn
-  points, steering is direct, and a ledge probe plus bump-and-slide covers the
-  rest. Skill scales aim slew rate, aim error, reaction delay and burst
+- **Bot AI** follows a static waypoint graph flood-filled from spawns with the
+  standing collision hull. Small step probes admit stairs and ramps, reject
+  walls and gaps, and keep stacked floors separate. Roaming chooses reachable
+  destinations across all levels; pursuit follows routes while aiming at the
+  opponent. Reloading bots seek nearby cover and crouch behind it. Routes and
+  cursors stay in deterministic sim state; movement still uses ordinary player
+  inputs. Skill scales aim slew rate, aim error, reaction delay and burst
   discipline. It is a **continuous 0–2**, not three presets: `kSkills` holds
   easy/normal/hard as anchors and `skill_of` interpolates between the two a bot
   sits between, so the menu's slider and `?skill=1.4` are real settings rather
@@ -217,7 +221,8 @@ what makes the M-net server a compile target rather than a rewrite.
   into the world. Full hull-vs-hull sweeps inside pmove would be the "correct"
   fix and would also reintroduce every wedging failure v3 spent its time
   eliminating, with ten hulls shoving each other every tick.
-- Known gaps: bots don't duck, don't bhop, and don't buy; teams never rebalance.
+- Known gaps: bots don't plan crouch-only passages, don't bhop, and don't buy;
+  teams never rebalance.
 
 ## 5. Art pipeline — everything is code
 
@@ -357,9 +362,8 @@ Next, in order:
   snapshot delta vs last-acked. Budget ≤30 kB/s down per client. Harness:
   150 ms + 5% loss must stay playable. The roster/event snapshot from R7 is
   already the shape this wants to delta-encode.
-- **M-bots+** — the nav the reactive AI is standing in for: "can I stand here"
-  flood-fill sampling over the trace API (`tools/mapcheck.ts` already has the
-  drop-probe primitive), waypoint pathing, bots that duck and take cover.
+- **M-bots+** — standing-hull route sampling, waypoint pathing and reload cover
+  landed in September 2026. Next: crouch-only routes and coordinated tactics.
 - **M-modes+** — round loop, buy menu, defuse.
 - **M-content** — more maps; a TrenchBroom `.map` importer feeding
   `sim_add_brush` if hand-authoring in TS gets tiring; armour.

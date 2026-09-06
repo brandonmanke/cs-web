@@ -57,6 +57,7 @@ Controls: **WASD** move · **Space**/**wheel** jump · **Shift** walk (silent) �
 ```sh
 npm run test        # native build + movement/determinism tests (ctest)
 npm run test:touch  # touch interruption/recovery regressions (after npm run wasm)
+npm run test:bots   # five-minute bot traversal on every map (after npm run wasm)
 npm run test:art    # character poses, corpse clearance and planet-ring overlap
 npm run mapcheck    # geometry, spawn and walking-route checks against the real sim
 npm run typecheck   # client TS

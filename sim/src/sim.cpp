@@ -1,4 +1,5 @@
 #include "state.h"
+#include "nav.h"
 #include "world.h"
 
 #include <cmath>
@@ -297,6 +298,7 @@ extern "C" {
 
 void sim_create() {
   cs::world_create();
+  cs::nav_reset();
   std::memset(&g_state, 0, sizeof(g_state));
   g_state.rng = 0x9E3779B9U;
   g_state.mode = cs::ModeRange;
@@ -317,6 +319,7 @@ void sim_create() {
 
 void sim_world_reset() {
   cs::world_reset();
+  cs::nav_reset();
   g_state.spawn_count = 0;
   // The roster belongs to the map that is being torn down; keep only the local
   // player so a rebuilt world never inherits bots standing in old geometry.

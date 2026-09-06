@@ -1,6 +1,7 @@
 #include "cs/sim.h"
 #include "../src/state.h"
 #include "../src/world.h"
+#include "../src/nav.h"
 
 #include <cmath>
 #include <cstdio>
@@ -714,6 +715,84 @@ void test_wallbang_penetration() {
   run_ticks(24, 0.0F, 0.0F, 0);
 }
 
+bool bot_reaches(std::uint32_t index, cs::Vec3 goal) {
+  auto& e = cs::state().players[index];
+  e.bot.goal = goal;
+  e.bot.goal_ticks = 2400U;
+  if (!cs::nav_plan(cs::state(), index, false)) return false;
+  for (int tick = 0; tick < 2400; ++tick) {
+    const auto feet = cs::feet_of(e);
+    if (std::hypot(feet.x - goal.x, feet.z - goal.z) < 18.0F &&
+        std::fabs(feet.y + cs::kHullHalfHeightStand - goal.y) < 3.0F) return true;
+    sim_step(0, 0, 0, 0, 0, 0);
+    CHECK(e.move.origin.y >= 35.9F);
+  }
+  std::printf("bot route stopped at %.1f,%.1f,%.1f toward %.1f,%.1f,%.1f\n",
+              e.move.origin.x, e.move.origin.y, e.move.origin.z, goal.x, goal.y, goal.z);
+  return false;
+}
+
+void test_bot_routes_around_walls_and_takes_cover() {
+  sim_create();
+  sim_world_reset();
+  sim_add_box(-384, -32, -384, 384, 0, 384, cs::MaterialConcrete);
+  sim_add_box(-32, 0, -256, 32, 128, 256, cs::MaterialConcrete);
+  sim_add_spawn(-256, 38, 0, 0, cs::TeamNone);
+  sim_world_finalize();
+  sim_spawn(-320, 38, -320, 0);
+  const auto bot = sim_add_bot(-256, 38, 0, 0, cs::TeamNone, 0);
+  CHECK(bot_reaches(bot, {256, 36.03125F, 0}));
+  CHECK(bot_reaches(bot, {-256, 36.03125F, 0}));
+
+  // The near side of the partition hides a crouched head from a threat east.
+  CHECK(cs::nav_cover(cs::state(), bot, {256, 64, 0}));
+  const auto cover = cs::state().players[bot].bot.goal;
+  CHECK(cover.x < -32);
+  CHECK(cs::world_trace_ray({256, 64, 0}, cover).hit);
+  CHECK(bot_reaches(bot, cover));
+
+  // Exercise the decision too: an exposed reloading bot moves behind the
+  // partition and presses duck through the same pmove path as the player.
+  auto& s = cs::state();
+  auto& e = s.players[bot];
+  s.mode = cs::ModeDeathmatch;
+  sim_spawn(256, 38, -320, 0);
+  e.move.origin = {-192, 36.03125F, -320};
+  e.move.velocity = {};
+  e.bot.skill = 1;
+  e.bot.target = 0;
+  e.bot.navigation_ticks = 0;
+  e.weapon.reload_ticks = 160;
+  bool crouched_in_cover = false;
+  for (int tick = 0; tick < 180; ++tick) {
+    sim_step(0, 0, 0, 0, 0, 0);
+    if (e.move.ducked && cs::world_trace_ray(cs::eye_of(s.players[0]), cs::eye_of(e)).hit) {
+      crouched_in_cover = true;
+    }
+  }
+  CHECK(crouched_in_cover);
+}
+
+void test_bot_routes_above_and_below_a_bridge() {
+  sim_create();
+  sim_world_reset();
+  sim_add_box(-512, -32, -256, 512, 0, 256, cs::MaterialConcrete);
+  sim_add_box(-128, 128, -64, 384, 144, 64, cs::MaterialMetal);
+  const float slope = 144.0F / 256.0F;
+  const float ramp[] = {
+      -1, 0, 0, 384, 1, 0, 0, -128, 0, -1, 0, 0,
+      0, 0, -1, 64, 0, 0, 1, 64, -slope, 1, 0, 216,
+  };
+  CHECK(sim_add_brush(ramp, 6, cs::MaterialMetal) == 1);
+  sim_add_spawn(-448, 38, 0, 0, cs::TeamNone);
+  sim_world_finalize();
+  sim_spawn(448, 38, 192, 0);
+  const auto bot = sim_add_bot(-448, 38, 0, 0, cs::TeamNone, 0);
+  CHECK(bot_reaches(bot, {256, 180.03125F, 0}));
+  CHECK(bot_reaches(bot, {256, 36.03125F, 0}));
+  CHECK(bot_reaches(bot, {-448, 36.03125F, 0}));
+}
+
 void test_determinism() {
   // Includes bots: their scans, aim error and goal picks all draw from the sim
   // rng, so a divergence anywhere in bots.cpp shows up here.
@@ -772,6 +851,8 @@ int main() {
   test_passive_bots_hold_their_fire();
   test_loadout_survives_death();
   test_team_mode_has_no_friendly_fire();
+  test_bot_routes_around_walls_and_takes_cover();
+  test_bot_routes_above_and_below_a_bridge();
   test_determinism();
 
   if (g_failures == 0) {

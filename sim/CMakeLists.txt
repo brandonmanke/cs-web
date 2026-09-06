@@ -3,6 +3,7 @@ set(CS_SIM_SOURCES
   src/pmove.cpp
   src/weapons.cpp
   src/bots.cpp
+  src/nav.cpp
   src/sim.cpp
 )
 

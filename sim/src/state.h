@@ -42,6 +42,7 @@ struct WeaponState {
 
 // Everything the AI needs, kept inside the deterministic state so a bot match
 // hashes the same twice. Unused on the local player.
+inline constexpr std::uint32_t kMaxBotPath = 128;
 struct BotState {
   float skill;           // 0 = easy, 1 = normal, 2 = hard, continuous between
   std::uint32_t target;  // player index being engaged, or kMaxPlayers
@@ -53,6 +54,11 @@ struct BotState {
   std::uint32_t goal_ticks;     // until the roam goal is abandoned
   std::uint32_t strafe_ticks;   // remaining ticks of the current strafe leg
   std::uint32_t stuck_ticks;    // consecutive ticks of going nowhere
+  std::uint32_t path[kMaxBotPath];
+  std::uint32_t path_count;
+  std::uint32_t path_cursor;
+  std::uint32_t navigation_ticks; // staggered replanning while chasing
+  std::uint32_t cover_ticks;      // hold cover during a reload
   float aim_yaw_error;
   float aim_pitch_error;
   Vec3 goal;

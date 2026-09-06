@@ -55,6 +55,9 @@ jobs:
       - name: Test touch controls
         run: npm run test:touch
 
+      - name: Test bot navigation
+        run: npm run test:bots
+
       - name: Test character poses
         run: npm run test:art
 
