@@ -170,6 +170,15 @@ async function checkMap(name: string, map: MapDef): Promise<void> {
 
   // Valid brushes and clean spawns do not guarantee a player can cross a map.
   for (const failure of checkRoutes(name, sim, snapshot)) fail(failure);
+  if (name === "foundry") {
+    const before = failures;
+    for (const x of [-192, 192]) {
+      for (const z of [-400, 0, 400]) {
+        if (sim.isBlocked([x, 272, z], [x, 2000, z])) fail(`Foundry roof opening is blocked at ${x},${z}`);
+      }
+    }
+    if (before === failures) pass("open sky above the furnace and both catwalk approaches");
+  }
   if (name === "relay") {
     const before = failures;
     for (const x of [-736, 736]) {

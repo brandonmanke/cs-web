@@ -1,10 +1,11 @@
 import * as THREE from "three";
 
-// Original orbital sky, painted once into six small cube faces. Sampling a
-// direction (rather than six unrelated pictures) keeps nebulae and stars
+// Original skies, painted once into six small cube faces. Sampling a
+// direction (rather than six unrelated pictures) keeps clouds and stars
 // continuous across cube edges. No downloaded assets or per-frame effects.
 const SIZE = 512;
 let orbital: THREE.CubeTexture | null = null;
+let dusk: THREE.CubeTexture | null = null;
 
 function hash(x: number, y: number, z: number): number {
   let n = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(z, 2147483647) ^ 9277;
@@ -40,7 +41,116 @@ export function orbitalSky(): THREE.CubeTexture {
     x: hash(i, 19, 3) * 1.7 - 0.85, y: hash(i, 31, 9) * 1.7 - 0.85,
     radius: 0.035 + hash(i, 7, 21) * 0.13,
   }));
+  orbital = paintSky((direction, color) => {
+    const { x: dx, y: dy, z: dz } = direction;
+    const cloud = noise(dx * 5, dy * 5, dz * 5);
+    const detail = noise(dx * 19, dy * 19, dz * 19);
+    const band = Math.exp(-Math.pow(dy + dx * 0.55 - 0.12 + (cloud - 0.5) * 0.5, 2) * 18);
+    const mist = band * (0.35 + cloud * 0.65) * (0.65 + detail * 0.35);
+    const horizon = Math.pow(1 - Math.abs(dy), 5);
+    let r = 7 + horizon * 7 + mist * 32;
+    let g = 11 + horizon * 12 + mist * 39;
+    let b = 24 + horizon * 19 + mist * 73;
+    const star = hash(Math.floor(dx * 900), Math.floor(dy * 900), Math.floor(dz * 900));
+    if (star > 0.9985) {
+      const shine = 85 + (star - 0.9985) / 0.0015 * 160;
+      r += shine; g += shine; b += shine;
+    }
+
+    // A banded ice giant with a tilted ring, lit from its upper left.
+    const facing = direction.dot(planet);
+    if (facing > 0.88) {
+      const px = direction.dot(right) / 0.18;
+      const py = direction.dot(up) / 0.18;
+      const disc = px * px + py * py;
+      if (disc < 1) {
+        const pz = Math.sqrt(1 - disc);
+        const light = Math.max(0.08, -px * 0.5 + py * 0.35 + pz * 0.76);
+        const bands = Math.sin((py + detail * 0.055) * 32) * 0.08 + 0.86;
+        const rim = Math.pow(1 - pz, 4) * 36;
+        r = (96 * bands) * light + rim * 0.4;
+        g = (153 * bands) * light + rim * 0.8;
+        b = (189 * bands) * light + rim;
+      }
+      // Project an inclined ring plane, then compare its depth with the
+      // front of the sphere. The near arc crosses the planet; the far arc
+      // disappears behind it instead of both arcs being painted over.
+      const ringX = px * 0.963 - py * 0.270;
+      const ringY = px * 0.270 + py * 0.963;
+      const ringRadius = Math.hypot(ringX, ringY / 0.38);
+      const ringDepth = -ringY * Math.sqrt(1 - 0.38 ** 2) / 0.38;
+      if (ringRadius > 1.24 && ringRadius < 1.92 &&
+          (disc >= 1 || ringDepth > Math.sqrt(1 - disc))) {
+        const stripe = 0.78 + Math.sin(ringRadius * 55) * 0.10;
+        r = 126 * stripe; g = 144 * stripe; b = 157 * stripe;
+      }
+    }
+
+    // An inhabited moon in a different bearing. Crater rims catch the
+    // crescent light; amber city grids cluster on its dark hemisphere.
+    if (direction.dot(moon) > 0.97) {
+      const mx = direction.dot(moonRight) / 0.16;
+      const my = direction.dot(moonUp) / 0.16;
+      const disc = mx * mx + my * my;
+      if (disc < 1) {
+        const mz = Math.sqrt(1 - disc);
+        const sun = -mx * 0.90 + my * 0.20 + mz * 0.22;
+        let rock = 115 + noise(mx * 9, my * 9, mz * 9) * 55;
+        for (const crater of craters) {
+          const distance = Math.hypot(mx - crater.x, my - crater.y) / crater.radius;
+          if (distance < 1) rock *= 0.62 + distance * 0.25;
+          else if (distance < 1.18) rock *= 1.14;
+        }
+        const light = 0.13 + Math.max(0, sun) * 0.86;
+        r = rock * light; g = rock * light * 1.02; b = rock * light * 1.12;
+        const settlement = Math.max(
+          Math.exp(-((mx - 0.32) ** 2 + (my - 0.18) ** 2) / 0.030),
+          Math.exp(-((mx - 0.52) ** 2 + (my + 0.32) ** 2) / 0.040),
+          Math.exp(-((mx - 0.58) ** 2 + (my - 0.45) ** 2) / 0.018),
+        );
+        const gridX = (mx + my * 0.17) * 70, gridY = my * 70;
+        const street = Math.abs(gridX - Math.round(gridX)) < 0.17 ||
+          Math.abs(gridY - Math.round(gridY)) < 0.17;
+        if (street && hash(Math.floor(mx * 96), Math.floor(my * 96), 490) > 0.35) {
+          const city = settlement * Math.min(1, Math.max(0, (0.12 - sun) * 5)) * Math.sqrt(mz);
+          r += city * 235; g += city * 164; b += city * 64;
+        }
+      }
+    }
+    color.set(r, g, b);
+  });
+  return orbital;
+}
+
+export function duskSky(): THREE.CubeTexture {
+  if (dusk) return dusk;
+  const sun = new THREE.Vector3(-0.55, 0.50, 0.83).normalize();
+  dusk = paintSky((direction, color) => {
+    const { x, y, z } = direction;
+    const horizon = Math.exp(-Math.max(0, y) * 3.8);
+    const facing = Math.max(0, direction.dot(sun));
+    const glow = Math.pow(facing, 14);
+    let r = 34 + horizon * 118 + glow * 65;
+    let g = 43 + horizon * 51 + glow * 28;
+    let b = 64 + horizon * 11 + glow * 8;
+    // Broad smoky banks with finer ragged edges, lit amber toward the sun.
+    const cloud = noise(x * 3, y * 6, z * 3) * 0.65 +
+      noise(x * 11, y * 18, z * 11) * 0.25 + noise(x * 31, y * 43, z * 31) * 0.10;
+    const opacity = Math.min(0.92, Math.max(0, (cloud - 0.38) * 3));
+    const edge = Math.exp(-Math.pow((cloud - 0.40) * 18, 2)) * glow;
+    const disc = Math.min(1, Math.max(0, (facing - 0.9982) / 0.0005));
+    r += disc * 150; g += disc * 118; b += disc * 64;
+    r = r * (1 - opacity) + (36 + horizon * 28 + glow * 55) * opacity + edge * 48;
+    g = g * (1 - opacity) + (38 + horizon * 13 + glow * 24) * opacity + edge * 24;
+    b = b * (1 - opacity) + (50 + horizon * 4 + glow * 8) * opacity + edge * 9;
+    color.set(r, g, b);
+  });
+  return dusk;
+}
+
+function paintSky(paint: (direction: THREE.Vector3, color: THREE.Vector3) => void): THREE.CubeTexture {
   const direction = new THREE.Vector3();
+  const color = new THREE.Vector3();
   const faces: HTMLCanvasElement[] = [];
   for (let face = 0; face < 6; ++face) {
     const canvas = document.createElement("canvas");
@@ -59,96 +169,22 @@ export function orbitalSky(): THREE.CubeTexture {
           default: direction.set(-u, -v, -1); break;
         }
         direction.normalize();
-        const { x: dx, y: dy, z: dz } = direction;
-        const cloud = noise(dx * 5, dy * 5, dz * 5);
-        const detail = noise(dx * 19, dy * 19, dz * 19);
-        const band = Math.exp(-Math.pow(dy + dx * 0.55 - 0.12 + (cloud - 0.5) * 0.5, 2) * 18);
-        const mist = band * (0.35 + cloud * 0.65) * (0.65 + detail * 0.35);
-        const horizon = Math.pow(1 - Math.abs(dy), 5);
-        let r = 7 + horizon * 7 + mist * 32;
-        let g = 11 + horizon * 12 + mist * 39;
-        let b = 24 + horizon * 19 + mist * 73;
-        const star = hash(Math.floor(dx * 900), Math.floor(dy * 900), Math.floor(dz * 900));
-        if (star > 0.9985) {
-          const shine = 85 + (star - 0.9985) / 0.0015 * 160;
-          r += shine; g += shine; b += shine;
-        }
-
-        // A banded ice giant with a tilted ring, lit from its upper left.
-        const facing = direction.dot(planet);
-        if (facing > 0.88) {
-          const px = direction.dot(right) / 0.18;
-          const py = direction.dot(up) / 0.18;
-          const disc = px * px + py * py;
-          if (disc < 1) {
-            const pz = Math.sqrt(1 - disc);
-            const light = Math.max(0.08, -px * 0.5 + py * 0.35 + pz * 0.76);
-            const bands = Math.sin((py + detail * 0.055) * 32) * 0.08 + 0.86;
-            const rim = Math.pow(1 - pz, 4) * 36;
-            r = (96 * bands) * light + rim * 0.4;
-            g = (153 * bands) * light + rim * 0.8;
-            b = (189 * bands) * light + rim;
-          }
-          // Project an inclined ring plane, then compare its depth with the
-          // front of the sphere. The near arc crosses the planet; the far arc
-          // disappears behind it instead of both arcs being painted over.
-          const ringX = px * 0.963 - py * 0.270;
-          const ringY = px * 0.270 + py * 0.963;
-          const ringRadius = Math.hypot(ringX, ringY / 0.38);
-          const ringDepth = -ringY * Math.sqrt(1 - 0.38 ** 2) / 0.38;
-          if (ringRadius > 1.24 && ringRadius < 1.92 &&
-              (disc >= 1 || ringDepth > Math.sqrt(1 - disc))) {
-            const stripe = 0.78 + Math.sin(ringRadius * 55) * 0.10;
-            r = 126 * stripe; g = 144 * stripe; b = 157 * stripe;
-          }
-        }
-
-        // An inhabited moon in a different bearing. Crater rims catch the
-        // crescent light; amber city grids cluster on its dark hemisphere.
-        if (direction.dot(moon) > 0.97) {
-          const mx = direction.dot(moonRight) / 0.16;
-          const my = direction.dot(moonUp) / 0.16;
-          const disc = mx * mx + my * my;
-          if (disc < 1) {
-            const mz = Math.sqrt(1 - disc);
-            const sun = -mx * 0.90 + my * 0.20 + mz * 0.22;
-            let rock = 115 + noise(mx * 9, my * 9, mz * 9) * 55;
-            for (const crater of craters) {
-              const distance = Math.hypot(mx - crater.x, my - crater.y) / crater.radius;
-              if (distance < 1) rock *= 0.62 + distance * 0.25;
-              else if (distance < 1.18) rock *= 1.14;
-            }
-            const light = 0.13 + Math.max(0, sun) * 0.86;
-            r = rock * light; g = rock * light * 1.02; b = rock * light * 1.12;
-            const settlement = Math.max(
-              Math.exp(-((mx - 0.32) ** 2 + (my - 0.18) ** 2) / 0.030),
-              Math.exp(-((mx - 0.52) ** 2 + (my + 0.32) ** 2) / 0.040),
-              Math.exp(-((mx - 0.58) ** 2 + (my - 0.45) ** 2) / 0.018),
-            );
-            const gridX = (mx + my * 0.17) * 70, gridY = my * 70;
-            const street = Math.abs(gridX - Math.round(gridX)) < 0.17 ||
-              Math.abs(gridY - Math.round(gridY)) < 0.17;
-            if (street && hash(Math.floor(mx * 96), Math.floor(my * 96), 490) > 0.35) {
-              const city = settlement * Math.min(1, Math.max(0, (0.12 - sun) * 5)) * Math.sqrt(mz);
-              r += city * 235; g += city * 164; b += city * 64;
-            }
-          }
-        }
+        paint(direction, color);
         const index = (y * SIZE + x) * 4;
-        pixels.data[index] = r;
-        pixels.data[index + 1] = g;
-        pixels.data[index + 2] = b;
+        pixels.data[index] = color.x;
+        pixels.data[index + 1] = color.y;
+        pixels.data[index + 2] = color.z;
         pixels.data[index + 3] = 255;
       }
     }
     ctx.putImageData(pixels, 0, 0);
     faces.push(canvas);
   }
-  orbital = new THREE.CubeTexture(faces);
-  orbital.colorSpace = THREE.SRGBColorSpace;
-  orbital.magFilter = THREE.LinearFilter;
-  orbital.minFilter = THREE.LinearFilter;
-  orbital.generateMipmaps = false;
-  orbital.needsUpdate = true;
-  return orbital;
+  const texture = new THREE.CubeTexture(faces);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+  return texture;
 }

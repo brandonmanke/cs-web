@@ -6,15 +6,16 @@ import type { MapDef, SpawnDef } from "../mapdef";
 //
 // A sunken furnace floor ringed by a raised walkway, crossed overhead by a
 // catwalk. Three heights, four ways between them, and every long sightline
-// broken by cover, so no single position controls the room. Enclosed and lit by
-// sodium fixtures rather than daylight: the bake wants pools of light and deep
-// shadow to read against.
+// broken by cover, so no single position controls the room. An open furnace
+// roof frames a smoky dusk sky; sodium gantry lights keep warm pools of light
+// under the cooler canopy over the outer walkways.
 
 const OUTER = 768;      // walkway outer edge
 const PIT = 384;        // furnace floor half-extent
 const WALK_Y = 96;      // walkway surface
 const CATWALK_Y = 208;  // catwalk surface
 const CEIL_Y = 448;
+const ROOF_OPEN = 512;
 const THICK = 32;
 const FLOOR_BASE = -32;
 
@@ -34,7 +35,7 @@ brushes.push(
   box([PIT, FLOOR_BASE, -PIT], [OUTER, WALK_Y, PIT], Surface.metal, "grate"),
 );
 
-// Outer walls and ceiling.
+// Outer walls and a perimeter canopy, leaving the furnace roof open.
 brushes.push(
   box([-OUTER - THICK, FLOOR_BASE, -OUTER - THICK], [OUTER + THICK, CEIL_Y, -OUTER],
       Surface.concrete, "brick"),
@@ -44,9 +45,25 @@ brushes.push(
       Surface.concrete, "brick"),
   box([OUTER, FLOOR_BASE, -OUTER], [OUTER + THICK, CEIL_Y, OUTER],
       Surface.concrete, "brick"),
-  box([-OUTER - THICK, CEIL_Y, -OUTER - THICK], [OUTER + THICK, CEIL_Y + THICK, OUTER + THICK],
+  box([-OUTER - THICK, CEIL_Y, -OUTER - THICK], [OUTER + THICK, CEIL_Y + THICK, -ROOF_OPEN],
+      Surface.concrete, "tech"),
+  box([-OUTER - THICK, CEIL_Y, ROOF_OPEN], [OUTER + THICK, CEIL_Y + THICK, OUTER + THICK],
+      Surface.concrete, "tech"),
+  box([-OUTER - THICK, CEIL_Y, -ROOF_OPEN], [-ROOF_OPEN, CEIL_Y + THICK, ROOF_OPEN],
+      Surface.concrete, "tech"),
+  box([ROOF_OPEN, CEIL_Y, -ROOF_OPEN], [OUTER + THICK, CEIL_Y + THICK, ROOF_OPEN],
       Surface.concrete, "tech"),
 );
+
+// Two steel gantries carry the four pit fixtures across the opening.
+for (const z of [-256, 256]) {
+  brushes.push(box([-ROOF_OPEN, CEIL_Y, z - 20], [ROOF_OPEN, CEIL_Y + THICK, z + 20],
+                   Surface.metal, "rust"));
+  for (const x of [-256, 256]) {
+    brushes.push(box([x - 80, CEIL_Y - 14, z - 80], [x + 80, CEIL_Y + 6, z + 80],
+                     Surface.metal, "metal"));
+  }
+}
 
 // Hazard-striped lip around the pit edge, so the drop reads at speed.
 const LIP = 8;
@@ -103,7 +120,7 @@ brushes.push(
   box([556, WALK_Y, -96], [568, WALK_Y + 72, 96], Surface.wood, "crate"),
 );
 
-// Furnace columns: sightline breakers that also hold the ceiling up visually.
+// Furnace columns: sightline breakers that also hold the perimeter canopy up.
 for (const [x, z] of [[-576, -576], [576, -576], [-576, 576], [576, 576]]) {
   brushes.push(box([x! - 48, WALK_Y, z! - 48], [x! + 48, CEIL_Y, z! + 48],
                    Surface.concrete, "concrete"));
@@ -118,14 +135,15 @@ brushes.push(
 
 // --- lights -----------------------------------------------------------------
 
-// Recessed ceiling fixtures. Each pairs with a MapLight below it so the bright
+// Canopy and gantry fixtures. Each pairs with a MapLight below it so the bright
 // panel you see is the thing actually casting the pool of light.
 const FIXTURES: Array<[number, number]> = [
   [-256, -256], [256, -256], [-256, 256], [256, 256],
   [-576, 0], [576, 0], [0, -576], [0, 576],
 ];
 for (const [x, z] of FIXTURES) {
-  brushes.push(box([x - 72, CEIL_Y - 10, z - 72], [x + 72, CEIL_Y, z + 72],
+  const top = x === 0 || z === 0 ? CEIL_Y : CEIL_Y - 14;
+  brushes.push(box([x - 72, top - 2, z - 72], [x + 72, top, z + 72],
                    Surface.metal, "light"));
 }
 
@@ -163,10 +181,11 @@ export const FOUNDRY: MapDef = {
   name: "foundry",
   brushes,
   lights,
-  ambient: [0.085, 0.095, 0.115],
+  ambient: [0.12, 0.135, 0.17],
   mode: Mode.team,
   bots: 7, // 4v4 including you
   spawns,
-  background: 0x0a0c0d,
-  fog: [900, 3400],
+  background: 0x554d50,
+  sky: "dusk",
+  fog: [1100, 4000],
 };

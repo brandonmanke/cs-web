@@ -30,7 +30,7 @@ is the knob to reach for on a trackpad. Every choice is remembered.
 
 | `?map=` | mode | |
 |---|---|---|
-| `foundry` (default) | team | pit arena, three heights |
+| `foundry` (default) | team | open furnace roof, dusk sky, three heights |
 | `depot` | team | loading hall, long lanes — AWP country |
 | `silo` | deathmatch | open industrial loop, central passage, four balcony ramps |
 | `relay` | team | orbital bridge, sniper towers, glass viewports and sheltered lower routes |

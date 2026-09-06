@@ -343,6 +343,12 @@ The glass is a solid brush with a translucent procedural texture; map checks
 verify both walkable collision and the absence of opaque geometry behind it.
 Two bridge cover blocks now rise 112u, shielding players from elevated angles.
 
+Content update (2026-09-06): Foundry opens its central furnace roof to a
+procedural smoky dusk sky. A perimeter canopy and two steel lighting gantries
+retain the industrial silhouette and sodium light pools. Cooler ambient fill
+keeps players readable underneath. Map checks verify the roof opening and walk
+the outer ring, both catwalk ramps and both pit stairs in both directions.
+
 Next, in order:
 
 - **M-net** — authoritative server: compile the sim native (already proven by

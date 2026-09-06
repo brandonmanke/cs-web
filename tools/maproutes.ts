@@ -4,6 +4,11 @@ import type { Vec3 } from "../client/src/map/brush";
 // Authored walking routes, with feet positions at each checkpoint. These use
 // the real player hull and pmove, not point rays or a separate navigation model.
 const ROUTES: Record<string, Record<string, Vec3[]>> = {
+  foundry: {
+    ring: [[-480, 96, -704], [480, 96, -704], [480, 96, 704], [-480, 96, 704], [-480, 96, -704]],
+    catwalk: [[0, 96, -704], [0, 208, -352], [0, 208, 352], [0, 96, 704]],
+    "pit stairs": [[-128, 96, -448], [-128, 0, -128], [128, 0, -128], [128, 0, 128], [128, 96, 448]],
+  },
   silo: {
     ring: [[-368, 0, 544], [-368, 0, -544], [368, 0, -544], [368, 0, 544], [-368, 0, 544]],
     crosscut: [[-448, 0, 0], [448, 0, 0]],

@@ -26,6 +26,6 @@ export interface MapDef {
   spawns: SpawnDef[];
   background: number;
   /** Optional procedural sky; maps without one keep their solid background. */
-  sky?: "orbital";
+  sky?: "orbital" | "dusk";
   fog: [number, number];
 }

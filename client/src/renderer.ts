@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { Character } from "./art/character";
-import { orbitalSky } from "./art/sky";
+import { duskSky, orbitalSky } from "./art/sky";
 import { canvasTexture } from "./art/textures";
 import { buildMapGeometry, sampleLight, type ShadowProbe } from "./map/build";
 import type { MapDef } from "./map/mapdef";
@@ -140,7 +140,8 @@ export class Renderer {
     this.mapLights = map.lights;
     this.mapAmbient = map.ambient;
 
-    this.scene.background = map.sky === "orbital" ? orbitalSky() : new THREE.Color(map.background);
+    this.scene.background = map.sky === "orbital" ? orbitalSky() :
+      map.sky === "dusk" ? duskSky() : new THREE.Color(map.background);
     this.scene.fog = new THREE.Fog(map.background, map.fog[0], map.fog[1]);
 
     const built = buildMapGeometry(map.brushes, map.lights, map.ambient, probe);
