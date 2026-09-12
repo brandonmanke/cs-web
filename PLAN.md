@@ -74,7 +74,8 @@ material under the feet and the position to play it at. Holding +speed makes no
 sound at all — that trade (mobility for not announcing yourself) is only real if
 the sim is what decides you were quiet. Measuring by distance rather than by a
 timer means a ducked player steps as rarely as they move, for free. Every
-touchdown is audible regardless of +speed, so a silent bhop is not a thing;
+touchdown is audible regardless of +speed — including an auto-hop that lands
+and leaves the ground in the same tick — so a silent bhop is not a thing;
 landings above `kLandingSpeed` (set clear of the jump impulse, so a hop is not a
 fall) report as heavier ones.
 
@@ -124,7 +125,8 @@ smoothly.
 
 - Deterministic 30-shot spray pattern (climb → left drift → right swing),
   scaled per weapon; pattern resets after `recovery_ticks` without firing.
-- Inaccuracy: base spread × (1 + 2.5·speed/250, +5 airborne, ×0.7 ducked).
+- Inaccuracy: base spread × (1 + 2.5·speed/250, +5 airborne, ×0.7 ducked,
+  ×`kUnscopedSpreadScale` if a scoped weapon is fired from the hip).
   The HUD crosshair gap mirrors these terms, so it tells the truth.
 - View punch per shot with exponential decay. Punch is visual (client adds it
   to the camera); the pattern table controls actual bullet dirs.
@@ -134,7 +136,9 @@ smoothly.
   the sim; the world ray bounds the search so walls block shots. Boxes squash
   to half height while ducked.
 - Weapon table (AK, M4A1, AWP, MP5, Glock, USP, knife stub) in
-  `sim/src/weapons.cpp`.
+  `sim/src/weapons.cpp`. An empty magazine starts a reload as soon as the
+  trigger is down, so holding fire on a rifle does not sit on 0/90 until you
+  tap.
 - **Optics live in the sim.** `ButtonZoom` cycles a weapon's `zoom_fov` levels
   (AWP: 40° → 10° → hip); the snapshot carries the resulting `fov` and the
   client sets the camera and scales mouse gain from it. Scoping costs
@@ -212,10 +216,14 @@ what makes the M-net server a compile target rather than a rewrite.
   life every 8 s, 2.0 → every 2.7 s. Before that pass, "easy" killed a
   stationary player every 9 s and 1.0 and 2.0 were within 0.3 s of each other,
   so most of the dial did nothing.
-- **Events**: the snapshot carries up to `kMaxEvents` per tick (shots, deaths)
-  rather than one `last_shot`, because with ten guns firing the client needs all
-  of them for tracers, impacts, audio and the killfeed. The client reads the
-  snapshot after every step, so a per-tick array beats a ring buffer.
+- **Events**: the snapshot carries up to `kMaxEvents` (24) per tick (shots,
+  deaths, footsteps) rather than one `last_shot`, because with ten guns firing
+  the client needs all of them for tracers, impacts, audio and the killfeed.
+  The client reads the snapshot after every step, so a per-tick array beats a
+  ring buffer. A full tick drops a new footstep, or replaces one already in
+  the array with a shot or death — never the other way around, so a killfeed
+  line cannot be overwritten by someone else's stride. Growing the event array
+  bumped `kSimApiVersion` to 4.
 - **Player separation**: hulls that end a tick overlapping are pushed apart
   along the shallower horizontal axis, rejected if the push would drive them
   into the world. Full hull-vs-hull sweeps inside pmove would be the "correct"
@@ -288,7 +296,7 @@ sim/                  C++20 core: pmove.cpp, weapons.cpp, world.cpp, bots.cpp,
                       sim.cpp (orchestration, match/spawn rules, C ABI)
 sim/include/cs/sim.h  public types + tuning constants + C ABI
 sim/tests/            native ctest: movement invariants, gunplay, match rules,
-                      determinism hash (18 tests)
+                      determinism hash (30 tests)
 client/src/           main.ts loop, sim.ts (snapshot mirror), renderer.ts,
                       input.ts, touch.ts, hud.ts, audio.ts, viewmodel.ts,
                       menu.ts

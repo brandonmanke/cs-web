@@ -150,6 +150,22 @@ void test_holding_jump_autohops() {
   CHECK(extra_hops >= 4);
 }
 
+void test_autohop_landings_are_audible() {
+  // Auto-hop lands and leaves the ground in the same tick. That touchdown
+  // still has to emit EventStep — including under +speed, because a silent
+  // bhop would defeat the point of walking.
+  spawn_at_origin();
+  run_ticks(32, 0.0F, 0.0F, 0);
+  int landings = 0;
+  for (int i = 0; i < 192; ++i) {
+    sim_step(0.0F, 0.0F, 0.0F, 0.0F, cs::ButtonJump | cs::ButtonWalk, 0);
+    if (saw_event(cs::EventStep)) {
+      ++landings;
+    }
+  }
+  CHECK(landings >= 4);
+}
+
 void test_autohop_keeps_the_speed_cap() {
   // Holding jump must not become a speed exploit. PreventMegaBunnyJumping and
   // the landing stamina bleed apply to an auto-fired hop exactly as they do to
@@ -400,9 +416,51 @@ void test_awp_zoom_cycles_and_slows() {
   run_ticks(24, 0.0F, 0.0F, 0);
 }
 
+void test_holding_fire_reloads_an_empty_rifle() {
+  spawn_at_origin();
+  cs::weapons_reset(cs::state().players[cs::kLocalPlayer], cs::WeaponAk47);
+  // AK: 30 rounds, fire_ticks 6. Hold fire through the last round and into
+  // the empty-mag tick — reload must start without a trigger release.
+  for (int i = 0; i < 30 * 6 + 8; ++i) {
+    sim_step(0.0F, 0.0F, 0.0F, 0.0F, cs::ButtonFire, 0);
+  }
+  CHECK(sim_snapshot()->magazine == 0);
+  CHECK(sim_snapshot()->reload_ticks > 0);
+  cs::weapons_reset(cs::state().players[cs::kLocalPlayer], cs::WeaponAk47);
+}
+
+void test_event_overflow_keeps_deaths() {
+  build_test_world();
+  spawn_at_origin();
+  cs::SimState& s = cs::state();
+  s.event_count = 0;
+  for (std::uint32_t i = 0; i < cs::kMaxEvents; ++i) {
+    cs::push_event(s, cs::EventStep, 0);
+  }
+  CHECK(s.event_count == cs::kMaxEvents);
+  cs::SimEvent& death = cs::push_event(s, cs::EventDeath, 0);
+  death.victim = 1;
+  death.weapon = cs::WeaponAk47;
+  cs::refresh_snapshot(s);
+  const cs::SimSnapshot* snap = sim_snapshot();
+  bool saw_death = false;
+  std::uint32_t steps = 0;
+  for (std::uint32_t i = 0; i < snap->event_count; ++i) {
+    if (snap->events[i].kind == cs::EventDeath) {
+      saw_death = true;
+    }
+    if (snap->events[i].kind == cs::EventStep) {
+      ++steps;
+    }
+  }
+  CHECK(saw_death);
+  CHECK(steps == cs::kMaxEvents - 1U);
+}
+
 void test_shooting_kills_a_bot() {
   build_test_world();
   spawn_at_origin();
+  cs::weapons_reset(cs::state().players[cs::kLocalPlayer], cs::WeaponAk47);
   const std::uint32_t bot =
       sim_add_bot(0.0F, cs::kHullHalfHeightStand, -300.0F, 0.0F, cs::TeamNone, 0);
   CHECK(bot == 1U);
@@ -832,6 +890,7 @@ int main() {
   test_bhop_speed_cap();
   test_jump_buffer_hops_on_landing();
   test_holding_jump_autohops();
+  test_autohop_landings_are_audible();
   test_autohop_keeps_the_speed_cap();
   test_air_strafe_gains_speed();
   test_air_wishcap_no_gain();
@@ -846,6 +905,8 @@ int main() {
   test_brush_rejects_degenerate_input();
   test_trace_ray_abi();
   test_wallbang_penetration();
+  test_holding_fire_reloads_an_empty_rifle();
+  test_event_overflow_keeps_deaths();
   test_shooting_kills_a_bot();
   test_bots_fight_back_and_you_respawn();
   test_passive_bots_hold_their_fire();

@@ -411,11 +411,16 @@ void weapons_run(SimState& s, std::uint32_t index, const InputCommand& cmd) {
     } else if (w.magazine[w.selected] > 0) {
       --w.magazine[w.selected];
       fire_shot(s, index);
-    } else if (fire_edge) {
-      SimEvent& event = push_event(s, EventShot, index);
-      event.result = ShotDry;
-      event.weapon = w.selected;
-      w.cooldown_ticks = def.fire_ticks;
+    } else {
+      // Empty: reload without requiring a trigger release. Automatics were
+      // holding fire through the last round, so fire_edge never fires and a
+      // held AK would sit on 0/90 until you tapped or pressed R.
+      if (fire_edge) {
+        SimEvent& event = push_event(s, EventShot, index);
+        event.result = ShotDry;
+        event.weapon = w.selected;
+        w.cooldown_ticks = def.fire_ticks;
+      }
       start_reload(e);
     }
   }

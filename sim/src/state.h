@@ -108,7 +108,8 @@ SimState& state();
 void refresh_snapshot(SimState& s);
 std::uint64_t state_hash(const SimState& s);
 
-/** Queue a client-visible event. Silently drops once the tick's array is full. */
+/** Queue a client-visible event. A full tick drops a new step, or replaces an
+ *  existing step with a shot/death; deaths already in the array stay. */
 SimEvent& push_event(SimState& s, EventKind kind, std::uint32_t actor);
 
 /** Eye position of a player, the origin of everything they shoot or see. */

@@ -187,13 +187,28 @@ bool is_enemy(const SimState& s, std::uint32_t viewer, std::uint32_t other) {
 }
 
 SimEvent& push_event(SimState& s, EventKind kind, std::uint32_t actor) {
-  // Overflow overwrites the last slot rather than growing the snapshot: with
-  // per-weapon cooldowns a full roster cannot legitimately produce kMaxEvents
-  // in one tick, and a dropped tracer is cheaper than a resized ABI.
-  const std::uint32_t index =
-      s.event_count < kMaxEvents ? s.event_count : kMaxEvents - 1U;
+  // Overflow must not clobber a death: the killfeed and death cam read these.
+  // A new step is dropped; a shot or death replaces a step if one is sitting
+  // in the array. Callers fill the returned slot immediately, so a static
+  // discard is safe — this sim is single-threaded.
+  std::uint32_t index = kMaxEvents;
   if (s.event_count < kMaxEvents) {
-    ++s.event_count;
+    index = s.event_count++;
+  } else if (kind != EventStep) {
+    for (std::uint32_t i = 0; i < kMaxEvents; ++i) {
+      if (s.events[i].kind == EventStep) {
+        index = i;
+        break;
+      }
+    }
+  }
+  if (index >= kMaxEvents) {
+    static SimEvent discarded;
+    discarded = {};
+    discarded.kind = kind;
+    discarded.actor = actor;
+    discarded.victim = kMaxPlayers;
+    return discarded;
   }
   SimEvent& event = s.events[index];
   event = {};

@@ -245,6 +245,10 @@ async function boot(): Promise<void> {
       if (alive && !wasAlive) {
         input.setYaw(curr.players[curr.localIndex]!.yaw);
         viewmodel.reset();
+        // prev still holds the corpse; interpolating it to the pad streaks the
+        // camera through the level for one tick.
+        prev.copyFrom(curr);
+        renderer.resetViewSmoothing();
       }
       wasAlive = alive;
     }

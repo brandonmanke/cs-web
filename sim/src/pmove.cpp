@@ -424,6 +424,14 @@ void pmove_run(PlayerState& p, const InputCommand& cmd, float base_max_speed) {
 
   unstick(p);
   categorize_position(p);
+  // Auto-hop lands and leaves the ground in the same tick. Record the
+  // touchdown *before* try_jump, or chained hops emit no EventStep and a
+  // silent bhop is back. A hop that stays airborne until the move below still
+  // records at the second categorize_position.
+  if (was_airborne && p.on_ground) {
+    p.land_speed = fall_speed > 1.0F ? fall_speed : 1.0F;
+    p.step_distance = 0.0F;
+  }
   update_duck(p, (cmd.buttons & ButtonDuck) != 0U);
   try_jump(p, (cmd.buttons & ButtonJump) != 0U, base_max_speed);
 
@@ -465,7 +473,7 @@ void pmove_run(PlayerState& p, const InputCommand& cmd, float base_max_speed) {
   }
 
   categorize_position(p);
-  if (was_airborne && p.on_ground) {
+  if (was_airborne && p.on_ground && p.land_speed == 0.0F) {
     // A hair above zero so a touchdown at rest still registers as one.
     p.land_speed = fall_speed > 1.0F ? fall_speed : 1.0F;
     p.step_distance = 0.0F; // the landing *is* this stride's footfall

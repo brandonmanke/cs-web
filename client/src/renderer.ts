@@ -136,6 +136,12 @@ export class Renderer {
     this.camera.updateProjectionMatrix();
   }
 
+  /** Drop leftover stair lag; call on respawn so the eye does not tween there. */
+  resetViewSmoothing(): void {
+    this.eyeLag = 0;
+    this.lastEyeY = 0;
+  }
+
   /** Build world geometry and bake its lighting. Returns the shadow ray count. */
   buildMap(map: MapDef, probe: ShadowProbe): number {
     this.mapLights = map.lights;
@@ -167,10 +173,12 @@ export class Renderer {
       character.dispose();
     }
     this.characters.length = 0;
-    for (const team of teams) {
+    for (const [index, team] of teams.entries()) {
       // Free-for-all has no teams; alternate the two skins so bodies are still
       // distinguishable from each other at distance.
-      const character = new Character(team === Team.ct ? "ct" : "t");
+      const skin = team === Team.ct || (team === Team.none && index % 2 === 0)
+        ? "ct" : "t";
+      const character = new Character(skin);
       this.scene.add(character.root);
       this.characters.push(character);
     }

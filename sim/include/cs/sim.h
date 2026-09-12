@@ -9,7 +9,7 @@
 
 namespace cs {
 
-inline constexpr std::uint32_t kSimApiVersion = 3;
+inline constexpr std::uint32_t kSimApiVersion = 4;
 
 // --- fixed tick ---
 inline constexpr float kTickRate = 64.0F;
@@ -33,8 +33,8 @@ inline constexpr float kStaminaFull = 1315.789429F; // GoldSrc fuser2 jump fatig
 // forgives a sloppier one. See PLAN.md section 3.
 inline constexpr float kStaminaDrainPerSecond = 1400.0F;
 // Jump pressed this many ticks before touching ground still hops on landing.
-// 1.6 wants a frame-perfect tap; this keeps the tap-per-hop rhythm (holding
-// jump does *not* auto-hop) while forgiving ~125 ms of early press.
+// Holding jump re-arms the buffer every tick (auto-hop); a tap still arms it
+// once. See PLAN.md section 3.
 inline constexpr std::uint32_t kJumpBufferTicks = 8;
 inline constexpr float kStepHeight = 18.0F;
 inline constexpr float kHullHalfWidth = 16.0F;       // 32x32 footprint
@@ -85,9 +85,10 @@ inline constexpr std::uint32_t kHitFlashTicks = 8;
 
 inline constexpr std::uint32_t kMaxPlayers = 10;
 inline constexpr std::uint32_t kMaxSpawns = 24;
-// Shots plus footfalls, so a full roster running and firing at once still fits
-// with room to spare; overflow only ever costs a tracer or a footstep.
-inline constexpr std::uint32_t kMaxEvents = 12;
+// Shots, deaths and footfalls. Ten players firing, killing and running in one
+// tick is 30 events; 24 plus "footsteps yield to shots/deaths" keeps the
+// killfeed honest without growing the snapshot for a case that barely happens.
+inline constexpr std::uint32_t kMaxEvents = 24;
 inline constexpr std::uint32_t kWeaponCount = 8;
 inline constexpr std::uint32_t kLocalPlayer = 0;
 

@@ -150,11 +150,15 @@ export class Input {
     }, { passive: false });
     document.addEventListener("keydown", (e) => {
       if (!this.locked) return;
-      const weapon = WEAPON_KEYS[e.code];
-      if (weapon !== undefined && weapon !== this.currentWeapon) {
-        this.pendingWeapon = weapon;
+      // keydown auto-repeats; a held Q would otherwise oscillate last/current
+      // every tick as notifyWeapon swaps lastWeapon.
+      if (!e.repeat) {
+        const weapon = WEAPON_KEYS[e.code];
+        if (weapon !== undefined && weapon !== this.currentWeapon) {
+          this.pendingWeapon = weapon;
+        }
+        if (e.code === "KeyQ" && this.lastWeapon !== 0) this.pendingWeapon = this.lastWeapon;
       }
-      if (e.code === "KeyQ" && this.lastWeapon !== 0) this.pendingWeapon = this.lastWeapon;
       this.keys.add(e.code);
       // Ctrl+W / Ctrl+digit would otherwise reach the browser while ducking,
       // and Tab would walk focus off the canvas.

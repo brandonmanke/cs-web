@@ -227,11 +227,14 @@ export class Hud {
     }
 
     // Crosshair gap tracks the same terms weapons.cpp uses for spread: movement,
-    // being airborne, and the ducked bonus.
+    // being airborne, the ducked bonus, and the unscoped AWP penalty.
     const airborne = (snapshot.flags & Flags.onGround) === 0;
     const ducked = (snapshot.flags & Flags.ducked) !== 0;
     let spread = 1 + (snapshot.speedH / 250) * 2.5 + (airborne ? 5 : 0);
     if (ducked && !airborne) spread *= 0.7;
+    // cs::WeaponAwp / cs::kUnscopedSpreadScale — a scoped gun fired from the
+    // hip is a shotgun with one pellet.
+    if (snapshot.weapon === 6 && snapshot.zoom === 0) spread *= 7;
     const target = Math.min(CROSSHAIR_MAX, CROSSHAIR_MIN + (spread - 1) * 5);
     this.gap += (target - this.gap) * Math.min(1, dt * 14);
     this.crosshair.style.setProperty("--gap", `${this.gap.toFixed(1)}px`);
