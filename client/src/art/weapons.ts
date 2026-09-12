@@ -289,6 +289,12 @@ export function buildWeapon(id: number): THREE.Group {
     default: return new THREE.Group();
   }
   batchParts(g);
+  // Turn every magazine around at its socket. Bake the turn into the meshes
+  // so the reload joint and its hand target keep their original axes.
+  const mag = g.getObjectByName("magazine");
+  mag?.traverse((part) => {
+    if (part instanceof THREE.Mesh) part.geometry.rotateY(Math.PI);
+  });
   return g;
 }
 

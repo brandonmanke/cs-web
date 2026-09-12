@@ -2,7 +2,8 @@ import * as THREE from "three";
 
 // Original skies, painted once into six small cube faces. Sampling a
 // direction (rather than six unrelated pictures) keeps clouds and stars
-// continuous across cube edges. No downloaded assets or per-frame effects.
+// continuous across cube edges. Traffic is a small separate layer of lights;
+// the painted sky itself never needs to be regenerated during play.
 const SIZE = 512;
 let orbital: THREE.CubeTexture | null = null;
 let dusk: THREE.CubeTexture | null = null;
@@ -122,9 +123,182 @@ export function orbitalSky(): THREE.CubeTexture {
   return orbital;
 }
 
+/** A small warehouse district viewed from above, painted into the lower sky. */
+function industrialGround(direction: THREE.Vector3, color: THREE.Vector3): boolean {
+  const { x, y, z } = direction;
+  const elevation = y / Math.max(0.001, Math.hypot(x, z));
+  if (elevation >= -0.035) return false;
+  const eye = 1.8, block = 4, maxRoof = 0.65;
+  const floorT = eye / -y, roofT = (eye - maxRoof) / -y;
+  const gx = x * floorT, gz = z * floorT;
+  const bx = Math.floor(gx / block), bz = Math.floor(gz / block);
+  const u = gx - bx * block, v = gz - bz * block;
+  const roadX = Math.min(u, block - u), roadZ = Math.min(v, block - v);
+  const road = Math.min(roadX, roadZ);
+  const grit = hash(Math.floor(gx * 70), Math.floor(gz * 70), 603) * 8;
+  let r = 69 + grit, g = 66 + grit, b = 59 + grit; // concrete service yards
+  if (road < 0.38) {
+    r = 38 + grit; g = 41 + grit; b = 43 + grit;
+    // Dashed centre lines stop at intersections.
+    if ((roadX < 0.025 && roadZ > 0.5 && v % 0.6 < 0.28) ||
+        (roadZ < 0.025 && roadX > 0.5 && u % 0.6 < 0.28)) {
+      r = 114; g = 107; b = 87;
+    }
+  } else if (road < 0.49) {
+    r = 82 + grit; g = 80 + grit; b = 74 + grit; // raised curb strips
+  } else if (v > 3.2 && v < 3.7 && u > 0.7 && u < 3.3 && u % 0.38 < 0.025) {
+    r = 111; g = 104; b = 85; // loading-yard parking bays
+  }
+  // Sodium street lamps cast small pools at the corners of each block.
+  const lamp = Math.exp(-((u - 0.52) ** 2 + (v - 0.52) ** 2) * 16) +
+    Math.exp(-((u - 3.48) ** 2 + (v - 3.48) ** 2) * 16);
+  r += lamp * 43; g += lamp * 34; b += lamp * 21;
+
+  // Only cells between the highest possible roof and the ground can intersect
+  // this ray. Usually that is one or two warehouses, even at 512px per face.
+  let nearest = floorT;
+  const minX = Math.floor(Math.min(x * roofT, gx) / block);
+  const maxX = Math.floor(Math.max(x * roofT, gx) / block);
+  const minZ = Math.floor(Math.min(z * roofT, gz) / block);
+  const maxZ = Math.floor(Math.max(z * roofT, gz) / block);
+  for (let ix = minX; ix <= maxX; ++ix) {
+    for (let iz = minZ; iz <= maxZ; ++iz) {
+      const left = ix * block + 0.8, front = iz * block + 0.8;
+      const right = left + 1.6 + hash(ix, iz, 610) * 0.65;
+      const back = front + 1.35 + hash(ix, iz, 611) * 0.65;
+      const height = 0.35 + hash(ix, iz, 612) * 0.30;
+      const tx = Math.min(left / x, right / x), tz = Math.min(front / z, back / z);
+      const ty = (eye - height) / -y;
+      const enter = Math.max(tx, tz, ty);
+      const leave = Math.min(Math.max(left / x, right / x), Math.max(front / z, back / z), floorT);
+      if (enter > leave || enter >= nearest) continue;
+      nearest = enter;
+      const hx = x * enter - left, hz = z * enter - front;
+      const rust = hash(ix, iz, 613);
+      const weathering = 0.72 + hash(ix, iz, 614) * 0.35;
+      if (ty >= tx && ty >= tz) {
+        const corrugation = Math.cos(hx * 110) * 2;
+        r = (76 + rust * 12 + corrugation) * weathering;
+        g = (78 - rust * 7 + corrugation) * weathering;
+        b = (77 - rust * 10 + corrugation) * weathering;
+        // A ridge, inset skylights and squat ventilation boxes make roofs read.
+        if (hz > (back - front) / 2) { r *= 0.78; g *= 0.78; b *= 0.78; }
+        if (hx > 0.3 && hx < 1.3 && hz > 0.35 && hz < 0.55) {
+          r = 88; g = 97; b = 98;
+        }
+        if (hx > 0.4 && hx < 0.65 && hz > 0.95 && hz < 1.2) {
+          r = 62; g = 66; b = 65;
+        }
+      } else {
+        const light = (tx > tz ? 0.8 : 1) * weathering;
+        r = 77 * light; g = 70 * light; b = 59 * light;
+        const along = tx > tz ? hz : hx, wallY = eye + y * enter;
+        if (along > 0.35 && along < 1.05 && wallY < height * 0.65) {
+          r = 39; g = 43; b = 43; // recessed roll-up loading door
+        }
+        if (along > 0.3 && along < 1.2 && wallY > height * 0.77 && wallY < height * 0.9) {
+          r = 137; g = 117; b = 82;
+        }
+      }
+    }
+  }
+  const fogBank = noise(gx * 0.09, 4, gz * 0.09);
+  const haze = 1 - Math.exp(-0.32 - Math.hypot(gx, gz) * (0.045 + fogBank * 0.025));
+  const blend = Math.min(1, (-elevation - 0.035) / 0.08);
+  color.x += ((r * (1 - haze) + 105 * haze) - color.x) * blend;
+  color.y += ((g * (1 - haze) + 101 * haze) - color.y) * blend;
+  color.z += ((b * (1 - haze) + 99 * haze) - color.z) * blend;
+  return nearest === floorT;
+}
+
+/** Faint vehicle lights on the sky's streets; no traffic simulation or actors. */
+export class DuskTraffic {
+  readonly root: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
+  private readonly positions = new THREE.BufferAttribute(new Float32Array(56 * 3), 3);
+  private readonly colors = new THREE.BufferAttribute(new Float32Array(56 * 4), 4);
+  private readonly direction = new THREE.Vector3();
+  private readonly scratch = new THREE.Vector3();
+  private readonly headlights = new THREE.Color(0xc6bba7);
+  private readonly taillights = new THREE.Color(0xad756a);
+  private seconds = 0;
+
+  constructor() {
+    const pixels = new Uint8Array(16 * 16 * 4);
+    for (let y = 0; y < 16; ++y) {
+      for (let x = 0; x < 16; ++x) {
+        const at = (y * 16 + x) * 4;
+        const radius = Math.hypot(x - 7.5, y - 7.5) / 7.5;
+        pixels[at] = pixels[at + 1] = pixels[at + 2] = 255;
+        pixels[at + 3] = Math.max(0, 1 - radius) ** 2 * 255;
+      }
+    }
+    const glow = new THREE.DataTexture(pixels, 16, 16);
+    glow.magFilter = glow.minFilter = THREE.LinearFilter;
+    glow.needsUpdate = true;
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", this.positions.setUsage(THREE.DynamicDrawUsage));
+    geometry.setAttribute("color", this.colors.setUsage(THREE.DynamicDrawUsage));
+    this.root = new THREE.Points(geometry, new THREE.PointsMaterial({
+      map: glow, size: 4, sizeAttenuation: false, vertexColors: true,
+      transparent: true, opacity: 0.7, depthWrite: false, fog: false, toneMapped: false,
+    }));
+    this.root.name = "sky:traffic";
+    this.root.frustumCulled = false;
+    this.root.renderOrder = -1; // Behind the transparent window glass.
+  }
+
+  update(dt: number, camera: THREE.Vector3): void {
+    this.seconds += dt;
+    this.root.position.copy(camera);
+    for (let i = 0; i < this.positions.count; ++i) {
+      const sign = Math.floor(i / 2) % 2 === 0 ? 1 : -1;
+      const road = (Math.floor(i / 4) % 7 - 3) * 4 + sign * 0.14;
+      const phase = hash(i, 621, 0) * 56 + this.seconds * (0.16 + hash(i, 622, 0) * 0.12);
+      const travel = ((phase % 56) - 28) * sign;
+      const x = i % 2 === 0 ? travel : road, z = i % 2 === 0 ? road : travel;
+      const distance = Math.hypot(x, z);
+      this.direction.set(x, -1.8, z).normalize();
+      const visible = industrialGround(this.direction, this.scratch);
+      const fade = Math.max(0, Math.min(1, (distance - 7) / 3, (28 - Math.abs(travel)) / 4)) *
+        Math.exp(-distance * 0.035);
+      const light = travel * sign < 0 ? this.headlights : this.taillights;
+      // Canvas cubemaps mirror X when Three.js samples the background.
+      this.positions.setXYZ(i, -this.direction.x * 12000, this.direction.y * 12000, this.direction.z * 12000);
+      this.colors.setXYZW(i, light.r, light.g, light.b, visible ? fade : 0);
+    }
+    this.positions.needsUpdate = this.colors.needsUpdate = true;
+  }
+
+  dispose(): void {
+    this.root.geometry.dispose();
+    this.root.material.map!.dispose();
+    this.root.material.dispose();
+  }
+}
+
 export function duskSky(): THREE.CubeTexture {
   if (dusk) return dusk;
   const sun = new THREE.Vector3(-0.55, 0.50, 0.83).normalize();
+  // Far city blocks, a refinery belt, then nearby warehouse roofs. Longitude
+  // wraps around the whole sky, so the industrial district joins at cube seams.
+  const districts = [112, 64, 40].map((count, layer) => Array.from({ length: count }, (_, i) => {
+    const width = 0.62 + hash(i, layer, 52) * 0.30;
+    const side = hash(i, layer, 75) > 0.5 ? 1 : -1;
+    // Neighbouring factories share a plant, with banks of two or three stacks
+    // near the roof edges. The distant city blocks have no chimneys.
+    const cluster = layer > 0 && i % 3 !== 2 && hash(Math.floor(i / 3), layer, 74) > 0.65;
+    return {
+      height: layer === 0 ? 0.015 + hash(i, layer, 41) * 0.065 :
+        0.015 - layer * 0.025 + hash(i, layer, 41) * 0.055,
+      width,
+      shape: Math.floor(hash(i, layer, 63) * 3),
+      stacks: Array.from({ length: cluster ? 2 + Math.floor(hash(i, layer, 76) * 2) : 0 }, (_, j) => ({
+        at: 0.5 + side * (width * 0.36 - j * 0.11),
+        height: 0.028 + hash(i * 3 + j, layer, 85) * 0.055,
+        radius: 0.024 + hash(i * 3 + j, layer, 86) * 0.012,
+      })),
+    };
+  }));
   dusk = paintSky((direction, color) => {
     const { x, y, z } = direction;
     const horizon = Math.exp(-Math.max(0, y) * 3.8);
@@ -143,7 +317,60 @@ export function duskSky(): THREE.CubeTexture {
     r = r * (1 - opacity) + (36 + horizon * 28 + glow * 55) * opacity + edge * 48;
     g = g * (1 - opacity) + (38 + horizon * 13 + glow * 24) * opacity + edge * 24;
     b = b * (1 - opacity) + (50 + horizon * 4 + glow * 8) * opacity + edge * 9;
+
+    const elevation = y / Math.max(0.001, Math.hypot(x, z));
+    if (elevation < 0.4) {
+      const bearing = (Math.atan2(z, x) / (Math.PI * 2) + 1) % 1;
+      const smog = Math.exp(-(((elevation - 0.025) * 6) ** 2)) * 0.65;
+      r = r * (1 - smog) + 113 * smog;
+      g = g * (1 - smog) + 106 * smog;
+      b = b * (1 - smog) + 101 * smog;
+      for (const [layer, buildings] of districts.entries()) {
+        const longitude = bearing * buildings.length;
+        const index = Math.floor(longitude), u = longitude - index;
+        const building = buildings[index]!;
+        const across = (u - 0.5) / building.width;
+        let roof = building.height;
+        if (layer > 0) {
+          // Sawtooth sheds and rounded storage tanks break up the flat roofs.
+          if (building.shape === 1) roof += ((u * 4) % 1) * 0.018;
+          if (building.shape === 2) roof += Math.sqrt(Math.max(0, 1 - across * across * 4)) * 0.025;
+        }
+        let stackTop = -Infinity;
+        for (const chimney of building.stacks) {
+          const top = building.height + chimney.height;
+          if (elevation > top) {
+            const rise = elevation - top;
+            const plume = Math.exp(-(((u - chimney.at - rise * 1.2) / (0.05 + rise * 0.8)) ** 2)) *
+              Math.max(0, 1 - rise / 0.10) * (0.10 + cloud * 0.10);
+            r = r * (1 - plume) + 69 * plume;
+            g = g * (1 - plume) + 65 * plume;
+            b = b * (1 - plume) + 65 * plume;
+          }
+          if (Math.abs(u - chimney.at) < chimney.radius) stackTop = top;
+        }
+        const stack = elevation < stackTop;
+        if ((Math.abs(across) < 0.5 && elevation < roof) || stack || elevation < -0.10 - layer * 0.07) {
+          const haze = [0.78, 0.60, 0.40][layer]!;
+          const panel = hash(Math.floor(u * 20), index, layer) * 7;
+          r = (29 + panel) * (1 - haze) + 105 * haze;
+          g = (33 + panel) * (1 - haze) + 101 * haze;
+          b = (39 + panel) * (1 - haze) + 99 * haze;
+          if (!stack && elevation < roof - 0.012 && elevation > roof - 0.09) {
+            const column = u * (layer === 0 ? 5 : 12), row = (roof - elevation) * 150;
+            if (column % 1 < 0.3 && row % 1 < 0.25 && hash(Math.floor(column), Math.floor(row), index + layer * 211) > 0.58) {
+              r += 140 * (1 - haze); g += 88 * (1 - haze); b += 32 * (1 - haze);
+            }
+          }
+          // Occasional red obstruction lamps on the chimney caps.
+          if (stack && stackTop - elevation < 0.005) {
+            r += 105 * (1 - haze); g += 24 * (1 - haze); b += 12 * (1 - haze);
+          }
+        }
+      }
+    }
     color.set(r, g, b);
+    industrialGround(direction, color);
   });
   return dusk;
 }

@@ -1,5 +1,5 @@
 import { Mode, Team } from "../../sim";
-import { box, ramp, stairs, Surface, type Brush } from "../brush";
+import { box, ramp, stairs, Surface, type Brush, type Vec3 } from "../brush";
 import type { MapDef, SpawnDef } from "../mapdef";
 
 // FOUNDRY — an original arena, Quake's grammar with CS's sightlines.
@@ -35,16 +35,35 @@ brushes.push(
   box([PIT, FLOOR_BASE, -PIT], [OUTER, WALK_Y, PIT], Surface.metal, "grate"),
 );
 
-// Outer walls and a perimeter canopy, leaving the furnace roof open.
+// Panoramic factory windows cut through all four walls. Recessed glass keeps
+// the perimeter solid; steel mullions divide each opening into eight panes.
+for (const alongX of [true, false]) {
+  const extent = alongX ? OUTER + THICK : OUTER;
+  for (const side of [-1, 1]) {
+    const lo = side < 0 ? -OUTER - THICK : OUTER;
+    const hi = lo + THICK;
+    const wallBox = (min: Vec3, max: Vec3, surface: Surface, tex: string) => {
+      brushes.push(box(alongX ? min : [min[2], min[1], min[0]],
+                       alongX ? max : [max[2], max[1], max[0]], surface, tex));
+    };
+    wallBox([-extent, FLOOR_BASE, lo], [-448, CEIL_Y, hi], Surface.concrete, "brick");
+    wallBox([448, FLOOR_BASE, lo], [extent, CEIL_Y, hi], Surface.concrete, "brick");
+    wallBox([-448, FLOOR_BASE, lo], [448, 144, hi], Surface.concrete, "brick");
+    wallBox([-448, 400, lo], [448, CEIL_Y, hi], Surface.concrete, "brick");
+    wallBox([-448, 144, lo], [448, 156, hi], Surface.metal, "metal");
+    wallBox([-448, 388, lo], [448, 400, hi], Surface.metal, "metal");
+    wallBox([-448, 156, lo], [-436, 388, hi], Surface.metal, "metal");
+    wallBox([436, 156, lo], [448, 388, hi], Surface.metal, "metal");
+    wallBox([-436, 156, lo + 12], [436, 388, hi - 12], Surface.metal, "glass");
+    for (const u of [-224, 0, 224]) {
+      wallBox([u - 4, 156, lo], [u + 4, 388, hi], Surface.metal, "rust");
+    }
+    wallBox([-436, 268, lo], [436, 276, hi], Surface.metal, "rust");
+  }
+}
+
+// Perimeter canopy, leaving the furnace roof open.
 brushes.push(
-  box([-OUTER - THICK, FLOOR_BASE, -OUTER - THICK], [OUTER + THICK, CEIL_Y, -OUTER],
-      Surface.concrete, "brick"),
-  box([-OUTER - THICK, FLOOR_BASE, OUTER], [OUTER + THICK, CEIL_Y, OUTER + THICK],
-      Surface.concrete, "brick"),
-  box([-OUTER - THICK, FLOOR_BASE, -OUTER], [-OUTER, CEIL_Y, OUTER],
-      Surface.concrete, "brick"),
-  box([OUTER, FLOOR_BASE, -OUTER], [OUTER + THICK, CEIL_Y, OUTER],
-      Surface.concrete, "brick"),
   box([-OUTER - THICK, CEIL_Y, -OUTER - THICK], [OUTER + THICK, CEIL_Y + THICK, -ROOF_OPEN],
       Surface.concrete, "tech"),
   box([-OUTER - THICK, CEIL_Y, ROOF_OPEN], [OUTER + THICK, CEIL_Y + THICK, OUTER + THICK],
@@ -126,11 +145,11 @@ for (const [x, z] of [[-576, -576], [576, -576], [-576, 576], [576, 576]]) {
                    Surface.concrete, "concrete"));
 }
 
-// Pipework along the upper walls — pure silhouette, but it sells the place.
+// Pipework above the window frames leaves the glazing unobstructed.
 brushes.push(
-  box([-OUTER, 320, -OUTER + 24], [OUTER, 352, -OUTER + 56], Surface.metal, "rust"),
-  box([-OUTER, 320, OUTER - 56], [OUTER, 352, OUTER - 24], Surface.metal, "rust"),
-  box([-OUTER + 24, 368, -OUTER], [-OUTER + 56, 400, OUTER], Surface.metal, "rust"),
+  box([-OUTER, 408, -OUTER + 24], [OUTER, 432, -OUTER + 56], Surface.metal, "rust"),
+  box([-OUTER, 408, OUTER - 56], [OUTER, 432, OUTER - 24], Surface.metal, "rust"),
+  box([-OUTER + 24, 408, -OUTER], [-OUTER + 56, 432, OUTER], Surface.metal, "rust"),
 );
 
 // --- lights -----------------------------------------------------------------

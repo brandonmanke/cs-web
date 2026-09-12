@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { Character } from "./art/character";
-import { duskSky, orbitalSky } from "./art/sky";
+import { DuskTraffic, duskSky, orbitalSky } from "./art/sky";
 import { canvasTexture } from "./art/textures";
 import { buildMapGeometry, sampleLight, type ShadowProbe } from "./map/build";
 import type { MapDef } from "./map/mapdef";
@@ -63,6 +63,7 @@ export class Renderer {
   readonly weaponCamera: THREE.PerspectiveCamera;
   private readonly weaponScene = new THREE.Scene();
   private readonly gl: THREE.WebGLRenderer;
+  private skyTraffic: DuskTraffic | null = null;
 
   private readonly characters: Character[] = [];
   private tracers: Tracer[] = [];
@@ -143,6 +144,12 @@ export class Renderer {
     this.scene.background = map.sky === "orbital" ? orbitalSky() :
       map.sky === "dusk" ? duskSky() : new THREE.Color(map.background);
     this.scene.fog = new THREE.Fog(map.background, map.fog[0], map.fog[1]);
+    if (this.skyTraffic) {
+      this.scene.remove(this.skyTraffic.root);
+      this.skyTraffic.dispose();
+    }
+    this.skyTraffic = map.sky === "dusk" ? new DuskTraffic() : null;
+    if (this.skyTraffic) this.scene.add(this.skyTraffic.root);
 
     const built = buildMapGeometry(map.brushes, map.lights, map.ambient, probe);
     for (const mesh of built.meshes) this.scene.add(mesh);
@@ -332,6 +339,7 @@ export class Renderer {
       lerp(prev.origin[2]!, curr.origin[2]!),
     );
     this.camera.rotation.set(pitch + curr.punchPitch, yaw + curr.punchYaw, 0);
+    this.skyTraffic?.update(dt, this.camera.position);
     this.gl.render(this.scene, this.camera);
     this.weaponCamera.position.copy(this.camera.position);
     this.weaponCamera.quaternion.copy(this.camera.quaternion);

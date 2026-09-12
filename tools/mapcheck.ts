@@ -178,6 +178,25 @@ async function checkMap(name: string, map: MapDef): Promise<void> {
       }
     }
     if (before === failures) pass("open sky above the furnace and both catwalk approaches");
+    const windowFailures = failures;
+    const withoutGlass = await Sim.load();
+    for (const brush of map.brushes) {
+      if (brush.tex !== "glass") withoutGlass.addBrush(brushPlaneArray(brush), brush.surface);
+    }
+    withoutGlass.finalizeWorld();
+    for (const alongX of [true, false]) {
+      for (const side of [-1, 1]) {
+        for (const u of [-336, -112, 112, 336]) {
+          for (const y of [208, 332]) {
+            const from = alongX ? [u, y, side * 700] : [side * 700, y, u];
+            const to = alongX ? [u, y, side * 900] : [side * 900, y, u];
+            if (!sim.isBlocked(from, to)) fail(`Foundry window at ${from} has no solid glass`);
+            if (withoutGlass.isBlocked(from, to)) fail(`Foundry window at ${from} has an opaque backing`);
+          }
+        }
+      }
+    }
+    if (windowFailures === failures) pass("four wall windows have solid glass and clear views through every pane");
   }
   if (name === "relay") {
     const before = failures;

@@ -23,6 +23,28 @@ function create(id: number) {
   return { camera, view };
 }
 
+for (const id of [4, 5, 7]) {
+  test(`weapon ${id}: magazine curves toward the muzzle through reload`, () => {
+    const { camera, view } = create(id);
+    const mag = camera.getObjectByName("magazine")!;
+    const tip = new THREE.Vector3(0, Infinity, 0);
+    mag.traverse((part) => {
+      if (part instanceof THREE.Mesh) {
+        part.geometry.computeBoundingBox();
+        const center = part.geometry.boundingBox!.getCenter(new THREE.Vector3());
+        if (center.y < tip.y) tip.copy(center);
+      }
+    });
+    view.setReloadTicks(200);
+    for (const remaining of [200, 160, 120, 80, 40, 0]) {
+      view.setReloadTicks(remaining);
+      view.update(0, still);
+      assert.ok(tip.clone().applyEuler(mag.rotation).z < 0,
+        "magazine base must curve forward (-Z), away from the stock");
+    }
+  });
+}
+
 for (const id of [2, 3, 4, 5, 6, 7]) {
   test(`weapon ${id}: magazine, hand and sleeve stay connected through reload and cancellation`, () => {
     const { camera, view } = create(id);

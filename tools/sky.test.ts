@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as THREE from "three";
-import { orbitalSky } from "../client/src/art/sky";
+import { DuskTraffic, orbitalSky } from "../client/src/art/sky";
 
 interface SkyCanvas { width: number; height: number; pixels: Uint8ClampedArray }
 Object.assign(globalThis, { document: { createElement: () => {
@@ -31,4 +31,33 @@ test("planet occludes the far ring while the near ring crosses its face", () => 
   const far = planetPixel(0, 0.55);
   assert.ok(near[0]! / near[2]! > 0.72, `near ring must paint over the blue planet: ${near}`);
   assert.ok(far[0]! / far[2]! < 0.70, `far ring must stay behind the blue planet: ${far}`);
+});
+
+test("sky traffic moves along streets and stays aligned when the camera moves", () => {
+  const traffic = new DuskTraffic();
+  const camera = new THREE.Vector3();
+  traffic.update(0, camera);
+  const positions = traffic.root.geometry.getAttribute("position");
+  const colors = traffic.root.geometry.getAttribute("color");
+  const start = Array.from(positions.array);
+  let visible = 0, obscured = 0;
+  for (let frame = 0; frame < 60; ++frame) {
+    traffic.update(1, camera);
+    for (let i = 0; i < positions.count; ++i) {
+      const floor = -1.8 / positions.getY(i);
+      const x = -positions.getX(i) * floor, z = positions.getZ(i) * floor;
+      const roadDistance = Math.min(Math.abs(x - Math.round(x / 4) * 4), Math.abs(z - Math.round(z / 4) * 4));
+      assert.ok(roadDistance < 0.15, "lights must follow the sky's road grid");
+      if (colors.getW(i) > 0) ++visible;
+      else if (Math.hypot(x, z) > 10 && Math.max(Math.abs(x), Math.abs(z)) < 24) ++obscured;
+    }
+  }
+  assert.notDeepEqual(Array.from(positions.array), start, "traffic must move over time");
+  assert.ok(visible > 0 && obscured > 0, "warehouses must hide some passing traffic");
+  const directions = Array.from(positions.array);
+  camera.set(512, 272, -640);
+  traffic.update(0, camera);
+  assert.deepEqual(Array.from(positions.array), directions, "walking must not move lights relative to the sky");
+  assert.ok(traffic.root.position.equals(camera));
+  traffic.dispose();
 });
