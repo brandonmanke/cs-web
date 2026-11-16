@@ -1,152 +1,48 @@
 import * as THREE from "three";
-import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { canvasTexture, cloud, fill, grain, stains, type Ctx } from "./textures";
-import { ball, batchParts, disposeParts, loft, meshPart, type Ring, type V3 } from "./geometry";
+import {
+  ball, batchParts, disposeParts, loft, meshPart, roundBox, type Bump, type LoftOptions, type Ring, type V3,
+} from "./geometry";
+import { lensMaterial, skinMaterial, type Look, type SkinPart, type Team } from "./skins";
 import { buildWeapon, muzzleFlashMaterial, muzzleOffset, supportGrip, WeaponId } from "./weapons";
 
-// Rigid articulated bodies, authored from the feet and 72u (six feet) tall
+export type { Look, Team } from "./skins";
+
+// Skinned, sculpted bodies, authored from the feet and 72u (six feet) tall
 // like the hull. Proportions are a real adult's — a 9u head, 15u between the
 // shoulder joints, the hip joint at half height — so the figure sits inside
 // the sim hitboxes (head 58–72, chest 38–58, stomach 26–38) rather than
-// filling them. Every part is lofted with its own front and back depth, which
-// is what gives it a jaw, a chest and a calf; the detail a model of the era
-// kept in its skin — pouches, straps, the face — is painted.
-export type Team = "ct" | "t";
-/** Two looks a side, so a squad is not five copies of one man. */
-export type Look = 0 | 1;
-const PALETTE = {
-  ct: [
-    // Helmet, goggles and blue fatigues.
-    { cloth: "#566a82", camo: "#36455a", vest: "#3a434c", trim: "#9aa6ad", mask: "#30383f", gear: "#272d33" },
-    // Peaked cap and urban grey.
-    { cloth: "#737a80", camo: "#4d5359", vest: "#2f3338", trim: "#c9ced2", mask: "#26292d", gear: "#1f2226" },
-  ],
-  t: [
-    // Knitted cap, checked scarf, desert khaki.
-    { cloth: "#8d7852", camo: "#6a5839", vest: "#4b4230", trim: "#a4483a", mask: "#34322e", gear: "#2a2620" },
-    // Bare head, dark glasses, olive drab.
-    { cloth: "#5f6746", camo: "#434a30", vest: "#5a4a34", trim: "#c7b98f", mask: "#2b2a26", gear: "#262319" },
-  ],
-};
-const SKIN = "#c39776";
-type SkinPart = "cloth" | "vest" | "gear" | "head" | "skin" | "mask" | "scarf";
-const skins = new Map<string, THREE.CanvasTexture>();
-
-/** 256px wrapped once round the head: u = 0.5 (x 128) is the nose, v runs chin to crown. */
-function paintHead(c: Ctx, team: Team, look: Look): void {
-  const colors = PALETTE[team][look]!, x = c.ctx;
-  fill(c, SKIN);
-  cloud(c, 12, 64, 3);
-  // The face turns away into shadow at the temples and under the jaw.
-  x.fillStyle = "rgba(60,30,20,0.2)";
-  x.fillRect(82, 96, 12, 150); x.fillRect(162, 96, 12, 150);
-  x.fillRect(82, 224, 92, 32);
-  // Nose: a shadow down each side and under the tip, then the mouth.
-  x.fillStyle = "rgba(80,45,32,0.34)";
-  x.fillRect(122, 128, 2, 34); x.fillRect(132, 128, 2, 34);
-  x.fillRect(120, 162, 16, 3);
-  x.fillStyle = "rgba(110,50,45,0.6)";
-  x.fillRect(115, 194, 26, 3);
-  x.fillStyle = "rgba(40,30,25,0.16)";
-  x.fillRect(94, 172, 68, 70); // stubble
-  if (team === "t") {
-    // Cropped dark hair over the crown and down the back to the nape.
-    x.fillStyle = "#231c18";
-    x.fillRect(0, 0, 256, 60);
-    x.fillRect(0, 60, 68, 110); x.fillRect(188, 60, 68, 110);
-  } else {
-    // Balaclava over everything but the eyes.
-    x.fillStyle = colors.mask;
-    x.fillRect(0, 0, 256, 108); x.fillRect(0, 138, 256, 118);
-    x.fillRect(0, 108, 96, 30); x.fillRect(160, 108, 96, 30);
-    x.fillStyle = "rgba(0,0,0,0.3)";
-    x.fillRect(96, 106, 64, 2); x.fillRect(96, 138, 64, 2);
-    for (let fold = 150; fold < 250; fold += 22) x.fillRect(60, fold, 136, 1);
-  }
-  // Brows, the shadow of the socket, then the eye itself under its lid.
-  for (const eye of [102, 137]) {
-    x.fillStyle = "#2a1f18"; x.fillRect(eye, 112, 18, 3);
-    x.fillStyle = "rgba(60,35,25,0.38)"; x.fillRect(eye + 1, 116, 17, 10);
-    x.fillStyle = "#d8d0c4"; x.fillRect(eye + 4, 120, 11, 5);
-    x.fillStyle = "#2b2622"; x.fillRect(eye + 8, 120, 4, 5);
-    x.fillStyle = "rgba(0,0,0,0.5)"; x.fillRect(eye + 3, 119, 13, 1);
-  }
-  grain(c, 6, 1);
-}
-
-function paintVest(c: Ctx, team: Team, look: Look): void {
-  const colors = PALETTE[team][look]!, x = c.ctx;
-  fill(c, colors.vest);
-  cloud(c, 10, 48, 3);
-  const dark = "rgba(0,0,0,0.38)", light = "rgba(255,255,255,0.09)";
-  // Shoulder straps down the front and back.
-  for (const strap of [40, 80, 4, 116]) {
-    x.fillStyle = dark; x.fillRect(strap, 0, 9, 128);
-    x.fillStyle = light; x.fillRect(strap + 1, 0, 1, 128);
-  }
-  // Front closure, then a row of magazine pouches low on the chest.
-  x.fillStyle = dark; x.fillRect(63, 0, 2, 128);
-  for (const pouch of [34, 49, 66, 81]) {
-    x.fillStyle = dark; x.fillRect(pouch, 70, 13, 40);
-    x.fillStyle = colors.vest; x.fillRect(pouch + 1, 72, 11, 37);
-    x.fillStyle = light; x.fillRect(pouch + 1, 72, 11, 1);
-    x.fillStyle = dark; x.fillRect(pouch + 1, 84, 11, 2); // flap
-    x.fillStyle = colors.trim; x.fillRect(pouch + 5, 86, 3, 3); // snap
-  }
-  // Cummerbund seams round the sides, and a patch on the chest and upper back.
-  x.fillStyle = dark;
-  for (const y of [66, 96, 114]) { x.fillRect(0, y, 30, 1); x.fillRect(98, y, 30, 1); }
-  x.fillStyle = colors.trim;
-  x.fillRect(team === "ct" ? 46 : 50, 30, team === "ct" ? 12 : 6, 5);
-  x.fillRect(123, 30, 5, 5); x.fillRect(0, 30, 5, 5);
-  stains(c, 5, "#15130f", 14);
-}
-
-function skin(team: Team, look: Look, part: SkinPart): THREE.CanvasTexture {
-  const key = `${team}${look}:${part}`;
-  let texture = skins.get(key);
-  if (texture) return texture;
-  const colors = PALETTE[team][look]!;
-  texture = canvasTexture(part === "head" ? 256 : 128, (team === "ct" ? 21 : 22) + look * 10, (c) => {
-    if (part === "head") return paintHead(c, team, look);
-    if (part === "vest") return paintVest(c, team, look);
-    fill(c, part === "skin" ? SKIN : part === "scarf" ? colors.trim : colors[part]);
-    cloud(c, 10, 48, 3);
-    grain(c, 8, 1);
-    if (part === "cloth") {
-      // Camouflage blotches, then the folds and seams of worn fatigues.
-      stains(c, 16, colors.camo, 20);
-      stains(c, 6, "#d9d2c0", 9);
-      c.ctx.fillStyle = "rgba(0,0,0,0.16)";
-      for (let i = 0; i < 14; ++i) {
-        c.ctx.fillRect(c.random() * 100, c.random() * 128, 14 + c.random() * 24, 1);
-      }
-      c.ctx.fillRect(0, 0, 2, 128);
-    }
-    if (part === "scarf") {
-      // Woven check, pulled up over the nose.
-      c.ctx.fillStyle = "rgba(240,232,214,0.75)";
-      for (let y = 0; y < 128; y += 16) {
-        for (let i = (y / 16) % 2 * 8; i < 128; i += 16) c.ctx.fillRect(i, y, 8, 8);
-      }
-    }
-    stains(c, 4, "#1c1a16", 12);
-  });
-  skins.set(key, texture);
-  return texture;
-}
+// filling them. Every form is a loft splined through a few authored sections,
+// each with its own front and back depth, then pressed with bumps and hollows:
+// that is where the nose, the brow, the kneecap and the plate under the vest
+// come from. Gear is modelled as rounded boxes; cloth, webbing and the face
+// are painted, in colour and in relief (`skins.ts`).
 
 const THIGH = 17.5, SHIN = 16, UPPER_ARM = 12.5, FOREARM = 10.5;
 const HIP_Y = 36.5;
 /** Shoulder joint, in torso space. */
 const SHOULDER_X = 7.6, SHOULDER_Y = 16.6;
 /** Facets round every limb, and fatigue cloth per texture repeat, the same everywhere. */
-const SIDES = 12;
+const SIDES = 16;
 const CLOTH_DENSITY = 22;
 /** The torso turns its support shoulder toward the target; the weapon stays on the aim line. */
 const BLADE = 0.55;
 /** Kneeling pose height over the 36u ducked hull: squash the remainder. */
 const DUCK_SCALE = 0.61;
+/**
+ * The face, as bumps on the head loft (0.5 is the nose; heights are the head's
+ * own): brow ridge over hollow sockets, the nose and its tip, cheekbones, lips,
+ * chin, the angle of the jaw, and the temples drawn in.
+ */
+const FACE: Bump[] = [
+  { u: 0.5, y: 4.9, su: 0.022, sy: 1.1, h: 0.55 }, { u: 0.5, y: 3.95, su: 0.032, sy: 0.55, h: 0.95 },
+  { u: 0.43, y: 6.05, su: 0.05, sy: 0.4, h: 0.3, mirror: true }, { u: 0.5, y: 6.2, su: 0.03, sy: 0.4, h: 0.2 },
+  { u: 0.428, y: 5.2, su: 0.034, sy: 0.42, h: -0.42, mirror: true },
+  { u: 0.375, y: 4.3, su: 0.05, sy: 0.7, h: 0.28, mirror: true },
+  { u: 0.5, y: 2.75, su: 0.05, sy: 0.38, h: 0.32 }, { u: 0.5, y: 2.2, su: 0.06, sy: 0.2, h: -0.12 },
+  { u: 0.5, y: 1.35, su: 0.06, sy: 0.5, h: 0.42 },
+  { u: 0.31, y: 1.9, su: 0.05, sy: 0.7, h: 0.22, mirror: true },
+  { u: 0.34, y: 6.4, su: 0.04, sy: 0.9, h: -0.18, mirror: true },
+];
 const RIGHT = new THREE.Vector3(1, 0, 0);
 const EULER = new THREE.Euler();
 
@@ -204,7 +100,8 @@ export class Character {
   private readonly weaponSlot = new THREE.Group();
   private weapon: THREE.Group | null = null;
   private weaponId = -1;
-  private readonly materials: THREE.MeshLambertMaterial[] = [];
+  private readonly materials: THREE.MeshPhongMaterial[] = [];
+  private readonly lens = lensMaterial();
   private readonly skeletons: THREE.Skeleton[] = [];
   private readonly direction = new THREE.Vector3();
   private readonly pole = new THREE.Vector3();
@@ -226,19 +123,19 @@ export class Character {
 
   constructor(team: Team, look: Look = 0) {
     const mat = (part: SkinPart) => {
-      const material = new THREE.MeshLambertMaterial({ map: skin(team, look, part) });
+      const material = skinMaterial(team, look, part);
       this.materials.push(material);
       return material;
     };
-    const cloth = mat("cloth"), vest = mat("vest"), gear = mat("gear");
-    const face = mat("head"), hand = mat("skin");
-    // One smooth-shaded language for the whole figure: lofts for anything
-    // with length, ellipsoids for joints and gear. No part has a hard corner,
-    // so a pouch and the chest it sits on take the light the same way.
-    const tube = (group: THREE.Group, material: THREE.Material, rings: Ring[], square = 2) =>
-      meshPart(group, loft(rings, SIDES, { density: CLOTH_DENSITY, square }), material, [0, 0, 0]);
-    const shell = (group: THREE.Group, material: THREE.Material, rings: Ring[], square = 2) =>
-      meshPart(group, loft(rings, SIDES, { square }), material, [0, 0, 0]);
+    const cloth = mat("cloth"), vest = mat("vest"), pouch = mat("pouch"), gear = mat("gear");
+    const face = mat("head"), hand = mat("hand"), boot = mat("boot");
+    // Tiled cloth, a sheet wrapped once round a form, and a rounded box of kit.
+    const tube = (group: THREE.Group, material: THREE.Material, rings: Ring[], options: LoftOptions = {}) =>
+      meshPart(group, loft(rings, SIDES, { density: CLOTH_DENSITY, ...options }), material, [0, 0, 0]);
+    const wrapped = (group: THREE.Group, material: THREE.Material, rings: Ring[], options: LoftOptions = {},
+                     sides = SIDES) => meshPart(group, loft(rings, sides, options), material, [0, 0, 0]);
+    const kit = (group: THREE.Group, material: THREE.Material, size: V3, at: V3, rotation: V3 = [0, 0, 0],
+                 round = 5) => meshPart(group, roundBox(...size, round), material, at, rotation);
     const lump = (group: THREE.Group, material: THREE.Material, size: V3, at: V3) =>
       meshPart(group, ball(...size), material, at);
 
@@ -247,62 +144,93 @@ export class Character {
     this.pivot.add(this.hips);
     this.hips.position.y = HIP_Y;
     tube(this.hips, cloth, [[-3.8, 1.6, 2, 0, 0, 2.2], [-2.4, 5.4, 3.6, 0, 0, 4.4], [0, 6.9, 4, 0, 0, 5],
-                            [2.5, 6.6, 4, 0, 0, 4.6], [4.5, 6.1, 3.9, 0, 0, 4.2]], 2.3);
-    shell(this.hips, gear, [[3, 6.75, 4.35, 0, 0, 4.85], [3.9, 6.75, 4.35, 0, 0, 4.75], [4.8, 6.5, 4.3, 0, 0, 4.6]], 2.3); // belt
-    lump(this.hips, gear, [1, 2.7, 1.9], [7.4, -4.4, 0.4]); // holster
-    lump(this.hips, gear, [2.4, 1.6, 1.2], [-2.6, 2.6, 5.2]); // rear pouch
+                            [2.5, 6.6, 4, 0, 0, 4.6], [4.5, 6.1, 3.9, 0, 0, 4.2]],
+      { square: 2.3, smooth: 2, bumps: [{ u: 0.09, y: -0.4, su: 0.07, sy: 1.7, h: 0.45, mirror: true }] });
+    // Duty belt: buckle, pistol magazines on the left, a utility pouch behind.
+    wrapped(this.hips, gear, [[3, 6.75, 4.35, 0, 0, 4.85], [3.9, 6.8, 4.4, 0, 0, 4.8], [4.8, 6.5, 4.3, 0, 0, 4.6]],
+      { square: 2.3 });
+    kit(this.hips, gear, [1.9, 1.5, 0.5], [0, 3.9, -4.6]);
+    for (const x of [-3.3, -5]) kit(this.hips, pouch, [1.4, 2.7, 1.1], [x, 2.9, x < -4 ? -3.6 : -4.4], [0, x < -4 ? 0.5 : 0.2, 0]);
+    kit(this.hips, pouch, [3.6, 2.7, 1.7], [2.8, 2.7, 5.1]);
+    kit(this.hips, pouch, [3.7, 1, 1.9], [2.8, 3.7, 5.15]);
 
     this.hips.add(this.torso);
     this.torso.position.y = 4.5;
     tube(this.torso, cloth, [[0, 6.1, 3.9, 0, 0, 4.2], [4, 6.4, 4.3, 0, 0, 4.3], [9, 7.1, 5, 0, 0, 4.6],
                              [13, 7.6, 5.1, 0, 0, 4.7], [16, 7.3, 4.4, 0, 0, 4.6], [17.8, 5.4, 3.4, 0, 0.3, 4],
-                             [19, 2.9, 2.6, 0, 0.4, 2.9], [21.6, 2.4, 2.4, 0, 0.3, 2.6]], 2.3);
-    // Plate carrier: a shell over the fatigues. Its pouch row and back panel
-    // are swellings in the shell, with the detail painted over them.
-    shell(this.torso, vest, [[2.6, 6.7, 4.6, 0, 0, 4.8], [3.6, 7.2, 5.9, 0, 0, 5], [7, 7.5, 6.4, 0, 0, 5.3],
-                             [9.6, 7.9, 6, 0, 0, 5.6], [13, 8.3, 6, 0, 0, 5.7], [15.8, 7.8, 5.2, 0, 0, 5.3],
-                             [17.4, 6, 4.2, 0, 0.3, 4.6], [18.3, 4.2, 3.4, 0, 0.3, 3.8]], 2.5);
-    lump(this.torso, gear, [1, 1.9, 0.8], [-5.2, 15.2, -5.3]); // radio
-    shell(this.torso, gear, [[16.5, 0.18, 0.18, -5.6, -5.2], [21, 0.12, 0.12, -5.6, -5.2]]);
+                             [19, 2.9, 2.6, 0, 0.4, 2.9], [21.6, 2.4, 2.4, 0, 0.3, 2.6]], { square: 2.3, smooth: 2 });
+    wrapped(this.torso, cloth, [[18.6, 3.5, 3.1, 0, 0.3, 3.3], [19.6, 3.3, 3.1, 0, 0.3, 3.2], [20.5, 3.4, 3.3, 0, 0.3, 3.3]]); // collar
+    // Plate carrier: a shell over the fatigues with a hard plate front and
+    // back, webbing painted round it and the load hung off that.
+    wrapped(this.torso, vest, [[2.6, 6.7, 4.6, 0, 0, 4.8], [3.6, 7.2, 5.7, 0, 0, 5], [7, 7.5, 6, 0, 0, 5.3],
+                               [9.6, 7.9, 5.9, 0, 0, 5.6], [13, 8.3, 5.9, 0, 0, 5.7], [15.8, 7.8, 5.2, 0, 0, 5.3],
+                               [17.4, 6, 4.2, 0, 0.3, 4.6], [18.3, 4.2, 3.4, 0, 0.3, 3.8]],
+      { square: 2.7, smooth: 2, bumps: [{ u: 0.5, y: 11, su: 0.13, sy: 4.5, h: 0.45 }, { u: 0, y: 11, su: 0.13, sy: 4.5, h: 0.4 }] });
+    for (const x of [-5.3, 5.3]) kit(this.torso, vest, [3.2, 1.2, 6.4], [x, 17.5, 0.3], [0, 0, x < 0 ? 0.25 : -0.25]); // shoulder pads
+    // Three rifle magazines across the stomach, each under its own flap.
+    for (const x of [-3.2, 0, 3.2]) {
+      kit(this.torso, pouch, [2.7, 5.2, 1.8], [x, 6.2, -6.9 + Math.abs(x) * 0.13]);
+      kit(this.torso, pouch, [2.85, 1.7, 2], [x, 8.3, -6.95 + Math.abs(x) * 0.13]);
+      kit(this.torso, gear, [0.7, 0.7, 0.3], [x, 7.8, -8 + Math.abs(x) * 0.13]);
+    }
+    kit(this.torso, pouch, [4.4, 2.5, 1], [2.5, 13.6, -6.2]); // admin pouch
+    kit(this.torso, pouch, [2, 4.4, 1.7], [-5.2, 13.2, -5.5], [0, 0.35, 0]); // radio
+    wrapped(this.torso, gear, [[15.2, 0.2, 0.2, -5.6, -5.4], [20.5, 0.12, 0.12, -5.6, -5.4]], {}, 5);
+    kit(this.torso, pouch, [1.9, 3.6, 3.3], [-8.2, 6.8, 0]); // utility, left side
+    kit(this.torso, pouch, [1.8, 2.8, 2.5], [8.2, 6.6, -0.6]); // grenade, right side
+    kit(this.torso, pouch, [9.4, 10.5, 2.3], [0, 10.6, 6.5], [0, 0, 0], 4); // pack
+    kit(this.torso, gear, [3.4, 0.7, 0.9], [0, 16.4, 6.4]); // drag handle
 
-    // The head: jaw narrower than the cheekbones, a flat face plane, and the
-    // skull carried behind the ears.
+    // The head: jaw narrower than the cheekbones, the skull carried behind the
+    // ears, and the features pressed in — brow over hollow sockets, the nose,
+    // cheekbones, lips and chin.
     this.torso.add(this.head);
     this.head.position.y = 21;
     this.head.scale.setScalar(1.05);
-    shell(this.head, face, [[0.2, 1.7, 1.9, 0, -0.5, 1.5], [0.9, 2.3, 3.3, 0, 0, 2.3], [2, 2.85, 3.8, 0, 0, 3],
-                            [3.4, 3.1, 3.9, 0, 0, 3.7], [5, 3.15, 3.8, 0, 0, 4.1], [6.6, 3.15, 3.9, 0, 0, 4.2],
-                            [8, 2.9, 3.5, 0, 0, 4], [9.1, 2.1, 2.5, 0, 0.2, 3.1], [9.8, 0.9, 1, 0, 0.4, 1.6]]);
-    const nose = team === "ct" ? mat("mask") : hand;
-    lump(this.head, nose, [0.42, 0.85, 0.6], [0, 3.95, -3.75]);
+    wrapped(this.head, face, [[0.2, 1.7, 1.9, 0, -0.5, 1.5], [0.9, 2.3, 3.2, 0, 0, 2.3], [2, 2.85, 3.65, 0, 0, 3],
+                              [3.4, 3.1, 3.75, 0, 0, 3.7], [5, 3.15, 3.7, 0, 0, 4.1], [6.6, 3.15, 3.85, 0, 0, 4.2],
+                              [8, 2.9, 3.5, 0, 0, 4], [9.1, 2.1, 2.5, 0, 0.2, 3.1], [9.8, 0.9, 1, 0, 0.4, 1.6]],
+      { smooth: 2, bumps: FACE }, 28);
+    const lens = this.lens;
+    const ears = () => { for (const x of [-3.2, 3.2]) meshPart(this.head, ball(0.28, 0.85, 0.55), mat("skin"), [x, 4.7, 0.55], [0, 0, x < 0 ? 0.12 : -0.12]); };
     if (team === "ct" && look === 0) {
-      shell(this.head, gear, [[6.1, 3.5, 4.3, 0, 0, 4.65], [7, 3.75, 4.55, 0, 0, 4.85], [8.5, 3.55, 4.25, 0, 0, 4.65],
-                              [9.7, 2.7, 3.2, 0, 0.2, 3.7], [10.4, 1.2, 1.4, 0, 0.3, 2]]);
-      for (const x of [-3.5, 3.5]) lump(this.head, gear, [0.7, 1.5, 1.4], [x, 4.6, 0.5]); // ear cups
-      // Goggles pushed up onto the helmet.
-      shell(this.head, vest, [[7.3, 3.85, 4.65, 0, 0, 4.95], [7.9, 3.9, 4.7, 0, 0, 5], [8.5, 3.7, 4.45, 0, 0, 4.8]]);
-      lump(this.head, vest, [2.7, 1, 0.8], [0, 7.9, -4.5]);
+      // Fabric-covered helmet, flared at the rim, with goggles pushed up.
+      const helmet = mat("helmet");
+      wrapped(this.head, helmet, [[5.7, 3.75, 4.5, 0, 0, 4.9], [6.3, 3.75, 4.5, 0, 0, 4.9], [7.4, 3.75, 4.5, 0, 0, 4.85],
+                                  [8.7, 3.45, 4.1, 0, 0, 4.55], [9.8, 2.6, 3.1, 0, 0.2, 3.6], [10.5, 1.2, 1.4, 0, 0.3, 1.9]],
+        { smooth: 2 }, 20);
+      wrapped(this.head, gear, [[7.5, 3.86, 4.62, 0, 0, 4.97], [8, 3.84, 4.58, 0, 0, 4.95], [8.5, 3.66, 4.36, 0, 0, 4.8]], {}, 20);
+      kit(this.head, gear, [5.8, 2, 1.3], [0, 8, -4.45], [-0.12, 0, 0], 4);
+      kit(this.head, lens, [5, 1.3, 0.5], [0, 8, -5.05], [-0.12, 0, 0], 4);
+      for (const x of [-3.45, 3.45]) {
+        lump(this.head, gear, [0.75, 1.5, 1.4], [x, 4.6, 0.5]); // ear cups
+        kit(this.head, gear, [0.22, 4.6, 0.8], [x * 0.93, 3.4, -1.5], [0.5, 0, x < 0 ? -0.16 : 0.16]); // chin strap
+      }
+      kit(this.head, gear, [2.4, 0.9, 1.1], [0, 0.9, -3.3]); // chin cup
     } else if (team === "ct") {
-      // Peaked cap over the balaclava, and a headset on one ear.
-      shell(this.head, gear, [[6.5, 3.35, 4.1, 0, 0, 4.4], [8, 3.3, 4, 0, 0, 4.35], [9.2, 2.6, 3.1, 0, 0.2, 3.5],
-                              [9.9, 1.1, 1.3, 0, 0.3, 1.9]]);
-      lump(this.head, gear, [2.7, 0.22, 2.1], [0, 6.75, -5.1]);
-      lump(this.head, vest, [0.6, 1.4, 1.3], [-3.4, 4.6, 0.5]);
-      lump(this.head, vest, [0.16, 0.16, 1.9], [-2.9, 3.6, -2.4]); // boom microphone
+      // Peaked cap over the balaclava, ballistic glasses, a headset on one ear.
+      const cap = mat("helmet");
+      wrapped(this.head, cap, [[6.5, 3.35, 4.1, 0, 0, 4.4], [8, 3.3, 4, 0, 0, 4.35], [9.2, 2.6, 3.1, 0, 0.2, 3.5],
+                               [9.9, 1.1, 1.3, 0, 0.3, 1.9]], { smooth: 2 }, 20);
+      kit(this.head, cap, [5.6, 0.4, 4], [0, 6.7, -5.4], [0.12, 0, 0], 3);
+      kit(this.head, lens, [5.4, 1.2, 0.45], [0, 5.15, -3.75], [0, 0, 0], 4);
+      lump(this.head, gear, [0.65, 1.4, 1.3], [-3.4, 4.6, 0.5]);
+      kit(this.head, gear, [0.3, 0.3, 3.6], [-3, 3.5, -2.2], [0.25, 0.3, 0]); // boom microphone
     } else if (look === 0) {
-      for (const x of [-3.15, 3.15]) lump(this.head, hand, [0.25, 0.75, 0.45], [x, 4.6, 0.5]); // ears
+      ears();
       // Knitted cap, rolled at the brim; the scarf is pulled up over the nose.
-      shell(this.head, gear, [[6.6, 3.3, 4.05, 0, 0, 4.35], [8.1, 3.1, 3.7, 0, 0, 4.2], [9.3, 2.3, 2.7, 0, 0.2, 3.3],
-                              [10.1, 1, 1.1, 0, 0.4, 1.8]]);
-      shell(this.head, vest, [[6.2, 3.4, 4.15, 0, 0, 4.45], [6.9, 3.5, 4.25, 0, 0, 4.55], [7.6, 3.35, 4.1, 0, 0, 4.4]]);
-      shell(this.head, mat("scarf"), [[-1.4, 3.1, 3.2, 0, 0, 3.2], [0, 3.3, 3.9, 0, 0, 3.2], [1.6, 3.2, 4.2, 0, 0, 3.3],
-                                      [3, 3.3, 4.3, 0, 0, 3.9], [3.7, 3.25, 4.15, 0, 0, 3.9]]);
+      wrapped(this.head, gear, [[6.6, 3.3, 4.05, 0, 0, 4.35], [8.1, 3.1, 3.7, 0, 0, 4.2], [9.3, 2.3, 2.7, 0, 0.2, 3.3],
+                                [10.1, 1, 1.1, 0, 0.4, 1.8]], { smooth: 2 }, 20);
+      wrapped(this.head, pouch, [[6.2, 3.4, 4.15, 0, 0, 4.45], [6.9, 3.5, 4.25, 0, 0, 4.55], [7.6, 3.35, 4.1, 0, 0, 4.4]], {}, 20);
+      wrapped(this.head, mat("scarf"), [[-1.6, 3.2, 3.3, 0, 0, 3.3], [-0.2, 3.4, 3.9, 0, 0, 3.3], [1.6, 3.2, 4.25, 0, 0, 3.3],
+                                        [3, 3.3, 4.6, 0, 0, 3.9], [3.8, 3.2, 4.35, 0, 0, 3.9]], { smooth: 2 }, 20);
     } else {
+      ears();
       // Bare-headed behind dark glasses, the scarf loose at the throat.
-      for (const x of [-3.15, 3.15]) lump(this.head, hand, [0.25, 0.75, 0.45], [x, 4.6, 0.5]);
-      lump(this.head, gear, [2.8, 0.78, 0.5], [0, 5, -3.6]);
-      for (const x of [-3.05, 3.05]) lump(this.head, gear, [0.2, 0.25, 1.9], [x, 5.15, -2]);
-      shell(this.head, mat("scarf"), [[-1.6, 3.2, 3.4, 0, 0, 3.3], [-0.4, 3.5, 3.9, 0, 0, 3.4], [0.7, 3.1, 3.4, 0, 0, 3.2]]);
+      kit(this.head, lens, [5.6, 1.5, 0.5], [0, 5.1, -3.8], [0, 0, 0], 4);
+      for (const x of [-3.1, 3.1]) kit(this.head, gear, [0.2, 0.3, 3.6], [x, 5.2, -2]);
+      wrapped(this.head, mat("scarf"), [[-2.2, 3, 3.2, 0, 0.2, 3.1], [-1.2, 3.5, 3.9, 0, 0.1, 3.4], [-0.3, 3.3, 3.7, 0, 0.1, 3.3],
+                                        [0.3, 2.7, 3, 0, 0.2, 2.9]], { smooth: 2 }, 20);
     }
 
     this.torso.add(this.weaponSlot);
@@ -312,46 +240,65 @@ export class Character {
     this.flash.scale.setScalar(13);
     this.flash.visible = false;
     this.weaponSlot.add(this.flash);
-    const limbs: Array<[THREE.Group, THREE.Group, THREE.BufferGeometry, number]> = [];
+    const limbs: Array<[THREE.Group, THREE.Group, THREE.BufferGeometry, number, THREE.Material]> = [];
+    const sleeves = mat("arms"), trousers = mat("legs");
     for (const side of [-1, 1]) {
       const upper = new THREE.Group(), lower = new THREE.Group();
-      shell(lower, gear, [[-FOREARM - 0.6, 1.4, 1.2], [-FOREARM + 0.6, 1.7, 1.5], [-FOREARM + 1.8, 1.65, 1.5]]); // cuff
-      lump(lower, hand, [1.15, 1.9, 1.55], [0, -FOREARM - 1.8, 0]);
+      // Glove: a gauntlet over the cuff and a closed fist with the thumb across it.
+      wrapped(lower, hand, [[-FOREARM - 0.7, 1.35, 1.15], [-FOREARM + 0.5, 1.7, 1.5], [-FOREARM + 1.7, 1.65, 1.5]]);
+      kit(lower, hand, [2.3, 3, 2.7], [0, -FOREARM - 1.8, 0], [0, 0, 0], 3);
+      kit(lower, hand, [0.9, 1.9, 1], [0, -FOREARM - 1.7, -1.5], [0.35, 0, 0], 3);
       this.torso.add(upper, lower);
       this.shoulders.push(upper); this.elbows.push(lower);
-      // One sleeve from deltoid to wrist, authored hanging straight down and
-      // skinned across the elbow, so the joint bends instead of hinging.
+      // One sleeve from the cap of the deltoid to the wrist, authored hanging
+      // straight down and skinned across the elbow, so the joint bends
+      // instead of hinging. The left arm mirrors the sheet so its pocket
+      // still faces out.
       const U = UPPER_ARM;
-      limbs.push([upper, lower, mergeGeometries([
-        ball(2.7, 2.8, 2.8).translate(0, -0.3, 0),
-        loft([[-U - FOREARM, 1.45, 1.3], [-U - 7, 1.9, 1.8], [-U - 3, 2.15, 2.05], [-U - 1.2, 2.05, 2],
-              [-U, 1.95, 2], [-U + 1.5, 2, 2], [-U + 4, 2.2, 2.3], [-4, 2.45, 2.5], [-1, 2.5, 2.5]],
-          SIDES, { density: CLOTH_DENSITY }),
-      ])!, -U]);
+      limbs.push([upper, lower, loft(
+        [[-U - FOREARM, 1.45, 1.3], [-U - 7, 1.9, 1.8], [-U - 3, 2.15, 2.05], [-U - 1.2, 2.05, 2], [-U, 1.95, 2],
+         [-U + 1.5, 2, 2], [-U + 4, 2.2, 2.3], [-4, 2.5, 2.55], [-1.2, 2.75, 2.8], [0.8, 2.5, 2.6],
+         [2, 1.5, 1.6], [2.5, 0.3, 0.3]],
+        SIDES, { smooth: 1, mirrorU: side < 0, bumps: [
+          { u: 0.5, y: -6.5, su: 0.1, sy: 2.6, h: 0.3 }, { u: 0, y: -U, su: 0.09, sy: 1, h: 0.3 },
+          { u: 0.5, y: -U - 3.5, su: 0.12, sy: 2, h: 0.2 }] }), -U, sleeves]);
 
       const hip = new THREE.Group(), knee = new THREE.Group();
       hip.position.set(side * 3.6, 0, 0);
       knee.position.y = -THIGH;
-      lump(knee, gear, [2.2, 2.3, 0.9], [0, -0.4, -2.2]); // knee pad
-      // Boot: shaft, instep, then a toe box that runs forward of the ankle.
-      shell(knee, gear, [[-19, 2, 5.3, 0, -2.1], [-18.1, 2.25, 5.5, 0, -2.1], [-16.7, 2.2, 4.7, 0, -1.6],
-                         [-15.2, 2.1, 3.1, 0, -0.4], [-13, 2.15, 2.5], [-10.4, 2.4, 2.6], [-9.6, 2.2, 2.4]]);
+      if (side > 0) {
+        // Drop-leg holster strapped to the right thigh, the pistol's grip clear of it.
+        kit(hip, gear, [1.5, 5.6, 3.2], [3.9, -6.6, 0.3], [0, 0, 0], 4);
+        kit(hip, gear, [1.1, 2.4, 1.5], [4, -3.3, 1.5], [-0.35, 0, 0]);
+        for (const y of [-5.6, -8.4]) {
+          wrapped(hip, gear, [[y - 0.45, 3.5, 3.65, 0, 0, 3.8], [y + 0.45, 3.6, 3.75, 0, 0, 3.9]]);
+        }
+        kit(hip, gear, [0.5, 5.4, 1.1], [3.5, -2, 0.3]);
+      }
+      // Hard knee pad on its strap.
+      kit(knee, gear, [3.7, 4.3, 1.5], [0, -0.5, -2.35], [0, 0, 0], 3);
+      wrapped(knee, gear, [[-1.3, 2.6, 2.6, 0, 0, 2.8], [-0.4, 2.6, 2.6, 0, 0, 2.8]]);
+      // Boot: lugged sole, then the upper laced to a padded collar.
+      wrapped(knee, boot, [[-19, 2.15, 5.45, 0, -2.1], [-18.2, 2.3, 5.55, 0, -2.1], [-17.4, 2.2, 5.3, 0, -2.05],
+                           [-16.4, 2.15, 4.4, 0, -1.4], [-15.2, 2.1, 3.1, 0, -0.4], [-13, 2.15, 2.5],
+                           [-10.4, 2.4, 2.6], [-9.4, 2.5, 2.7], [-9, 2.2, 2.4]], { smooth: 1 });
       hip.add(knee); this.hips.add(hip);
       this.legs.push(hip); this.knees.push(knee);
-      // Trouser leg, hip to boot top. Thigh and calf carry their mass at the
-      // back; the shin is straight in front.
+      // Trouser leg, hip to boot top: mass at the back of thigh and calf, a
+      // straight shin, the kneecap, and the cloth bloused above the boot.
       const T = THIGH;
-      limbs.push([hip, knee, mergeGeometries([
-        ball(3.6, 3.6, 3.9).translate(0, -0.6, 0.2),
-        loft([[-T - SHIN + 3, 1.9, 1.9], [-T - 10, 2.1, 2, 0, 0, 2.7], [-T - 5.5, 2.4, 2.2, 0, 0, 3],
-              [-T - 1.5, 2.35, 2.4, 0, 0, 2.5], [-T, 2.4, 2.5], [-T + 1.5, 2.4, 2.45], [-T + 4.5, 2.75, 2.9],
-              [-7, 3.3, 3.5, 0, 0, 3.6], [-2, 3.6, 3.7, 0, 0, 3.9]], SIDES, { density: CLOTH_DENSITY }),
-      ])!, -T]);
+      limbs.push([hip, knee, loft(
+        [[-T - SHIN + 3, 1.9, 1.9], [-T - 11.6, 2.5, 2.4, 0, 0, 2.8], [-T - 9.5, 2.2, 2.05, 0, 0, 2.8],
+         [-T - 5.5, 2.4, 2.2, 0, 0, 3], [-T - 1.5, 2.35, 2.4, 0, 0, 2.5], [-T, 2.4, 2.5], [-T + 1.5, 2.4, 2.45],
+         [-T + 4.5, 2.75, 2.9], [-7, 3.3, 3.5, 0, 0, 3.6], [-2, 3.6, 3.7, 0, 0, 3.9], [0.5, 3.5, 3.6, 0, 0, 3.8],
+         [2.2, 2.4, 2.6], [2.8, 0.4, 0.4]],
+        SIDES, { smooth: 1, mirrorU: side < 0, bumps: [{ u: 0.5, y: -T, su: 0.09, sy: 1.3, h: 0.35 }] }),
+        -T, trousers]);
     }
     batchParts(this.pivot);
     // Skinned after batching, which would otherwise merge them into rigid parts.
-    for (const [parent, child, geometry, joint] of limbs) {
-      const mesh = new THREE.SkinnedMesh(skinAcross(geometry, joint), cloth);
+    for (const [parent, child, geometry, joint, material] of limbs) {
+      const mesh = new THREE.SkinnedMesh(skinAcross(geometry, joint), material);
       // The bones are this rig's own joint groups; a Skeleton only reads their matrices.
       const skeleton = new THREE.Skeleton([parent, child] as unknown as THREE.Bone[],
         [new THREE.Matrix4(), new THREE.Matrix4().makeTranslation(0, -joint, 0)]);
@@ -537,6 +484,7 @@ export class Character {
     disposeParts(this.root);
     for (const material of this.materials) material.dispose();
     this.flash.material.dispose();
+    this.lens.dispose();
     for (const skeleton of this.skeletons) skeleton.dispose();
     // Cached team textures and weapon materials outlive a roster rebuild.
   }

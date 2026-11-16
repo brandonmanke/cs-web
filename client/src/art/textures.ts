@@ -83,20 +83,14 @@ export function grain(c: Ctx, amount: number, scale = 1): void {
   c.ctx.putImageData(image, 0, 0);
 }
 
-/**
- * Tileable fractal value noise as a brightness pass: the slow, cloudy
- * variation that makes a flat fill read as poured concrete or worn steel.
- */
-export function cloud(c: Ctx, amount: number, scale = 64, octaves = 4): void {
-  const size = c.size;
-  const image = c.ctx.getImageData(0, 0, size, size);
-  const data = image.data;
+/** Tileable fractal value noise, 0..1 per pixel: the raw material of every organic pattern. */
+export function noiseField(size: number, random: () => number, scale = 64, octaves = 4): Float32Array {
   const sum = new Float32Array(size * size);
   let weight = 1, total = 0;
   for (let octave = 0; octave < octaves; ++octave, weight *= 0.5) {
     const cells = Math.max(1, Math.round(size / (scale / 2 ** octave)));
     const lattice = new Float32Array(cells * cells);
-    for (let i = 0; i < lattice.length; ++i) lattice[i] = c.random();
+    for (let i = 0; i < lattice.length; ++i) lattice[i] = random();
     total += weight;
     for (let y = 0; y < size; ++y) {
       const fy = (y / size) * cells, y0 = Math.floor(fy), ty = fy - y0;
@@ -110,11 +104,68 @@ export function cloud(c: Ctx, amount: number, scale = 64, octaves = 4): void {
       }
     }
   }
-  for (let i = 0; i < sum.length; ++i) {
-    const delta = (sum[i]! / total - 0.5) * 2 * amount;
+  for (let i = 0; i < sum.length; ++i) sum[i]! /= total;
+  return sum;
+}
+
+/**
+ * Fractal noise as a brightness pass: the slow, cloudy variation that makes a
+ * flat fill read as poured concrete or worn steel.
+ */
+export function cloud(c: Ctx, amount: number, scale = 64, octaves = 4): void {
+  const size = c.size;
+  const image = c.ctx.getImageData(0, 0, size, size);
+  const data = image.data;
+  const field = noiseField(size, c.random, scale, octaves);
+  for (let i = 0; i < field.length; ++i) {
+    const delta = (field[i]! - 0.5) * 2 * amount;
     for (let k = 0; k < 3; ++k) data[i * 4 + k] = Math.max(0, Math.min(255, data[i * 4 + k]! + delta));
   }
   c.ctx.putImageData(image, 0, 0);
+}
+
+export function hexRgb(hex: string): [number, number, number] {
+  const value = parseInt(hex.slice(1), 16);
+  return [value >> 16, (value >> 8) & 255, value & 255];
+}
+
+/**
+ * Disruptive-pattern camouflage: two noise fields cut at thresholds into hard
+ * patches of `colours` over a base, the way printed fabric actually looks.
+ */
+export function camo(c: Ctx, base: string, colours: string[], scale = 40): void {
+  const size = c.size;
+  const image = c.ctx.getImageData(0, 0, size, size);
+  const data = image.data;
+  const fields = colours.map(() => noiseField(size, c.random, scale, 3));
+  const rgb = [hexRgb(base), ...colours.map(hexRgb)];
+  for (let i = 0; i < size * size; ++i) {
+    let pick = 0;
+    for (let k = 0; k < fields.length; ++k) if (fields[k]![i]! > 0.56 + k * 0.03) pick = k + 1;
+    const colour = rgb[pick]!;
+    data[i * 4] = colour[0]; data[i * 4 + 1] = colour[1]; data[i * 4 + 2] = colour[2]; data[i * 4 + 3] = 255;
+  }
+  c.ctx.putImageData(image, 0, 0);
+}
+
+/** A colour canvas and the height canvas that goes with it, painted together. */
+export interface Relief { color: Ctx; height: Ctx }
+export interface ReliefTextures { map: THREE.CanvasTexture; bumpMap: THREE.CanvasTexture }
+
+/**
+ * Paint a surface and its relief side by side. Height starts at mid grey;
+ * lighter stands proud, darker is recessed.
+ */
+export function reliefTextures(size: number, seed: number, paint: (r: Relief) => void): ReliefTextures {
+  let bumpMap!: THREE.CanvasTexture;
+  const map = canvasTexture(size, seed, (color) => {
+    bumpMap = canvasTexture(size, seed + 7919, (height) => {
+      fill(height, "#808080");
+      paint({ color, height });
+    });
+  });
+  bumpMap.colorSpace = THREE.NoColorSpace;
+  return { map, bumpMap };
 }
 
 /** Soft-edged blotches — water staining, soot, corrosion bloom. */
