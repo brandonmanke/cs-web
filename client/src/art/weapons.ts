@@ -1,5 +1,7 @@
 import * as THREE from "three";
-import { canvasTexture, cloud, fill, grain, stains } from "./textures";
+import {
+  camo, canvasTexture, cloud, fill, grain, reliefTextures, stains, type ReliefTextures,
+} from "./textures";
 import { ball, batchParts, bevelBox, capsule, loft, meshPart, profile, type V3 } from "./geometry";
 
 // Original procedural models. Barrel points -Z, +Y up, origin at the grip.
@@ -8,59 +10,133 @@ export const WeaponId = {
   none: 0, knife: 1, usp: 2, glock: 3, ak47: 4, m4a1: 5, awp: 6, mp5: 7,
 } as const;
 
-function surface(base: string, seed: number, kind: "metal" | "polymer" | "wood" | "cloth") {
-  return canvasTexture(128, seed, (c) => {
-    fill(c, base);
-    cloud(c, kind === "wood" ? 22 : 12, 48, 4);
-    grain(c, 6, 1);
-    stains(c, 7, "#121519", 22);
-    for (let i = 0; i < 128; ++i) {
-      const x = Math.floor(c.random() * 128), y = Math.floor(c.random() * 128);
-      if (kind === "wood") {
-        c.ctx.strokeStyle = i % 2 ? "#4e2c17" : "#b17c43";
-        c.ctx.globalAlpha = 0.24;
-        c.ctx.beginPath();
-        c.ctx.moveTo(x, 0);
-        c.ctx.bezierCurveTo(x + 14, 42, x - 12, 80, x + 3, 128);
-        c.ctx.stroke();
-      } else {
-        if (i % 3) continue; // a few scuffs, not a hatch
-        c.ctx.fillStyle = i % 2 ? "rgba(195,204,207,0.1)" : "rgba(0,0,0,0.14)";
-        c.ctx.fillRect(x, y, kind === "metal" ? 2 + c.random() * 12 : 1, 1);
+type Finish = "metal" | "polymer" | "wood" | "cloth" | "skin";
+
+/**
+ * A weapon surface, painted in colour and in relief. Detail runs along the
+ * barrel (canvas x): that is the way steel is machined and a stock is cut, and
+ * getting it wrong is what makes a stock look like a fence post.
+ */
+function surface(base: string, seed: number, finish: Finish, camouflage?: string[]): ReliefTextures {
+  return reliefTextures(256, seed, ({ color, height }) => {
+    const x = color.ctx, h = height.ctx, S = 256;
+    if (camouflage) camo(color, base, camouflage, 26);
+    else fill(color, base);
+    cloud(color, finish === "wood" ? 16 : 9, 96, 3);
+    if (finish === "wood") {
+      // Grain: long, slightly wandering lines, darker in the latewood, with a knot or two.
+      for (let i = 0; i < 90; ++i) {
+        const y = color.random() * S, drift = (color.random() - 0.5) * 14;
+        const style = i % 3 ? "rgba(58,30,14,0.3)" : "rgba(205,150,90,0.22)";
+        for (const ctx of [x, h]) {
+          ctx.strokeStyle = ctx === x ? style : (i % 3 ? "rgba(70,70,70,0.5)" : "rgba(190,190,190,0.4)");
+          ctx.lineWidth = 0.5 + color.random() * (ctx === x ? 1.4 : 0.6);
+          ctx.beginPath();
+          ctx.moveTo(-4, y);
+          ctx.bezierCurveTo(S * 0.3, y + drift, S * 0.7, y - drift, S + 4, y + drift * 0.5);
+          ctx.stroke();
+        }
       }
-    }
-    c.ctx.globalAlpha = 1;
-    if (kind === "cloth" || kind === "polymer") {
-      c.ctx.fillStyle = kind === "cloth" ? "rgba(0,0,0,0.05)" : "rgba(0,0,0,0.12)";
-      for (let i = 0; i < 128; i += 4) {
-        c.ctx.fillRect(i, 0, 1, 128);
-        c.ctx.fillRect(0, i, 128, 1);
+      for (let knot = 0; knot < 2; ++knot) {
+        const kx = color.random() * S, ky = color.random() * S;
+        x.fillStyle = "rgba(48,24,10,0.5)";
+        x.beginPath(); x.ellipse(kx, ky, 9, 4, 0, 0, Math.PI * 2); x.fill();
       }
+      grain(height, 6, 1);
+    } else if (finish === "metal") {
+      // Machining marks and holster wear: fine bright scratches, a few dark.
+      for (let i = 0; i < 46; ++i) {
+        const sx = color.random() * S, sy = color.random() * S, length = 4 + color.random() * 26;
+        x.fillStyle = i % 4 ? "rgba(205,214,220,0.11)" : "rgba(0,0,0,0.2)";
+        x.fillRect(sx, sy, length, 1);
+        h.fillStyle = "rgba(60,60,60,0.5)";
+        h.fillRect(sx, sy, length, 1);
+      }
+      stains(color, 6, "#0e1114", 40);
+      grain(height, 5, 1);
+    } else if (finish === "polymer") {
+      grain(color, 5, 1);
+      grain(height, 34, 1); // moulded stipple
+    } else if (finish === "cloth") {
+      // Sleeve: creases across the arm, then the weave.
+      for (let i = 0; i < 26; ++i) {
+        const y = color.random() * S, w = 40 + color.random() * 90, at = color.random() * S;
+        for (const offset of [0, -S]) {
+          h.fillStyle = "rgb(180,180,180)"; h.fillRect(at + offset, y, w, 1.6);
+          h.fillStyle = "rgb(70,70,70)"; h.fillRect(at + offset, y + 1.6, w, 1.8);
+          x.fillStyle = "rgba(0,0,0,0.14)"; x.fillRect(at + offset, y + 1.6, w, 1.8);
+        }
+      }
+      grain(color, 5, 1);
+      grain(height, 12, 1);
+    } else {
+      grain(color, 4, 1);
+      grain(height, 5, 1);
     }
   });
 }
 
-let materials: Record<MatKey, THREE.MeshPhongMaterial> | undefined;
 type MatKey = "metal" | "steel" | "edge" | "dark" | "polymer" | "wood" | "olive" | "glass"
   | "sleeve" | "glove" | "skin";
-function mats(): Record<MatKey, THREE.MeshPhongMaterial> {
+let materials: Record<MatKey, THREE.MeshStandardMaterial> | undefined;
+/**
+ * Physically-based, because a gun is the one thing in the game made of
+ * surfaces that differ: blued steel that mirrors the room, oiled wood, dull
+ * moulded polymer. The renderer supplies the room they reflect.
+ */
+function mats(): Record<MatKey, THREE.MeshStandardMaterial> {
   if (!materials) {
+    const make = (textures: ReliefTextures, metalness: number, roughness: number, bumpScale: number) =>
+      new THREE.MeshStandardMaterial({ ...textures, metalness, roughness, bumpScale });
     materials = {
       // Parkerized receiver steel, and the darker blued steel of magazines and slides.
-      metal: new THREE.MeshPhongMaterial({ map: surface("#474d53", 5150, "metal"), shininess: 34, specular: 0x59616a }),
-      steel: new THREE.MeshPhongMaterial({ map: surface("#2b2f33", 5152, "metal"), shininess: 40, specular: 0x4c545c }),
-      edge: new THREE.MeshPhongMaterial({ map: surface("#8d979d", 5151, "metal"), shininess: 48 }),
-      dark: new THREE.MeshPhongMaterial({ color: 0x101316, shininess: 8 }),
-      polymer: new THREE.MeshPhongMaterial({ map: surface("#26292b", 7, "polymer"), shininess: 12, specular: 0x2a2d30 }),
-      wood: new THREE.MeshPhongMaterial({ map: surface("#8a4f26", 99, "wood"), shininess: 22, specular: 0x3a2a1c }),
-      olive: new THREE.MeshPhongMaterial({ map: surface("#4f5a3a", 123, "polymer"), shininess: 6, specular: 0x202418 }),
-      glass: new THREE.MeshPhongMaterial({ color: 0x35606e, emissive: 0x0b2029, shininess: 90 }),
-      sleeve: new THREE.MeshPhongMaterial({ map: surface("#4f5d6b", 411, "cloth"), shininess: 2, specular: 0x111111 }),
-      glove: new THREE.MeshPhongMaterial({ map: surface("#4b4a41", 413, "cloth"), shininess: 6, specular: 0x1c1c1c }),
-      skin: new THREE.MeshPhongMaterial({ map: surface("#b98a68", 415, "cloth"), shininess: 4, specular: 0x221a14 }),
+      metal: make(surface("#555b61", 5150, "metal"), 0.85, 0.4, 0.5),
+      steel: make(surface("#33373b", 5152, "metal"), 0.92, 0.3, 0.5),
+      edge: make(surface("#a0a9ae", 5151, "metal"), 1, 0.24, 0.4),
+      dark: new THREE.MeshStandardMaterial({ color: 0x0b0d0f, metalness: 0.3, roughness: 0.75 }),
+      polymer: make(surface("#232629", 7, "polymer"), 0.04, 0.62, 1.4),
+      wood: make(surface("#8a4f26", 99, "wood"), 0, 0.36, 0.45),
+      olive: make(surface("#4a5536", 123, "polymer"), 0.04, 0.7, 1.4),
+      glass: new THREE.MeshStandardMaterial({ color: 0x1b3b45, metalness: 0.7, roughness: 0.06 }),
+      sleeve: make(surface("#4f6177", 411, "cloth", ["#3b4a5f", "#647890"]), 0, 0.95, 2.2),
+      glove: make(surface("#3d3c35", 413, "polymer"), 0, 0.8, 1.6),
+      skin: make(surface("#b98a68", 415, "skin"), 0, 0.62, 0.4),
     };
   }
   return materials;
+}
+
+/**
+ * The room the weapons reflect: dim walls under three strip lights, a warm
+ * panel to one side and a cool one to the other. Nothing here is ever drawn —
+ * it is prefiltered into an environment map — but it is why a flat receiver
+ * carries a moving streak of light instead of one grey value.
+ */
+export function reflectionRoom(): THREE.Scene {
+  const room = new THREE.Scene();
+  const glow = (r: number, g: number, b: number) => {
+    const material = new THREE.MeshBasicMaterial();
+    material.color.setRGB(r, g, b);
+    return material;
+  };
+  const shell = new THREE.Mesh(new THREE.BoxGeometry(24, 12, 24), glow(0.3, 0.31, 0.35));
+  shell.material.side = THREE.BackSide;
+  room.add(shell);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(24, 24), glow(0.05, 0.05, 0.055));
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = -5.9;
+  room.add(floor);
+  for (const z of [-7, 0, 7]) {
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(17, 0.2, 1.3), glow(9, 9, 8.6));
+    strip.position.set(0, 5.8, z);
+    room.add(strip);
+  }
+  const warm = new THREE.Mesh(new THREE.BoxGeometry(0.2, 6, 8), glow(4.6, 3.3, 1.9));
+  warm.position.set(-11.8, 0, -2);
+  const cool = new THREE.Mesh(new THREE.BoxGeometry(0.2, 5, 7), glow(1.1, 1.5, 2.1));
+  cool.position.set(11.8, 0.5, 3);
+  room.add(warm, cool);
+  return room;
 }
 
 let flash: THREE.CanvasTexture | undefined;
@@ -115,7 +191,7 @@ function joint(g: THREE.Group, name: string, at: V3): THREE.Group {
 /** Faceted cylinder along the barrel axis; `radius` is the rear end. */
 function tube(g: THREE.Group, mat: MatKey, radius: number, length: number, at: V3,
               frontRadius = radius): void {
-  meshPart(g, new THREE.CylinderGeometry(radius, frontRadius, length, 10),
+  meshPart(g, new THREE.CylinderGeometry(radius, frontRadius, length, 18),
     mats()[mat], at, [Math.PI / 2, 0, 0]);
 }
 

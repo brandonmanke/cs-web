@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { Character, type Fall, type Look } from "./art/character";
+import { reflectionRoom } from "./art/weapons";
 import { DuskTraffic, duskSky, orbitalSky } from "./art/sky";
 import { canvasTexture } from "./art/textures";
 import { buildMapGeometry, sampleLight, type ShadowProbe } from "./map/build";
@@ -167,6 +168,14 @@ export class Renderer {
     this.weaponKey.position.set(-15, 25, 10);
     this.weaponKey.target.position.set(0, 0, -25);
     this.weaponCamera.add(this.weaponKey, this.weaponKey.target);
+
+    // Weapons are physically-based and need a room to reflect. This one is
+    // generated — strip lights in a dim box, prefiltered once — and shared by
+    // both scenes.
+    const room = new THREE.PMREMGenerator(this.gl).fromScene(reflectionRoom(), 0.03).texture;
+    this.weaponScene.environment = room;
+    this.scene.environment = room;
+    this.scene.environmentIntensity = 0.4;
 
     // These light player bodies and their held weapons; the world is fully
     // baked into vertex colours.
@@ -489,7 +498,10 @@ export class Renderer {
     tint.lerp(scratchTint.set(r, g, b), Math.min(1, dt * 6));
     const level = (tint.x + tint.y + tint.z) / 3;
     const lift = CHARACTER_LIFT(level) / (level || 1);
-    this.weaponFill.intensity = 1.5 * Math.min(1.25, CHARACTER_LIFT(level));
+    const exposure = Math.min(1.25, CHARACTER_LIFT(level));
+    this.weaponFill.intensity = 1.5 * exposure;
+    // Reflections dim with the room, or blued steel would gleam in the dark.
+    this.weaponScene.environmentIntensity = 0.6 * exposure;
     this.weaponKey.color.setRGB(tint.x * lift, tint.y * lift, tint.z * lift);
   }
 

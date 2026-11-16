@@ -258,22 +258,28 @@ No binary assets. Nothing to license, nothing to download, everything diffs.
   the surface; seams, rivets, drips and soft stains sit on top. A crate texture
   is one whole framed, braced crate and is fitted to each face, not tiled by
   world position.
-- **Characters** (`client/src/art/character.ts`): 72u (six feet) tall like the
-  hull, built to real adult proportions in the manner of CS:Source rather than
-  1.6's stylised ones — a 9u head, 15u between the shoulder joints, the hip
-  joint at half height — so the figure sits inside the sim hitboxes instead of
-  filling them. The whole figure is one smooth-shaded language: 12-sided lofts
-  for anything with length, ellipsoids for joints and gear, no flat-shaded
-  boxes. A loft ring carries separate front and back depths and the mesh gets
-  true surface normals, which is what makes a skull with a jaw and a face
-  plane, a chest, a calf — and what stops a limb shading like a pipe. An arm
-  is one sleeve and a leg one trouser, skinned across the elbow and knee to
-  the rig's own joint groups, so a joint bends rather than hinges; cloth
-  repeats at one texel density on every limb. Pouches, straps and
-  camouflage are painted into skins and the face into a 256px head wrap;
-  headgear, holster and boots are geometry. Each side has two looks — helmet
-  and goggles or a peaked cap for CT, a cap and scarf or bare-headed in dark
-  glasses for T — with their own palettes, dealt out in pairs down the roster.
+- **Characters** (`client/src/art/character.ts`, `client/src/art/skins.ts`):
+  72u (six feet) tall like the hull, built to real adult proportions and to
+  the fidelity of a Source-era player model — a 9u head, 15u between the
+  shoulder joints, the hip joint at half height — so the figure sits inside
+  the sim hitboxes instead of filling them. Three things carry it:
+  *Sculpted form.* `loft` in `art/geometry.ts` is a sculpting primitive:
+  sections with separate front and back depth are splined, then bumps and
+  hollows are pressed into the surface. The head has a brow over hollow
+  sockets, a nose, cheekbones, lips, chin and jaw; the body a plate under the
+  vest, kneecaps, biceps. An arm is one sleeve and a leg one trouser, skinned
+  across the elbow and knee to the rig's own joint groups.
+  *Modelled kit.* Rounded boxes (`roundBox`): magazine pouches under flaps,
+  admin and radio pouches, a pack, a duty belt, a drop-leg holster on its
+  straps, hard knee pads, laced boots, and per-look headgear — a covered
+  helmet with goggles or a peaked cap and glasses for CT, a knitted cap and
+  scarf or bare-headed in dark glasses for T.
+  *Painted relief.* Each body part has its own sheet, painted twice — colour
+  and height — so light picks out a pocket flap or a strap: printed
+  camouflage cut from noise fields, seams, cargo pockets, rows of webbing,
+  laces, and a face of soft gradients with a shaped hairline. Materials are
+  Phong with bump maps, patched for Source's half-Lambert wrap and a rim
+  light. Looks are dealt out in pairs down the roster.
   Arms are two-bone IK onto the weapon's grips, and the torso blades behind a
   shouldered rifle.
   Animation follows GoldSrc's split: the lower body turns to the direction of
@@ -289,7 +295,11 @@ No binary assets. Nothing to license, nothing to download, everything diffs.
 - **Weapons** (`client/src/art/weapons.ts`): each gun is a set of side
   silhouettes (`profile` in `art/geometry.ts`) extruded to thickness — receiver,
   stock, grip, curved magazine — plus faceted barrels, sights and optics, in
-  real inches, with worn steel, wood and polymer textures. Fingerless-gloved
+  real inches. Materials are physically-based — blued and parkerized steel,
+  oiled wood with the grain along the stock, stippled polymer, each painted
+  in colour and relief — and reflect a generated strip-lit room
+  (`reflectionRoom`), which is what puts a moving streak of light on a flat
+  receiver. Fingerless-gloved
   hands with three-bone capsule fingers wrapped round what they hold, on a
   forearm with a rolled cuff; support grips differ for rifles and pistols, and
   the knife uses one hand. `art/geometry.ts` batches static parts by material
