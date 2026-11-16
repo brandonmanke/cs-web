@@ -27,7 +27,7 @@ function surface(base: string, seed: number, finish: Finish, camouflage?: string
       // Grain: long, slightly wandering lines, darker in the latewood, with a knot or two.
       for (let i = 0; i < 90; ++i) {
         const y = color.random() * S, drift = (color.random() - 0.5) * 14;
-        const style = i % 3 ? "rgba(58,30,14,0.3)" : "rgba(205,150,90,0.22)";
+        const style = i % 3 ? "rgba(58,30,14,0.17)" : "rgba(205,150,90,0.12)";
         for (const ctx of [x, h]) {
           ctx.strokeStyle = ctx === x ? style : (i % 3 ? "rgba(70,70,70,0.5)" : "rgba(190,190,190,0.4)");
           ctx.lineWidth = 0.5 + color.random() * (ctx === x ? 1.4 : 0.6);
@@ -98,7 +98,7 @@ function mats(): Record<MatKey, THREE.MeshStandardMaterial> {
       edge: make(surface("#a0a9ae", 5151, "metal"), 1, 0.24, 0.4),
       dark: new THREE.MeshStandardMaterial({ color: 0x0b0d0f, metalness: 0.3, roughness: 0.75 }),
       polymer: make(surface("#232629", 7, "polymer"), 0.04, 0.62, 1.4, 0.45),
-      wood: make(surface("#8a4f26", 99, "wood"), 0, 0.36, 0.45, 0.7),
+      wood: make(surface("#84491f", 99, "wood"), 0, 0.34, 0.22, 0.7),
       olive: make(surface("#4a5536", 123, "polymer"), 0.04, 0.7, 1.4, 0.4),
       glass: new THREE.MeshStandardMaterial({ color: 0x1b3b45, metalness: 0.7, roughness: 0.06 }),
       sleeve: make(surface("#4f6177", 411, "cloth", ["#3b4a5f", "#647890"]), 0, 0.95, 2.2, 0.15),

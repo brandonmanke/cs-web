@@ -299,10 +299,11 @@ No binary assets. Nothing to license, nothing to download, everything diffs.
   oiled wood with the grain along the stock, stippled polymer, each painted
   in colour and relief — and reflect a generated strip-lit room
   (`reflectionRoom`), which is what puts a moving streak of light on a flat
-  receiver. Fingerless-gloved
-  hands with three-bone capsule fingers wrapped round what they hold, on a
-  forearm with a rolled cuff; support grips differ for rifles and pistols, and
-  the knife uses one hand. `art/geometry.ts` batches static parts by material
+  receiver. The first-person hands are built as hands: one oriented palm from wrist to
+  knuckles, three-bone gloved fingers wrapped round what they hold, a thumb
+  with a base, on a camouflaged forearm with a rolled cuff; support grips
+  differ for rifles and pistols, and the knife is held in a fist.
+  `art/geometry.ts` batches static parts by material
   while preserving animated joints, including magazines and slides/bolts.
   Shared textures/materials survive swaps; each assembly owns its geometry.
   The first-person rig renders in a separate depth-cleared pass with a fixed
