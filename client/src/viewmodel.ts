@@ -252,9 +252,9 @@ export class Viewmodel {
     const target = this.target.copy(BASE);
     if (this.weaponId >= WeaponId.knife && this.weaponId <= WeaponId.glock) {
       // Short weapons need the grip higher in frame to keep both hands visible.
-      target.x -= 1.3;
-      target.y += 0.4;
-      target.z -= 6.5;
+      target.x -= 1.2;
+      target.y += 1.7;
+      target.z -= 3.2;
     }
     target.lerp(LOWERED, this.draw * this.draw);
     target.x -= reload * (pistol ? 2 : 3.2);
