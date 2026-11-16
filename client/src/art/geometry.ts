@@ -98,8 +98,12 @@ export function profile(points: Array<[number, number]>, width: number,
   return geometry;
 }
 
-/** One cross-section of a loft: height, half-extents, and an optional offset. */
-export type Ring = [y: number, rx: number, rz: number, cx?: number, cz?: number];
+/**
+ * One cross-section of a loft: height, half-width, half-depth and an optional
+ * offset. A sixth value gives the back (+Z) its own depth, which is what
+ * separates a skull, a calf or a chest from a pipe.
+ */
+export type Ring = [y: number, rx: number, rz: number, cx?: number, cz?: number, rzBack?: number];
 
 export interface LoftOptions {
   /** World units per texture repeat. Omitted, the texture wraps the tube once. */
@@ -114,21 +118,19 @@ export interface LoftOptions {
  * top. This is how a 600-polygon body gets a waist, a chest and a calf.
  */
 export function loft(rings: Ring[], sides = 8, options: LoftOptions = {}): THREE.BufferGeometry {
-  const positions: number[] = [], normals: number[] = [], uvs: number[] = [], index: number[] = [];
+  const positions: number[] = [], uvs: number[] = [], index: number[] = [];
   const y0 = rings[0]![0], span = rings[rings.length - 1]![0] - y0;
   const power = 2 / (options.square ?? 2);
   // A whole number of repeats round the widest ring, so the seam still tiles.
   const girth = Math.max(...rings.map((ring) => Math.PI * (ring[1] + ring[2])));
   const around = options.density ? Math.max(1, Math.round(girth / options.density)) : 1;
   const along = options.density ? span / options.density : 1;
-  for (const [y, rx, rz, cx = 0, cz = 0] of rings) {
+  for (const [y, rx, rz, cx = 0, cz = 0, rzBack = rz] of rings) {
     for (let i = 0; i <= sides; ++i) {
       const a = (i / sides) * Math.PI * 2;
       const s = Math.sign(Math.sin(a)) * Math.abs(Math.sin(a)) ** power;
       const c = Math.sign(Math.cos(a)) * Math.abs(Math.cos(a)) ** power;
-      positions.push(cx + rx * s, y, cz + rz * c);
-      const nx = s * rz, nz = c * rx, length = Math.hypot(nx, nz) || 1;
-      normals.push(nx / length, 0, nz / length);
+      positions.push(cx + rx * s, y, cz + (c > 0 ? rzBack : rz) * c);
       uvs.push(i / sides * around, (y - y0) / span * along);
     }
   }
@@ -144,7 +146,6 @@ export function loft(rings: Ring[], sides = 8, options: LoftOptions = {}): THREE
     const ring = rings[top ? rings.length - 1 : 0]!;
     const base = (top ? rings.length - 1 : 0) * row, centre = positions.length / 3;
     positions.push(ring[3] ?? 0, ring[0], ring[4] ?? 0);
-    normals.push(0, top ? 1 : -1, 0);
     uvs.push(0.5, top ? 1 : 0);
     for (let i = 0; i < sides; ++i) {
       if (top) index.push(base + i, base + i + 1, centre);
@@ -153,13 +154,23 @@ export function loft(rings: Ring[], sides = 8, options: LoftOptions = {}): THREE
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
   geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
   geometry.setIndex(index);
+  // True surface normals, so a taper or a dome shades as one, then weld the
+  // UV seam: its two columns are the same points and must light the same.
+  geometry.computeVertexNormals();
+  const normal = geometry.getAttribute("normal");
+  for (let r = 0; r < rings.length; ++r) {
+    const a = r * row, b = a + sides;
+    const x = normal.getX(a) + normal.getX(b), y = normal.getY(a) + normal.getY(b);
+    const z = normal.getZ(a) + normal.getZ(b), length = Math.hypot(x, y, z) || 1;
+    normal.setXYZ(a, x / length, y / length, z / length);
+    normal.setXYZ(b, x / length, y / length, z / length);
+  }
   return geometry;
 }
 
 /** A low-poly ellipsoid: joints, pads and anything else that should not have corners. */
 export function ball(rx: number, ry = rx, rz = rx): THREE.BufferGeometry {
-  return new THREE.SphereGeometry(1, 10, 6).scale(rx, ry, rz);
+  return new THREE.SphereGeometry(1, 12, 8).scale(rx, ry, rz);
 }
