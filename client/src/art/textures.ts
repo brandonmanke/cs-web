@@ -1,14 +1,17 @@
 import * as THREE from "three";
 
-// Procedural PSX-era textures. Everything is drawn to a small canvas with a
-// seeded RNG, so the atlas is deterministic, diffable as source, and carries no
-// licensing baggage. Nearest filtering and low resolution do the era work; the
-// palette does the Quake work (rust, sodium light, sickly green, wet concrete).
+// Procedural GoldSrc-era textures, remastered. Everything is drawn to a canvas
+// with a seeded RNG, so the atlas is deterministic, diffable as source, and
+// carries no licensing baggage. The era lives in the palette and the tiling
+// (rust, sodium light, sickly green, wet concrete), not in visible pixels:
+// like the GL renderer of the day, textures are bilinear-filtered and mipped.
 
-const SIZE = 128;
+const SIZE = 256;
+/** The repeat most surface detail is laid out on: 64u, two to a tile. */
+const CELL = 128;
 
-/** World units per texture tile. GoldSrc-ish: one tile per 64u. */
-export const TEXTURE_SCALE = 64;
+/** World units per texture tile: 256px over 128u, two texels to the unit. */
+export const TEXTURE_SCALE = 128;
 
 // Mulberry32 — small, fast, deterministic.
 function rng(seed: number): () => number {
@@ -40,10 +43,10 @@ export function canvasTexture(size: number, seed: number,
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
-  texture.magFilter = THREE.NearestFilter;
-  texture.minFilter = THREE.NearestMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.generateMipmaps = true;
-  texture.anisotropy = 4;
+  texture.anisotropy = 8;
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
@@ -80,26 +83,73 @@ export function grain(c: Ctx, amount: number, scale = 1): void {
   c.ctx.putImageData(image, 0, 0);
 }
 
-/** Irregular dark blotches — water staining, soot, corrosion bloom. */
+/**
+ * Tileable fractal value noise as a brightness pass: the slow, cloudy
+ * variation that makes a flat fill read as poured concrete or worn steel.
+ */
+export function cloud(c: Ctx, amount: number, scale = 64, octaves = 4): void {
+  const size = c.size;
+  const image = c.ctx.getImageData(0, 0, size, size);
+  const data = image.data;
+  const sum = new Float32Array(size * size);
+  let weight = 1, total = 0;
+  for (let octave = 0; octave < octaves; ++octave, weight *= 0.5) {
+    const cells = Math.max(1, Math.round(size / (scale / 2 ** octave)));
+    const lattice = new Float32Array(cells * cells);
+    for (let i = 0; i < lattice.length; ++i) lattice[i] = c.random();
+    total += weight;
+    for (let y = 0; y < size; ++y) {
+      const fy = (y / size) * cells, y0 = Math.floor(fy), ty = fy - y0;
+      const sy = ty * ty * (3 - 2 * ty), r0 = (y0 % cells) * cells, r1 = ((y0 + 1) % cells) * cells;
+      for (let x = 0; x < size; ++x) {
+        const fx = (x / size) * cells, x0 = Math.floor(fx), tx = fx - x0;
+        const sx = tx * tx * (3 - 2 * tx), c0 = x0 % cells, c1 = (x0 + 1) % cells;
+        const top = lattice[r0 + c0]! + (lattice[r0 + c1]! - lattice[r0 + c0]!) * sx;
+        const bottom = lattice[r1 + c0]! + (lattice[r1 + c1]! - lattice[r1 + c0]!) * sx;
+        sum[y * size + x]! += (top + (bottom - top) * sy) * weight;
+      }
+    }
+  }
+  for (let i = 0; i < sum.length; ++i) {
+    const delta = (sum[i]! / total - 0.5) * 2 * amount;
+    for (let k = 0; k < 3; ++k) data[i * 4 + k] = Math.max(0, Math.min(255, data[i * 4 + k]! + delta));
+  }
+  c.ctx.putImageData(image, 0, 0);
+}
+
+/** Soft-edged blotches — water staining, soot, corrosion bloom. */
 export function stains(c: Ctx, count: number, color: string, maxRadius: number): void {
   const SIZE = c.size;
+  const clear = `${color}00`;
   c.ctx.save();
-  c.ctx.fillStyle = color;
   for (let i = 0; i < count; ++i) {
     const x = c.random() * SIZE;
     const y = c.random() * SIZE;
     const radius = maxRadius * (0.3 + c.random() * 0.7);
-    c.ctx.globalAlpha = 0.05 + c.random() * 0.18;
-    c.ctx.beginPath();
+    c.ctx.globalAlpha = 0.08 + c.random() * 0.2;
     // Wrap by drawing the blotch in all four offsets it could straddle.
     const offsets: Array<[number, number]> = [[0, 0], [SIZE, 0], [0, SIZE], [SIZE, SIZE]];
     for (const [ox, oy] of offsets) {
-      c.ctx.moveTo(x - ox + radius, y - oy);
-      c.ctx.arc(x - ox, y - oy, radius, 0, Math.PI * 2);
+      const gradient = c.ctx.createRadialGradient(x - ox, y - oy, 0, x - ox, y - oy, radius);
+      gradient.addColorStop(0, color);
+      gradient.addColorStop(1, clear);
+      c.ctx.fillStyle = gradient;
+      c.ctx.fillRect(x - ox - radius, y - oy - radius, radius * 2, radius * 2);
     }
-    c.ctx.fill();
   }
   c.ctx.restore();
+}
+
+/** Run a 128px layout once per 64u cell, so one tile carries four of them. */
+function cells(c: Ctx, paint: (x: CanvasRenderingContext2D) => void): void {
+  for (let y = 0; y < SIZE; y += CELL) {
+    for (let x = 0; x < SIZE; x += CELL) {
+      c.ctx.save();
+      c.ctx.translate(x, y);
+      paint(c.ctx);
+      c.ctx.restore();
+    }
+  }
 }
 
 /** Vertical streaks below a feature — the single most "grimy industrial" cue. */
@@ -138,59 +188,85 @@ function rivets(c: Ctx, step: number, inset: number, light: string, dark: string
 function concrete(seed: number, base: string): THREE.CanvasTexture {
   return draw(seed, (c) => {
     fill(c, base);
-    grain(c, 34, 2);
-    stains(c, 14, "#1a1a16", 30);
-    drips(c, 10, "#15150f");
-    // Faint panel seams on a 64px grid.
-    c.ctx.strokeStyle = "rgba(0,0,0,0.28)";
+    cloud(c, 34, 128, 5);
+    stains(c, 12, "#1a1a16", 70);
+    drips(c, 18, "#15150f");
+    // Formwork seams on the 64u grid, with a tie hole in each panel corner.
+    cells(c, (x) => {
+      x.fillStyle = "rgba(0,0,0,0.3)";
+      x.fillRect(0, 0, CELL, 1); x.fillRect(0, 0, 1, CELL);
+      x.fillStyle = "rgba(255,255,255,0.06)";
+      x.fillRect(0, 1, CELL, 1); x.fillRect(1, 0, 1, CELL);
+      x.fillStyle = "rgba(0,0,0,0.4)";
+      for (const [hx, hy] of [[14, 14], [112, 14], [14, 112], [112, 112]]) x.fillRect(hx!, hy!, 3, 3);
+    });
+    // Hairline cracks wandering down from a seam.
+    c.ctx.strokeStyle = "rgba(0,0,0,0.16)";
     c.ctx.lineWidth = 1;
-    c.ctx.beginPath();
-    c.ctx.moveTo(0, 64.5); c.ctx.lineTo(SIZE, 64.5);
-    c.ctx.moveTo(64.5, 0); c.ctx.lineTo(64.5, SIZE);
-    c.ctx.stroke();
-    grain(c, 12, 1);
+    for (let i = 0; i < 3; ++i) {
+      let x = c.random() * SIZE, y = c.random() * SIZE;
+      c.ctx.beginPath();
+      c.ctx.moveTo(x, y);
+      for (let step = 0; step < 9; ++step) {
+        x += (c.random() - 0.5) * 14; y += 4 + c.random() * 8;
+        c.ctx.lineTo(x, y);
+      }
+      c.ctx.stroke();
+    }
+    grain(c, 9, 1);
   });
 }
 
 function metalPanel(seed: number): THREE.CanvasTexture {
   return draw(seed, (c) => {
-    fill(c, "#5a5f60");
-    grain(c, 26, 2);
-    // Two plates with a recessed seam.
-    c.ctx.fillStyle = "rgba(0,0,0,0.30)";
-    c.ctx.fillRect(0, 62, SIZE, 4);
-    c.ctx.fillStyle = "rgba(255,255,255,0.07)";
-    c.ctx.fillRect(0, 66, SIZE, 1);
+    fill(c, "#575c5d");
+    cloud(c, 20, 96, 4);
+    // Two plates per cell with a recessed seam.
+    cells(c, (x) => {
+      x.fillStyle = "rgba(0,0,0,0.34)";
+      x.fillRect(0, 62, CELL, 4); x.fillRect(0, 0, 2, CELL);
+      x.fillStyle = "rgba(255,255,255,0.09)";
+      x.fillRect(0, 66, CELL, 1); x.fillRect(2, 0, 1, CELL);
+    });
     rivets(c, 32, 8, "#8b9092", "#33383a");
-    stains(c, 8, "#20211c", 24);
-    drips(c, 7, "#3a2a18");
-    grain(c, 10, 1);
+    stains(c, 10, "#20211c", 44);
+    drips(c, 16, "#3a2a18");
+    grain(c, 7, 1);
   });
 }
 
 function rustedMetal(seed: number): THREE.CanvasTexture {
   return draw(seed, (c) => {
     fill(c, "#6b4a30");
-    grain(c, 40, 2);
-    stains(c, 22, "#31200f", 34);
-    stains(c, 12, "#8c5a28", 22);
-    drips(c, 16, "#2a1808");
+    cloud(c, 34, 96, 5);
+    stains(c, 26, "#31200f", 56);
+    stains(c, 18, "#9a5e28", 34);
+    drips(c, 30, "#2a1808");
     rivets(c, 40, 12, "#9a7048", "#2c1c0e");
-    grain(c, 16, 1);
+    grain(c, 12, 1);
   });
 }
 
 function grate(seed: number): THREE.CanvasTexture {
   return draw(seed, (c) => {
-    fill(c, "#2a2c2a");
-    grain(c, 18, 2);
-    c.ctx.fillStyle = "#585c58";
-    for (let y = 0; y < SIZE; y += 16) c.ctx.fillRect(0, y, SIZE, 5);
-    for (let x = 0; x < SIZE; x += 16) c.ctx.fillRect(x, 0, 5, SIZE);
-    c.ctx.fillStyle = "rgba(0,0,0,0.45)";
-    for (let y = 0; y < SIZE; y += 16) c.ctx.fillRect(0, y + 5, SIZE, 2);
-    stains(c, 10, "#140f08", 20);
-    grain(c, 14, 1);
+    fill(c, "#232523");
+    cloud(c, 12, 64, 3);
+    for (let y = 0; y < SIZE; y += 16) {
+      c.ctx.fillStyle = "#5b5f5b";
+      c.ctx.fillRect(0, y, SIZE, 5);
+      c.ctx.fillStyle = "#7b807b";
+      c.ctx.fillRect(0, y, SIZE, 1);
+      c.ctx.fillStyle = "rgba(0,0,0,0.5)";
+      c.ctx.fillRect(0, y + 5, SIZE, 2);
+    }
+    for (let x = 0; x < SIZE; x += 16) {
+      c.ctx.fillStyle = "#5b5f5b";
+      c.ctx.fillRect(x, 0, 5, SIZE);
+      c.ctx.fillStyle = "#7b807b";
+      c.ctx.fillRect(x, 0, 1, SIZE);
+    }
+    stains(c, 12, "#140f08", 40);
+    grain(c, 9, 1);
   });
 }
 
@@ -202,68 +278,121 @@ function brick(seed: number): THREE.CanvasTexture {
     for (let row = 0, y = 0; y < SIZE; y += height, ++row) {
       const offset = (row % 2) * (width / 2);
       for (let x = -width; x < SIZE + width; x += width) {
-        const shade = 0.75 + c.random() * 0.5;
-        const r = Math.floor(108 * shade);
-        const g = Math.floor(76 * shade);
-        const b = Math.floor(58 * shade);
+        const shade = 0.78 + c.random() * 0.4;
+        const r = Math.floor(112 * shade);
+        const g = Math.floor(72 * shade);
+        const b = Math.floor(54 * shade);
         c.ctx.fillStyle = `rgb(${r},${g},${b})`;
         c.ctx.fillRect(x + offset + 1, y + 1, width - 2, height - 2);
+        // Lit top edge, shadowed bottom: the brick stands proud of the mortar.
+        c.ctx.fillStyle = "rgba(255,235,210,0.1)";
+        c.ctx.fillRect(x + offset + 1, y + 1, width - 2, 1);
+        c.ctx.fillStyle = "rgba(0,0,0,0.22)";
+        c.ctx.fillRect(x + offset + 1, y + height - 2, width - 2, 1);
       }
     }
-    grain(c, 26, 2);
-    stains(c, 12, "#1c150c", 28);
-    drips(c, 8, "#181109");
-    grain(c, 10, 1);
+    cloud(c, 22, 96, 4);
+    stains(c, 14, "#1c150c", 56);
+    drips(c, 14, "#181109");
+    grain(c, 9, 1);
   });
 }
 
 function sand(seed: number): THREE.CanvasTexture {
   return draw(seed, (c) => {
-    fill(c, "#9a8558");
-    grain(c, 30, 2);
-    grain(c, 22, 1);
-    stains(c, 16, "#6b5a34", 30);
+    fill(c, "#978256");
+    cloud(c, 26, 128, 5);
+    stains(c, 14, "#6b5a34", 60);
+    // Scattered pebbles and their shadows.
+    for (let i = 0; i < 160; ++i) {
+      const x = c.random() * SIZE, y = c.random() * SIZE;
+      c.ctx.fillStyle = "rgba(0,0,0,0.25)";
+      c.ctx.fillRect(x, y + 1, 2, 1);
+      c.ctx.fillStyle = "rgba(215,200,160,0.4)";
+      c.ctx.fillRect(x, y, 2, 1);
+    }
+    grain(c, 12, 1);
   });
 }
 
+/** One whole crate face per tile: framed, planked and cross-braced. */
 function crate(seed: number): THREE.CanvasTexture {
   return draw(seed, (c) => {
-    fill(c, "#7a5a32");
-    // Plank lines.
-    c.ctx.fillStyle = "rgba(0,0,0,0.35)";
-    for (let y = 0; y < SIZE; y += 21) c.ctx.fillRect(0, y, SIZE, 2);
-    grain(c, 30, 1);
-    // Metal banding at the edges.
-    c.ctx.fillStyle = "#4a4640";
-    c.ctx.fillRect(0, 0, SIZE, 8);
-    c.ctx.fillRect(0, SIZE - 8, SIZE, 8);
-    c.ctx.fillRect(0, 0, 8, SIZE);
-    c.ctx.fillRect(SIZE - 8, 0, 8, SIZE);
-    rivets(c, 28, 2, "#8a8680", "#26241f");
-    stains(c, 8, "#241705", 20);
-    grain(c, 12, 1);
+    const x = c.ctx, frame = 26;
+    fill(c, "#7d5a30");
+    // Inner planks, each a slightly different cut of wood.
+    for (let px = frame; px < SIZE - frame; px += 34) {
+      x.fillStyle = `rgba(${c.random() < 0.5 ? "0,0,0" : "255,220,170"},${0.04 + c.random() * 0.1})`;
+      x.fillRect(px, frame, 34, SIZE - 2 * frame);
+      x.fillStyle = "rgba(0,0,0,0.4)";
+      x.fillRect(px, frame, 2, SIZE - 2 * frame);
+    }
+    // Diagonal brace across the panel.
+    x.save();
+    x.beginPath();
+    x.moveTo(frame, frame + 30); x.lineTo(frame + 30, frame);
+    x.lineTo(SIZE - frame, SIZE - frame - 30); x.lineTo(SIZE - frame - 30, SIZE - frame);
+    x.closePath();
+    x.fillStyle = "#8a6436";
+    x.fill();
+    x.strokeStyle = "rgba(0,0,0,0.45)";
+    x.lineWidth = 2;
+    x.stroke();
+    x.restore();
+    // Frame boards, mitred by overlap, shadowing the panel they sit on.
+    x.fillStyle = "rgba(0,0,0,0.35)";
+    x.fillRect(frame, frame, SIZE - 2 * frame, 4); x.fillRect(frame, frame, 4, SIZE - 2 * frame);
+    x.fillStyle = "#8f6839";
+    x.fillRect(0, 0, SIZE, frame); x.fillRect(0, SIZE - frame, SIZE, frame);
+    x.fillStyle = "#86602f";
+    x.fillRect(0, frame, frame, SIZE - 2 * frame); x.fillRect(SIZE - frame, frame, frame, SIZE - 2 * frame);
+    x.fillStyle = "rgba(0,0,0,0.4)";
+    x.fillRect(0, frame - 1, SIZE, 1); x.fillRect(0, SIZE - frame, SIZE, 1);
+    x.fillRect(0, 0, SIZE, 2); x.fillRect(0, SIZE - 2, SIZE, 2);
+    x.fillRect(0, 0, 2, SIZE); x.fillRect(SIZE - 2, 0, 2, SIZE);
+    // Wood grain: long faint streaks along each board.
+    for (let i = 0; i < 260; ++i) {
+      const gx = c.random() * SIZE, gy = c.random() * SIZE;
+      const along = gy < frame || gy > SIZE - frame;
+      x.fillStyle = `rgba(${c.random() < 0.5 ? "40,22,8" : "200,160,110"},0.16)`;
+      x.fillRect(gx, gy, along ? 20 + c.random() * 40 : 1, along ? 1 : 20 + c.random() * 40);
+    }
+    // Nail heads in the frame corners and along the boards.
+    for (const nx of [9, 60, 128, 196, 245]) {
+      for (const ny of [9, 245]) {
+        x.fillStyle = "#2a2622"; x.fillRect(nx, ny, 3, 3); x.fillRect(ny, nx, 3, 3);
+        x.fillStyle = "#9a958c"; x.fillRect(nx, ny, 2, 2); x.fillRect(ny, nx, 2, 2);
+      }
+    }
+    cloud(c, 18, 64, 4);
+    stains(c, 8, "#241705", 44);
+    grain(c, 8, 1);
   });
 }
 
 function techPanel(seed: number): THREE.CanvasTexture {
   return draw(seed, (c) => {
     fill(c, "#33383c");
-    grain(c, 20, 2);
-    // Vent louvres in the lower half.
-    c.ctx.fillStyle = "#1a1e21";
-    for (let y = 74; y < 118; y += 8) c.ctx.fillRect(12, y, SIZE - 24, 5);
-    c.ctx.fillStyle = "rgba(255,255,255,0.06)";
-    for (let y = 74; y < 118; y += 8) c.ctx.fillRect(12, y + 5, SIZE - 24, 1);
-    // A recessed upper plate.
-    c.ctx.strokeStyle = "rgba(0,0,0,0.5)";
-    c.ctx.lineWidth = 2;
-    c.ctx.strokeRect(12, 12, SIZE - 24, 48);
-    c.ctx.strokeStyle = "rgba(255,255,255,0.05)";
-    c.ctx.lineWidth = 1;
-    c.ctx.strokeRect(13, 13, SIZE - 26, 46);
+    cloud(c, 14, 96, 4);
+    cells(c, (x) => {
+      // Vent louvres in the lower half.
+      x.fillStyle = "#1a1e21";
+      for (let y = 74; y < 118; y += 8) x.fillRect(12, y, CELL - 24, 5);
+      x.fillStyle = "rgba(255,255,255,0.08)";
+      for (let y = 74; y < 118; y += 8) x.fillRect(12, y + 5, CELL - 24, 1);
+      // A recessed upper plate.
+      x.strokeStyle = "rgba(0,0,0,0.5)";
+      x.lineWidth = 2;
+      x.strokeRect(12, 12, CELL - 24, 48);
+      x.strokeStyle = "rgba(255,255,255,0.07)";
+      x.lineWidth = 1;
+      x.strokeRect(13, 13, CELL - 26, 46);
+      x.fillStyle = "rgba(0,0,0,0.35)";
+      x.fillRect(0, 0, CELL, 1); x.fillRect(0, 0, 1, CELL);
+    });
     rivets(c, 48, 6, "#7d8388", "#20252a");
-    stains(c, 7, "#101318", 22);
-    grain(c, 10, 1);
+    stains(c, 8, "#101318", 44);
+    grain(c, 7, 1);
   });
 }
 
@@ -271,13 +400,18 @@ function techPanel(seed: number): THREE.CanvasTexture {
 function lightPanel(seed: number, cool = false): THREE.CanvasTexture {
   return draw(seed, (c) => {
     fill(c, cool ? "#a3e3ee" : "#f2d89a");
-    grain(c, 16, 2);
-    c.ctx.fillStyle = cool ? "#3a6979" : "#8a7038";
-    c.ctx.fillRect(0, 0, SIZE, 10);
-    c.ctx.fillRect(0, SIZE - 10, SIZE, 10);
-    c.ctx.fillStyle = "rgba(255,255,255,0.5)";
-    c.ctx.fillRect(0, 42, SIZE, 44);
-    grain(c, 8, 1);
+    cloud(c, 10, 64, 3);
+    cells(c, (x) => {
+      x.fillStyle = cool ? "#3a6979" : "#8a7038";
+      x.fillRect(0, 0, CELL, 10);
+      x.fillRect(0, CELL - 10, CELL, 10);
+      x.fillStyle = "rgba(255,255,255,0.5)";
+      x.fillRect(0, 42, CELL, 44);
+      // Diffuser ribs.
+      x.fillStyle = "rgba(0,0,0,0.08)";
+      for (let rib = 8; rib < CELL; rib += 16) x.fillRect(rib, 10, 1, CELL - 20);
+    });
+    grain(c, 5, 1);
   });
 }
 
@@ -285,24 +419,26 @@ function lightPanel(seed: number, cool = false): THREE.CanvasTexture {
 function alloy(seed: number): THREE.CanvasTexture {
   return draw(seed, (c) => {
     fill(c, "#303d49");
-    for (const y of [0, 64]) {
-      c.ctx.fillStyle = "#73818a";
-      c.ctx.fillRect(4, y + 4, 120, 56);
-      c.ctx.fillStyle = "#566671";
-      c.ctx.fillRect(8, y + 8, 112, 48);
-      c.ctx.fillStyle = "#202c36";
-      c.ctx.fillRect(8, y + 54, 112, 4);
-      for (let x = 76; x < 112; x += 6) c.ctx.fillRect(x, y + 20, 3, 20);
-      c.ctx.fillStyle = "#b4ac82";
-      c.ctx.fillRect(16, y + 18, 24, 3);
-      c.ctx.fillStyle = "#354550";
-      c.ctx.fillRect(16, y + 28, 40, 16);
-    }
+    cells(c, (x) => {
+      for (const y of [0, 64]) {
+        x.fillStyle = "#73818a";
+        x.fillRect(4, y + 4, 120, 56);
+        x.fillStyle = "#566671";
+        x.fillRect(8, y + 8, 112, 48);
+        x.fillStyle = "#202c36";
+        x.fillRect(8, y + 54, 112, 4);
+        for (let vent = 76; vent < 112; vent += 6) x.fillRect(vent, y + 20, 3, 20);
+        x.fillStyle = "#b4ac82";
+        x.fillRect(16, y + 18, 24, 3);
+        x.fillStyle = "#354550";
+        x.fillRect(16, y + 28, 40, 16);
+      }
+    });
     rivets(c, 56, 10, "#adb4b1", "#27323b");
-    grain(c, 20, 2);
-    stains(c, 10, "#20262a", 20);
-    drips(c, 6, "#29241c");
-    grain(c, 8, 1);
+    cloud(c, 16, 96, 4);
+    stains(c, 12, "#20262a", 40);
+    drips(c, 12, "#29241c");
+    grain(c, 6, 1);
   });
 }
 
@@ -322,9 +458,9 @@ function deck(seed: number): THREE.CanvasTexture {
       }
     }
     rivets(c, 32, 5, "#9ba29f", "#2b3338");
-    grain(c, 22, 2);
-    stains(c, 9, "#191e21", 26);
-    grain(c, 10, 1);
+    cloud(c, 16, 96, 4);
+    stains(c, 10, "#191e21", 52);
+    grain(c, 7, 1);
   });
 }
 
@@ -333,8 +469,6 @@ function hazard(seed: number): THREE.CanvasTexture {
   return draw(seed, (c) => {
     fill(c, "#c8a032");
     c.ctx.fillStyle = "#22201c";
-    c.ctx.save();
-    c.ctx.translate(0, 0);
     for (let i = -SIZE; i < SIZE * 2; i += 32) {
       c.ctx.beginPath();
       c.ctx.moveTo(i, 0);
@@ -344,10 +478,9 @@ function hazard(seed: number): THREE.CanvasTexture {
       c.ctx.closePath();
       c.ctx.fill();
     }
-    c.ctx.restore();
-    grain(c, 26, 2);
-    stains(c, 10, "#1a1810", 24);
-    grain(c, 12, 1);
+    cloud(c, 20, 64, 4);
+    stains(c, 12, "#1a1810", 44);
+    grain(c, 9, 1);
   });
 }
 

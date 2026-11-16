@@ -1,15 +1,16 @@
 import * as THREE from "three";
-import { Character } from "./art/character";
+import { Character, type Fall } from "./art/character";
 import { DuskTraffic, duskSky, orbitalSky } from "./art/sky";
 import { canvasTexture } from "./art/textures";
 import { buildMapGeometry, sampleLight, type ShadowProbe } from "./map/build";
 import type { MapDef } from "./map/mapdef";
 import { Flags, Team, TICK_SECONDS, type Snapshot } from "./sim";
 
-// Rendering only. The world is drawn with baked vertex lighting (MeshBasic), so
-// the map costs nothing at runtime and looks like the era it is aiming at;
-// dynamic things use Lambert plus a tint sampled from the same bake, which is
-// what keeps a player standing in shadow from glowing.
+// Rendering only. The world is drawn unlit against a baked lightmap, so the
+// map costs nothing at runtime and looks like the era it is aiming at; dynamic
+// things — bodies, the weapon in your hands — are lit by lights tinted from
+// the same map lights, shadow-tested, which is what keeps a player standing in
+// shadow from glowing.
 
 const MAX_TRACERS = 48;
 const MAX_DECALS = 96;
@@ -25,6 +26,8 @@ const STEP_CATCHUP = 180;
 /** Remaps baked irradiance onto the range a player model stays readable in. */
 const CHARACTER_LIFT = (v: number): number => 0.45 + v * 0.75;
 
+const scratchTint = new THREE.Vector3();
+
 interface Tracer {
   mesh: THREE.Mesh;
   ttl: number;
@@ -33,6 +36,21 @@ interface Tracer {
 interface Decal {
   mesh: THREE.Mesh;
   ttl: number;
+}
+
+/** Soft dark disc dropped under each body: the cheapest thing that grounds it. */
+function shadowTexture(): THREE.CanvasTexture {
+  const texture = canvasTexture(64, 1, (c) => {
+    c.ctx.clearRect(0, 0, 64, 64);
+    const gradient = c.ctx.createRadialGradient(32, 32, 4, 32, 32, 31);
+    gradient.addColorStop(0, "rgba(0,0,0,0.6)");
+    gradient.addColorStop(1, "rgba(0,0,0,0)");
+    c.ctx.fillStyle = gradient;
+    c.ctx.fillRect(0, 0, 64, 64);
+  });
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  return texture;
 }
 
 function decalTexture(): THREE.CanvasTexture {
@@ -66,6 +84,13 @@ export class Renderer {
   private skyTraffic: DuskTraffic | null = null;
 
   private readonly characters: Character[] = [];
+  private readonly shadows: THREE.Mesh[] = [];
+  private readonly shadowGeometry = new THREE.PlaneGeometry(44, 44).rotateX(-Math.PI / 2);
+  private readonly shadowMaterial: THREE.MeshBasicMaterial;
+  private readonly weaponFill: THREE.HemisphereLight;
+  private readonly weaponKey: THREE.DirectionalLight;
+  private readonly weaponTint = new THREE.Vector3(1, 1, 1);
+  private probe: ShadowProbe | undefined;
   private tracers: Tracer[] = [];
   private decals: Decal[] = [];
   private readonly decalMaterial: THREE.MeshBasicMaterial;
@@ -80,7 +105,7 @@ export class Renderer {
   private lastEyeY = 0;
 
   constructor(container: HTMLElement) {
-    this.gl = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+    this.gl = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     this.gl.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.gl.setSize(window.innerWidth, window.innerHeight);
     this.gl.outputColorSpace = THREE.SRGBColorSpace;
@@ -97,11 +122,12 @@ export class Renderer {
     this.weaponCamera = new THREE.PerspectiveCamera(70, this.camera.aspect, 0.1, 256);
     this.weaponCamera.rotation.order = "YXZ";
     this.weaponScene.add(this.weaponCamera);
-    this.weaponScene.add(new THREE.HemisphereLight(0xcbd9ec, 0x555049, 1.5));
-    const weaponKey = new THREE.DirectionalLight(0xffe4c4, 2.1);
-    weaponKey.position.set(-15, 25, 10);
-    weaponKey.target.position.set(0, 0, -25);
-    this.weaponCamera.add(weaponKey, weaponKey.target);
+    this.weaponFill = new THREE.HemisphereLight(0xcbd9ec, 0x555049, 1.5);
+    this.weaponScene.add(this.weaponFill);
+    this.weaponKey = new THREE.DirectionalLight(0xffe4c4, 2.1);
+    this.weaponKey.position.set(-15, 25, 10);
+    this.weaponKey.target.position.set(0, 0, -25);
+    this.weaponCamera.add(this.weaponKey, this.weaponKey.target);
 
     // These light player bodies and their held weapons; the world is fully
     // baked into vertex colours.
@@ -110,6 +136,13 @@ export class Renderer {
     key.position.set(0.3, 1, 0.45);
     this.scene.add(key);
 
+    this.shadowMaterial = new THREE.MeshBasicMaterial({
+      map: shadowTexture(),
+      transparent: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+    });
     this.decalMaterial = new THREE.MeshBasicMaterial({
       map: decalTexture(),
       transparent: true,
@@ -146,6 +179,7 @@ export class Renderer {
   buildMap(map: MapDef, probe: ShadowProbe): number {
     this.mapLights = map.lights;
     this.mapAmbient = map.ambient;
+    this.probe = probe;
 
     this.scene.background = map.sky === "orbital" ? orbitalSky() :
       map.sky === "dusk" ? duskSky() : new THREE.Color(map.background);
@@ -172,7 +206,9 @@ export class Renderer {
       this.scene.remove(character.root);
       character.dispose();
     }
+    for (const shadow of this.shadows) this.scene.remove(shadow);
     this.characters.length = 0;
+    this.shadows.length = 0;
     for (const [index, team] of teams.entries()) {
       // Free-for-all has no teams; alternate the two skins so bodies are still
       // distinguishable from each other at distance.
@@ -181,6 +217,9 @@ export class Renderer {
       const character = new Character(skin);
       this.scene.add(character.root);
       this.characters.push(character);
+      const shadow = new THREE.Mesh(this.shadowGeometry, this.shadowMaterial);
+      this.scene.add(shadow);
+      this.shadows.push(shadow);
     }
   }
 
@@ -188,8 +227,9 @@ export class Renderer {
                 localIndex: number): void {
     for (let i = 0; i < this.characters.length; ++i) {
       const character = this.characters[i]!;
+      const shadow = this.shadows[i]!;
       if (i === localIndex || i >= curr.playerCount) {
-        character.visible = false;
+        character.visible = shadow.visible = false;
         continue;
       }
       const from = prev.players[i]!;
@@ -208,6 +248,9 @@ export class Renderer {
       // The snapshot carries hull centres; the model is authored from the feet.
       const half = (view.flags & Flags.ducked) !== 0 ? HULL_HALF_DUCK : HULL_HALF_STAND;
       character.root.position.set(x, y - half, z);
+      // Only a body standing on something has a floor to cast onto.
+      shadow.visible = (view.flags & Flags.onGround) !== 0;
+      shadow.position.set(x, y - half + 0.4, z);
 
       // Gait speed comes from the per-tick delta, not the per-frame one: at any
       // refresh rate above 64 Hz most frames advance no tick, so a frame delta
@@ -216,6 +259,8 @@ export class Renderer {
 
       character.update(dt, {
         speed,
+        moveYaw: Math.atan2(from.x - view.x, from.z - view.z),
+        flinch: view.flash > 0,
         onGround: (view.flags & Flags.onGround) !== 0,
         yaw: view.yaw,
         pitch: view.pitch,
@@ -233,10 +278,25 @@ export class Renderer {
         // shadow becomes an unreadable silhouette. Lifting the floor keeps the
         // bake's relative light/dark while leaving the model legible, which for
         // a shooter matters more than the physics of it.
-        const tint = sampleLight([x, y, z], this.mapLights, this.mapAmbient);
+        const tint = sampleLight([x, y, z], this.mapLights, this.mapAmbient, this.probe);
         character.setTint(...(tint.map(CHARACTER_LIFT) as [number, number, number]));
       }
     }
+  }
+
+  /** A roster slot fired: recoil and muzzle flash on its body. */
+  onShot(actor: number): void {
+    this.characters[actor]?.fire();
+  }
+
+  /** Pick the fall before the body goes limp: backward off a shot from the front. */
+  onDeath(snapshot: Snapshot, victim: number, actor: number, headshot: boolean): void {
+    const body = snapshot.players[victim], killer = snapshot.players[actor];
+    if (!body || !killer) return;
+    const bearing = Math.atan2(body.x - killer.x, body.z - killer.z) - body.yaw;
+    const facing = Math.cos(bearing); // 1: killer dead ahead, -1: directly behind
+    const fall: Fall = headshot || facing > 0.5 ? "back" : facing < -0.5 ? "front" : "side";
+    this.characters[victim]?.die(fall);
   }
 
   spawnTracer(start: readonly number[], end: readonly number[]): void {
@@ -331,15 +391,32 @@ export class Renderer {
     return eyeY - this.eyeLag;
   }
 
+  /**
+   * GoldSrc lit the weapon in your hands from the floor you stood on. Same
+   * idea: the viewmodel's lights follow the map light reaching the eye, eased
+   * so stepping past a pillar dims the gun instead of blinking it.
+   */
+  private lightWeapon(dt: number): void {
+    const eye = this.camera.position;
+    const [r, g, b] = sampleLight([eye.x, eye.y, eye.z], this.mapLights, this.mapAmbient, this.probe);
+    const tint = this.weaponTint;
+    tint.lerp(scratchTint.set(r, g, b), Math.min(1, dt * 6));
+    const level = (tint.x + tint.y + tint.z) / 3;
+    const lift = CHARACTER_LIFT(level) / (level || 1);
+    this.weaponFill.intensity = 1.5 * Math.min(1.25, CHARACTER_LIFT(level));
+    this.weaponKey.color.setRGB(tint.x * lift, tint.y * lift, tint.z * lift);
+  }
+
   /** `eyeHeight` overrides the interpolated stance height — the death cam. */
   render(prev: Snapshot, curr: Snapshot, alpha: number, dt: number, yaw: number,
-         pitch: number, eyeHeight?: number): void {
+         pitch: number, bob: number, eyeHeight?: number): void {
     const lerp = (a: number, b: number) => a + (b - a) * alpha;
     const eyeY = lerp(prev.origin[1]!, curr.origin[1]!) +
       (eyeHeight ?? lerp(prev.eyeHeight, curr.eyeHeight));
     // The death cam flies the camera on its own terms; smoothing would fight it.
+    // The living eye also rides the view bob the weapon does.
     const cameraY = eyeHeight === undefined
-      ? this.smoothStep(eyeY, (curr.flags & Flags.onGround) !== 0, dt)
+      ? this.smoothStep(eyeY, (curr.flags & Flags.onGround) !== 0, dt) + bob
       : eyeY;
 
     this.camera.position.set(
@@ -348,6 +425,7 @@ export class Renderer {
     );
     this.camera.rotation.set(pitch + curr.punchPitch, yaw + curr.punchYaw, 0);
     this.skyTraffic?.update(dt, this.camera.position);
+    this.lightWeapon(dt);
     this.gl.render(this.scene, this.camera);
     this.weaponCamera.position.copy(this.camera.position);
     this.weaponCamera.quaternion.copy(this.camera.quaternion);

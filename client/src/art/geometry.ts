@@ -67,3 +67,80 @@ export function disposeParts(group: THREE.Group): void {
     if (object instanceof THREE.Mesh) object.geometry.dispose();
   });
 }
+
+/** Box-projected UVs at a fixed texel density, so detail never stretches. */
+export function planarUv(geometry: THREE.BufferGeometry, size: number): void {
+  const p = geometry.getAttribute("position"), n = geometry.getAttribute("normal");
+  const uv = geometry.getAttribute("uv");
+  for (let i = 0; i < p.count; ++i) {
+    const ax = Math.abs(n.getX(i)), ay = Math.abs(n.getY(i)), az = Math.abs(n.getZ(i));
+    if (ax >= ay && ax >= az) uv.setXY(i, p.getZ(i) / size, p.getY(i) / size);
+    else if (ay >= az) uv.setXY(i, p.getX(i) / size, p.getZ(i) / size);
+    else uv.setXY(i, p.getX(i) / size, p.getY(i) / size);
+  }
+}
+
+/**
+ * A side silhouette, given as [z, y] points, extruded to `width` along X.
+ * Era models carry their identity in the profile, not the polygon count.
+ */
+export function profile(points: Array<[number, number]>, width: number,
+                        bevel = 0.1): THREE.BufferGeometry {
+  const shape = new THREE.Shape(points.map(([z, y]) => new THREE.Vector2(-z, y)));
+  const b = Math.min(bevel, width * 0.3);
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: width - 2 * b, bevelEnabled: true, bevelThickness: b, bevelSize: b,
+    bevelOffset: -b, bevelSegments: 1, steps: 1, curveSegments: 1,
+  });
+  geometry.translate(0, 0, -width / 2 + b);
+  geometry.rotateY(Math.PI / 2);
+  planarUv(geometry, 12);
+  return geometry;
+}
+
+/** One cross-section of a loft: height, half-extents, and an optional offset. */
+export type Ring = [y: number, rx: number, rz: number, cx?: number, cz?: number];
+
+/**
+ * Smooth-shaded tube through elliptical rings. `u` runs around the body with
+ * the seam at the back (+Z) and the front (-Z) at u = 0.5; `v` runs bottom to
+ * top. This is how a 600-polygon body gets a waist, a chest and a calf.
+ */
+export function loft(rings: Ring[], sides = 8): THREE.BufferGeometry {
+  const positions: number[] = [], normals: number[] = [], uvs: number[] = [], index: number[] = [];
+  const y0 = rings[0]![0], span = rings[rings.length - 1]![0] - y0;
+  for (const [y, rx, rz, cx = 0, cz = 0] of rings) {
+    for (let i = 0; i <= sides; ++i) {
+      const a = (i / sides) * Math.PI * 2, s = Math.sin(a), c = Math.cos(a);
+      positions.push(cx + rx * s, y, cz + rz * c);
+      const nx = s * rz, nz = c * rx, length = Math.hypot(nx, nz) || 1;
+      normals.push(nx / length, 0, nz / length);
+      uvs.push(i / sides, (y - y0) / span);
+    }
+  }
+  const row = sides + 1;
+  for (let r = 0; r + 1 < rings.length; ++r) {
+    for (let i = 0; i < sides; ++i) {
+      const a = r * row + i, b = a + 1, c = a + row, d = c + 1;
+      index.push(a, b, c, b, d, c);
+    }
+  }
+  // Flat caps, fanned from the ring centre.
+  for (const top of [false, true]) {
+    const ring = rings[top ? rings.length - 1 : 0]!;
+    const base = (top ? rings.length - 1 : 0) * row, centre = positions.length / 3;
+    positions.push(ring[3] ?? 0, ring[0], ring[4] ?? 0);
+    normals.push(0, top ? 1 : -1, 0);
+    uvs.push(0.5, top ? 1 : 0);
+    for (let i = 0; i < sides; ++i) {
+      if (top) index.push(base + i, base + i + 1, centre);
+      else index.push(base + i + 1, base + i, centre);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(index);
+  return geometry;
+}

@@ -75,8 +75,9 @@ no third-party C dependencies and no binary assets.
 - Any new asset must be original or CC0 with provenance recorded in the commit.
   Prefer generating it in code: it diffs, it has no licence, and it costs no
   download.
-- Art direction: PSX/GoldSrc-era low-poly **with textures** — no modern
-  flat-shaded stylized low-poly.
+- Art direction: CS 1.6 as a faithful remaster — GoldSrc-era low-poly **with
+  textures**, real-world scale (1u = 1 inch), bilinear textures and baked
+  lightmaps. No modern flat-shaded stylized low-poly.
 
 ## Conventions
 

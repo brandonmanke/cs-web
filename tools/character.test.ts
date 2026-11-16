@@ -5,18 +5,18 @@ import { Character, type CharacterPose } from "../client/src/art/character";
 
 // Texture painting is irrelevant to joint geometry. Keep the actual Three.js
 // meshes, hierarchy and animation; supply only the canvas operations they need.
+// Every 2D call is a no-op; only getImageData has to return real pixels.
+const context = new Proxy({
+  getImageData: (_x: number, _y: number, w: number, h: number) => ({
+    data: new Uint8ClampedArray(w * h * 4),
+  }),
+}, { get: (target, key) => Reflect.get(target, key) ?? (() => context), set: () => true });
 Object.assign(globalThis, { document: {
-  createElement: () => ({ width: 0, height: 0, getContext: () => ({
-    fillRect() {}, beginPath() {}, moveTo() {}, arc() {}, fill() {}, stroke() {},
-    bezierCurveTo() {}, save() {}, restore() {}, putImageData() {},
-    getImageData: (_x: number, _y: number, w: number, h: number) => ({
-      data: new Uint8ClampedArray(w * h * 4),
-    }),
-  }) }),
+  createElement: () => ({ width: 0, height: 0, getContext: () => context }),
 } });
 
 const pose: CharacterPose = {
-  speed: 221, onGround: true, yaw: 0, pitch: 0,
+  speed: 221, moveYaw: 0, flinch: false, onGround: true, yaw: 0, pitch: 0,
   alive: true, weapon: 4, ducked: false,
 };
 
