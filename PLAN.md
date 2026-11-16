@@ -16,7 +16,7 @@ sources for every movement/gunplay fact below, lives in git at `8f0f180`.)
   levels.
 - Low barrier (click a URL), high ceiling. Single player vs bots + small-server
   multiplayer.
-- PSX/GoldSrc-era textured low-poly art, **generated in code**.
+- GoldSrc-era textured low-poly art with remastered lighting, **generated in code**.
 
 ## 2. Architecture
 
@@ -243,44 +243,98 @@ No binary assets. Nothing to license, nothing to download, everything diffs.
   Quake-style axial projection. A `MapDef` also declares its mode, bot count
   and spawn points; `npm run mapcheck` drop-probes every spawn, so one buried
   in a brush or hanging over a pit fails the build rather than the match.
-- **Light is baked** (`client/src/map/build.ts`) into vertex colours at load,
-  shadow-tested through `sim_trace_ray` — so lighting agrees with collision by
-  construction. Faces subdivide to ≤56u for bake resolution. Wrapped diffuse
-  stands in for bounce. The world renders as unlit `MeshBasicMaterial`: free at
-  runtime and correct for the era.
-- **Textures** (`client/src/art/textures.ts`): seeded canvas generators —
-  grain, stains, drips, rivets — at 128², nearest-filtered.
-- **Characters** (`client/src/art/character.ts`): rigid joint hierarchy with
-  tapered limbs, chamfered bodies, boots, plate carriers and team headgear.
-  Faces appear only on the front of the head; cloth and gear have separate
-  procedural skins. The snapshot selects the held weapon and ducked scale;
-  arms reach its grip and handguard while the legs animate with sines.
-  Proportioned to the sim hitboxes. Tinted by `sampleLight` so they sit inside
-  the baked lighting — but
-  the tint is remapped onto a readable band rather than applied raw, because a
-  body in shadow that reads as a black cutout defeats the point of the art.
+- **Light is baked** (`client/src/map/build.ts`) at load into one lightmap
+  atlas — a luxel every 16u, bilinear, exactly GoldSrc's density — and
+  shadow-tested through `sim_trace_ray`, so lighting agrees with collision by
+  construction. The remaster is in what a luxel holds: half-float overbrights,
+  and ambient occlusion from six short rays, so corners and the foot of every
+  crate sit down into the floor. Samples that land inside another brush borrow
+  from valid neighbours instead of leaking. Wrapped diffuse stands in for
+  bounce. The world renders as unlit `MeshBasicMaterial` × lightmap: free at
+  runtime and correct for the era. About a second per map.
+- **Textures** (`client/src/art/textures.ts`): seeded canvas generators at
+  256² over 128u (two texels a unit), bilinear and mipped like the GL renderer
+  of the day rather than point-sampled. Fractal value noise (`cloud`) carries
+  the surface; seams, rivets, drips and soft stains sit on top. A crate texture
+  is one whole framed, braced crate and is fitted to each face, not tiled by
+  world position.
+- **Characters** (`client/src/art/character.ts`, `client/src/art/skins.ts`):
+  72u (six feet) tall like the hull, built to real adult proportions and to
+  the fidelity of a Source-era player model — a 9u head, 15u between the
+  shoulder joints, the hip joint at half height — so the figure sits inside
+  the sim hitboxes instead of filling them. Three things carry it:
+  *Sculpted form.* `loft` in `art/geometry.ts` is a sculpting primitive:
+  sections with separate front and back depth are splined, then bumps and
+  hollows are pressed into the surface. The head has a brow over hollow
+  sockets, a nose, cheekbones, lips, chin and jaw; the body a plate under the
+  vest, kneecaps, biceps. An arm is one sleeve and a leg one trouser, skinned
+  across the elbow and knee to the rig's own joint groups.
+  *Modelled kit.* Rounded boxes (`roundBox`): magazine pouches under flaps,
+  admin and radio pouches, a pack, a duty belt, a drop-leg holster on its
+  straps, hard knee pads, laced boots, and per-look headgear — a covered
+  helmet with goggles or a peaked cap and glasses for CT, a knitted cap and
+  scarf or bare-headed in dark glasses for T.
+  *Painted relief.* Each body part has its own sheet, painted twice — colour
+  and height — so light picks out a pocket flap or a strap: printed
+  camouflage cut from noise fields, seams, cargo pockets, rows of webbing,
+  laces, and a face of soft gradients with a shaped hairline. Materials are
+  Phong with bump maps, patched for Source's half-Lambert wrap and a rim
+  light. Looks are dealt out in pairs down the roster.
+  Arms are two-bone IK onto the weapon's grips, and the torso blades behind a
+  shouldered rifle.
+  Animation follows GoldSrc's split: the lower body turns to the direction of
+  travel (and backpedals rather than turn past a quarter) while the upper body
+  holds the aim; knees fold through the swing; shots recoil through the arms
+  with a muzzle flash, hits flinch, landings dip. Crouching is a kneel plus a
+  mild squash to stay inside the ducked hitboxes. Deaths fall away from the
+  shot — back, front or side — buckle, bounce once and drop the weapon.
+  Tinted by a shadow-tested `sampleLight` so they sit inside the baked
+  lighting, remapped onto a readable band because a body in shadow that reads
+  as a black cutout defeats the point of the art; a blob shadow grounds them.
   Skins are cached per team, so a roster rebuild is cheap.
-- **Weapons** (`client/src/art/weapons.ts`): chamfered receivers, faceted barrels,
-  open sights and guards, bent magazines, optics and original 128² worn metal,
-  wood and polymer textures. Sleeved forearms taper into gloved palms and
-  fingers; support grips differ for rifles and pistols, and the knife uses one
-  hand. `art/geometry.ts` batches static parts by material while preserving
-  animated joints, including magazines and slides/bolts.
+- **Weapons** (`client/src/art/weapons.ts`): each gun is a set of side
+  silhouettes (`profile` in `art/geometry.ts`) extruded to thickness — receiver,
+  stock, grip, curved magazine — plus faceted barrels, sights and optics, in
+  real inches. Materials are physically-based — blued and parkerized steel,
+  oiled wood with the grain along the stock, stippled polymer, each painted
+  in colour and relief — and reflect a generated strip-lit room
+  (`reflectionRoom`), which is what puts a moving streak of light on a flat
+  receiver. The first-person hands are built as hands: one oriented palm from wrist to
+  knuckles, three-bone gloved fingers wrapped round what they hold, a thumb
+  with a base, on a camouflaged forearm with a rolled cuff; support grips
+  differ for rifles and pistols, and the knife is held in a fist.
+  `art/geometry.ts` batches static parts by material
+  while preserving animated joints, including magazines and slides/bolts.
   Shared textures/materials survive swaps; each assembly owns its geometry.
   The first-person rig renders in a separate depth-cleared pass with a fixed
-  70° FOV and camera-relative lighting, so walls cannot slice through the arms.
-  Tracer origins compensate for the difference from the world camera's FOV.
-  Reloads now reach, extract, insert and rack in time with the sim countdown;
-  the support sleeve stretches between the fixed elbow and moving wrist.
-  Rifle, pistol and knife draws settle over 0.25s. A switch, cancellation or
-  respawn clears the pose, and an accepted shot ends any remaining draw.
-- **Audio** (`client/src/audio.ts`): Web Audio synthesis — per-weapon voices,
-  per-material impacts and footsteps, no samples. Anything happening at a place
-  in the world goes through an HRTF `PannerNode`; only the gun in your own hands
-  and your own footfalls play flat, because a panner at the listener's position
-  has no direction to give. Direction is not decoration in a shooter: footsteps
-  behind you are the game telling you to turn around, and a mono mixdown throws
-  that away. One shared noise buffer feeds every burst.
+  70° FOV, lit by lights that follow the map light reaching the eye, so walls
+  cannot slice through the arms and the gun dims when you step into shadow.
+  It moves the way 1.6's did: bolted to the view with no mouse lag, riding the
+  engine's view bob (shared with the camera), jolting back on a shot with a
+  little per-shot scatter, an additive star of muzzle flash and brass out of
+  the port. Tracer origins compensate for the difference from the world
+  camera's FOV. Reloads reach, extract, insert and rack in time with the sim
+  countdown; the support sleeve stretches between the fixed elbow and moving
+  wrist. Draws settle over 0.25s. A switch, cancellation or respawn clears the
+  pose, and an accepted shot ends any remaining draw.
+- **Effects and HUD** (`client/src/renderer.ts`, `client/index.html`): a round
+  kicks a puff of dust the colour of what it hit, a spark off steel, blood off
+  a body — sprites from a fixed ring, so a spray allocates nothing. Taking a
+  hit flashes the screen edges red. Health and ammo are 1.6's heavy amber
+  numerals, health behind its cross and the magazine as `30 | 90`.
+- **Audio** (`client/src/audio.ts`): Web Audio synthesis, no samples. A shot is
+  five layers — transient click, band of crack, soft-clipped body, lowpassed
+  report, action clatter — moved around per weapon, with brass tinkling after
+  your own. Reloads are cued to the viewmodel's phases and cut if cancelled;
+  footsteps add a heel under the surface scuff and a per-material extra (grate
+  rattle, plank body, sand crunch); impacts throw debris and sometimes
+  ricochet. Everything sends to one generated room reverb and sums through a
+  bus compressor. Anything happening at a place in the world goes through an
+  HRTF `PannerNode`; only the gun in your own hands and your own footfalls play
+  flat, because a panner at the listener's position has no direction to give.
+  Direction is not decoration in a shooter: footsteps behind you are the game
+  telling you to turn around, and a mono mixdown throws that away. One shared
+  noise buffer feeds every burst.
 - **Occlusion** is a wall count, not a portal graph: the client walks
   `sim_trace_ray` from the ears to the sound, restarting each trace 1u past the
   surface it just hit. A trace that starts solid reports no hit, so every brush
@@ -379,7 +433,9 @@ Next, in order:
 - **M-modes+** — round loop, buy menu, defuse.
 - **M-content** — more maps; a TrenchBroom `.map` importer feeding
   `sim_add_brush` if hand-authoring in TS gets tiring; armour.
-- **M-polish** — reload/draw viewmodel animations landed in September 2026.
+- **M-polish** — reload/draw viewmodel animations landed in September 2026;
+  the 1.6-remaster art pass (lightmaps, rebuilt models, GoldSrc animation,
+  layered audio with a fixed room reverb) in November 2026.
   Next: reverb sized to the room the listener is standing in, perf pass
   (instancing, draw batching).
 

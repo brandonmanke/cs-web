@@ -75,8 +75,10 @@ no third-party C dependencies and no binary assets.
 - Any new asset must be original or CC0 with provenance recorded in the commit.
   Prefer generating it in code: it diffs, it has no licence, and it costs no
   download.
-- Art direction: PSX/GoldSrc-era low-poly **with textures** — no modern
-  flat-shaded stylized low-poly.
+- Art direction: the Counter-Strike of 1.6 and Source, with original designs —
+  realistic operators and real-world firearms at real-world scale (1u = 1
+  inch), sculpted and painted in code, per-pixel lit, on baked lightmaps. No
+  modern flat-shaded stylized low-poly, and no copies of Valve's own models.
 
 ## Conventions
 

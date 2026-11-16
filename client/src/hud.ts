@@ -43,7 +43,9 @@ export class Hud {
   private readonly respawn = document.getElementById("respawn")!;
   private readonly scoreboard = document.getElementById("scoreboard")!;
 
+  private readonly damage = document.getElementById("damage")!;
   private hitmarkerTtl = 0;
+  private damageTtl = 0;
   private gap = CROSSHAIR_MIN;
   private feed: FeedEntry[] = [];
   private lastAmmoText = "";
@@ -69,6 +71,11 @@ export class Hud {
       this.status.classList.remove("hidden");
       this.status.textContent = text;
     }
+  }
+
+  /** You were hit: the edges of the screen flash red and fade. */
+  onHurt(): void {
+    this.damageTtl = 0.5;
   }
 
   onShot(result: number): void {
@@ -164,9 +171,10 @@ export class Hud {
     const alive = (snapshot.flags & Flags.alive) !== 0;
 
     const name = WEAPON_NAMES[snapshot.weapon] ?? "?";
-    const ammoText = snapshot.reload > 0
-      ? `${name} <span class="dim">RELOADING</span>`
-      : `${name} <span class="mag">${snapshot.magazine}</span> / ${snapshot.reserve}`;
+    const ammoText = `<span class="name">${name}</span>` + (snapshot.reload > 0
+      ? `<span class="dim">RELOADING</span>`
+      : `${snapshot.magazine}<span class="sep">|</span>` +
+        `<span class="reserve">${snapshot.reserve}</span>`);
     // Six DOM writes a frame is cheap but not free; skip the ones that changed
     // nothing, which is most of them most frames.
     if (ammoText !== this.lastAmmoText) {
@@ -178,7 +186,6 @@ export class Hud {
     const healthText = String(healthValue);
     if (healthText !== this.lastHealthText) {
       this.health.textContent = healthText;
-      this.health.classList.toggle("hurt", healthValue <= 60 && healthValue > 25);
       this.health.classList.toggle("critical", healthValue <= 25);
       this.lastHealthText = healthText;
     }
@@ -238,6 +245,11 @@ export class Hud {
     const target = Math.min(CROSSHAIR_MAX, CROSSHAIR_MIN + (spread - 1) * 5);
     this.gap += (target - this.gap) * Math.min(1, dt * 14);
     this.crosshair.style.setProperty("--gap", `${this.gap.toFixed(1)}px`);
+
+    if (this.damageTtl > 0 || !alive) {
+      this.damageTtl = alive ? Math.max(0, this.damageTtl - dt) : 0;
+      this.damage.style.opacity = (this.damageTtl * 1.6).toFixed(2);
+    }
 
     if (this.hitmarkerTtl > 0) {
       this.hitmarkerTtl -= dt;

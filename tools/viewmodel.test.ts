@@ -4,17 +4,17 @@ import * as THREE from "three";
 import { Viewmodel, type ViewmodelPose } from "../client/src/viewmodel";
 import { Buttons, Sim, Snapshot } from "../client/src/sim";
 
+// Every 2D call is a no-op; only getImageData has to return real pixels.
+const context = new Proxy({
+  getImageData: (_x: number, _y: number, w: number, h: number) => ({
+    data: new Uint8ClampedArray(w * h * 4),
+  }),
+}, { get: (target, key) => Reflect.get(target, key) ?? (() => context), set: () => true });
 Object.assign(globalThis, { document: {
-  createElement: () => ({ width: 0, height: 0, getContext: () => ({
-    fillRect() {}, beginPath() {}, moveTo() {}, arc() {}, fill() {}, stroke() {},
-    bezierCurveTo() {}, save() {}, restore() {}, putImageData() {},
-    getImageData: (_x: number, _y: number, w: number, h: number) => ({
-      data: new Uint8ClampedArray(w * h * 4),
-    }),
-  }) }),
+  createElement: () => ({ width: 0, height: 0, getContext: () => context }),
 } });
 
-const still: ViewmodelPose = { speedH: 0, onGround: true, tickAlpha: 0, yawDelta: 0, pitchDelta: 0 };
+const still: ViewmodelPose = { speedH: 0, onGround: true, tickAlpha: 0 };
 function create(id: number) {
   const camera = new THREE.PerspectiveCamera(70, 16 / 9, 0.1, 100);
   const view = new Viewmodel(camera);
@@ -104,7 +104,8 @@ test("a respawn clears reload state and each draw settles at the ready pose", ()
     sample.view.update(0.06, still);
     assert.ok(rig.position.distanceTo(ready) > 2, "drawing must raise the weapon into view");
     sample.view.update(0.19, still);
-    assert.ok(rig.position.distanceTo(ready) < 1e-6, "draw must finish at 0.25s");
+    // The settled gun still breathes, by well under a tenth of a unit.
+    assert.ok(rig.position.distanceTo(ready) < 0.1, "draw must finish at 0.25s");
   }
 });
 
