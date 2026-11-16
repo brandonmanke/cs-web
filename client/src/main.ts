@@ -11,7 +11,7 @@ import { RELAY } from "./map/maps/relay";
 import { SILO } from "./map/maps/silo";
 import { DeathCam } from "./deathcam";
 import { loadSetting, Menu, PASSIVE_SKILL, Settings, type Roster } from "./menu";
-import { Renderer } from "./renderer";
+import { Puff, Renderer } from "./renderer";
 import { TouchControls } from "./touch";
 import {
   EventKind, Flags, MAX_PLAYERS, Mode, ShotResult, Sim, Snapshot, StepKind, Team,
@@ -224,7 +224,10 @@ async function boot(): Promise<void> {
   let lastWeapon = curr.weapon;
 
   function frame(now: number): void {
-    let dt = (now - lastTime) / 1000;
+    // A frame's timestamp is when it was scheduled, so the first one after the
+    // bake blocked the thread can predate `lastTime`. Negative time must never
+    // reach the smoothing below it: every ease there would run backward.
+    let dt = Math.max(0, (now - lastTime) / 1000);
     lastTime = now;
     if (dt > MAX_FRAME_SECONDS) dt = MAX_FRAME_SECONDS;
     accumulator += dt;
@@ -417,15 +420,21 @@ async function boot(): Promise<void> {
 
     let first = true;
     eachSurface(event.start, to, MAX_IMPACT_SURFACES, (hit) => {
-      renderer.spawnImpact(hit.point, hit.normal);
+      renderer.spawnImpact(hit.point, hit.normal, hit.material);
       if (first) audio.impact(hit.material, hit.point);
       first = false;
     });
+
+    // A round that found a body ends on it: that is where the blood is.
+    if (event.result === ShotResult.hit || event.result === ShotResult.kill) {
+      renderer.spawnPuff(event.end, Puff.blood);
+    }
 
     if (local && event.result === ShotResult.hit) {
       audio.hit();
     } else if (event.victim === curr.localIndex) {
       audio.hurt();
+      hud.onHurt();
     }
   }
 

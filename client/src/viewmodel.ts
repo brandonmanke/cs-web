@@ -266,9 +266,11 @@ export class Viewmodel {
       target.y + breath * 0.05 + this.kick * 0.25,
       target.z - this.bob * 0.4 + this.kick * 1.4,
     );
+    // A knife is carried blade up across the view, not pointed like a barrel.
+    const blade = this.weaponId === WeaponId.knife ? 1 : 0;
     this.rig.rotation.set(
-      BASE_ROTATION.x + this.kick * 0.055 + reload * (pistol ? 0.38 : 0.16) + this.draw * 0.4 - settle * 0.15,
-      BASE_ROTATION.y + this.kick * this.kickYaw + reload * 0.55,
+      blade * 0.55 + BASE_ROTATION.x + this.kick * 0.055 + reload * (pistol ? 0.38 : 0.16) + this.draw * 0.4 - settle * 0.15,
+      blade * 0.6 + BASE_ROTATION.y + this.kick * this.kickYaw + reload * 0.55,
       BASE_ROTATION.z + this.kick * this.kickRoll + breath * 0.004 - reload * 0.45 +
         this.draw * (this.weaponId === WeaponId.knife ? -1.1 : pistol ? 0.4 : 0.18),
     );

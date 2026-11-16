@@ -418,10 +418,24 @@ export function buildArms(id: number): THREE.Group {
   g.add(firing);
   const sleeve = new THREE.Group();
   forearm(sleeve);
-  aimForearm(sleeve, new THREE.Vector3(8, -9, 19), new THREE.Vector3(1.3, -2.6, 4.3));
   firing.add(sleeve);
+  if (id === WeaponId.knife) {
+    // A fist round a handle that runs fore and aft, thumb laid along the spine.
+    aimForearm(sleeve, new THREE.Vector3(8, -9, 19), new THREE.Vector3(1.1, -0.7, 4.9));
+    pad(firing, [0.6, 1.15, 2], [1, -0.1, 2]);
+    pad(firing, [0.95, 0.95, 0.95], [1, -0.45, 4.1]);
+    for (let i = 0; i < 4; ++i) {
+      const z = 0.5 + i * 0.9;
+      digit(firing, "skin", 0.42, [0.8, 0.75, z], [-0.65, 0.8, z], [-0.95, -0.4, z], [-0.15, -1, z]);
+    }
+    digit(firing, "skin", 0.46, [0.85, 0.4, 3.9], [0.1, 1.05, 2.4], [-0.3, 1.05, 0.9]);
+    batchParts(g);
+    return g;
+  }
+  aimForearm(sleeve, new THREE.Vector3(8, -9, 19), new THREE.Vector3(1.3, -2.6, 4.3));
   pad(firing, [0.6, 1.8, 1.75], [1.2, -2.5, 1.8], -0.3); // back of the hand
   pad(firing, [1.05, 0.85, 0.7], [0.3, -1.15, 2.85], -0.3); // web behind the grip
+  pad(firing, [0.95, 0.95, 0.9], [1.2, -2.4, 3.6]); // wrist, into the gauntlet
   for (let i = 0; i < 3; ++i) {
     // Knuckle on the far side, round the front of the grip, tip on the near side.
     const y = -1.75 - i * 0.85, z = -0.45 + i * 0.3;
@@ -431,8 +445,7 @@ export function buildArms(id: number): THREE.Group {
   }
   digit(firing, "skin", 0.41, [1.35, -0.85, 0.5], [1.05, -0.8, -1.3], [0.45, -0.95, -2.2]); // trigger finger
   digit(firing, "skin", 0.47, [-0.2, -0.7, 2.7], [-1, -0.5, 1.5], [-1.08, -0.55, 0.2]); // thumb
-  if (id === WeaponId.knife) firing.position.set(0, 2.4, 0.6);
-  else {
+  {
     const support = joint(g, "support_sleeve", [0, 0, 0]);
     forearm(support);
     // A pistol's support arm comes up from below; a rifle's reaches in from the left.

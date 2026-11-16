@@ -27,6 +27,42 @@ const STEP_CATCHUP = 180;
 const CHARACTER_LIFT = (v: number): number => 0.45 + v * 0.75;
 
 const scratchTint = new THREE.Vector3();
+const MAX_PUFFS = 32;
+
+/** What a round kicks up: keyed by cs::Material, plus blood. */
+export const Puff = { concrete: 0, wood: 1, metal: 2, sand: 3, blood: 4 } as const;
+const PUFFS: Record<number, { color: number; size: number; grow: number; life: number; rise: number }> = {
+  [Puff.concrete]: { color: 0xa9a59a, size: 5, grow: 34, life: 0.45, rise: 6 },
+  [Puff.wood]: { color: 0xb0905e, size: 4, grow: 24, life: 0.35, rise: 4 },
+  [Puff.metal]: { color: 0x8f9499, size: 3, grow: 16, life: 0.25, rise: 3 },
+  [Puff.sand]: { color: 0xc2ab78, size: 6, grow: 40, life: 0.55, rise: 8 },
+  [Puff.blood]: { color: 0x8c1410, size: 5, grow: 30, life: 0.3, rise: -14 },
+};
+
+interface PuffSprite {
+  sprite: THREE.Sprite;
+  ttl: number;
+  life: number;
+  grow: number;
+  rise: number;
+  opacity: number;
+}
+
+/** One soft disc: tinted it is dust or blood, additive it is a spark. */
+function puffTexture(): THREE.CanvasTexture {
+  const texture = canvasTexture(32, 2, (c) => {
+    c.ctx.clearRect(0, 0, 32, 32);
+    const gradient = c.ctx.createRadialGradient(16, 16, 1, 16, 16, 15);
+    gradient.addColorStop(0, "rgba(255,255,255,1)");
+    gradient.addColorStop(0.5, "rgba(255,255,255,0.55)");
+    gradient.addColorStop(1, "rgba(255,255,255,0)");
+    c.ctx.fillStyle = gradient;
+    c.ctx.fillRect(0, 0, 32, 32);
+  });
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  return texture;
+}
 
 interface Tracer {
   mesh: THREE.Mesh;
@@ -85,6 +121,9 @@ export class Renderer {
 
   private readonly characters: Character[] = [];
   private readonly shadows: THREE.Mesh[] = [];
+  private readonly puffs: PuffSprite[] = [];
+  private readonly puffMap = puffTexture();
+  private nextPuff = 0;
   private readonly shadowGeometry = new THREE.PlaneGeometry(44, 44).rotateX(-Math.PI / 2);
   private readonly shadowMaterial: THREE.MeshBasicMaterial;
   private readonly weaponFill: THREE.HemisphereLight;
@@ -269,8 +308,9 @@ export class Renderer {
         ducked: (view.flags & Flags.ducked) !== 0,
       });
 
-      // Hit flash overrides the bake for a few ticks.
-      if (view.flash > 0) {
+      // Hit flash overrides the bake for a few ticks — on the living only, or
+      // a body killed mid-flash would lie there red.
+      if (view.flash > 0 && (view.flags & Flags.alive) !== 0) {
         character.setTint(1.5, 0.5, 0.4);
       } else {
         // Tint, not dim. Raw irradiance in a shadowed corner is ~0.2, and a CT
@@ -322,10 +362,45 @@ export class Renderer {
     while (this.tracers.length > MAX_TRACERS) this.retireTracer(this.tracers.shift()!);
   }
 
-  spawnImpact(point: readonly number[], normal: readonly number[]): void {
+  /**
+   * Dust off a wall, a spark off steel, blood off a body. Sprites come from a
+   * ring of MAX_PUFFS, so a spray reuses the oldest instead of allocating.
+   */
+  spawnPuff(point: readonly number[], kind: number, spark = false): void {
+    let puff = this.puffs[this.nextPuff % MAX_PUFFS];
+    if (!puff) {
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: this.puffMap, transparent: true, depthWrite: false,
+      }));
+      this.scene.add(sprite);
+      puff = { sprite, ttl: 0, life: 1, grow: 0, rise: 0, opacity: 1 };
+      this.puffs.push(puff);
+    }
+    ++this.nextPuff;
+    const spec = PUFFS[kind] ?? PUFFS[Puff.concrete]!;
+    const material = puff.sprite.material;
+    material.color.setHex(spark ? 0xffd28a : spec.color);
+    material.blending = spark ? THREE.AdditiveBlending : THREE.NormalBlending;
+    material.rotation = Math.random() * Math.PI;
+    puff.sprite.position.set(point[0]!, point[1]!, point[2]!);
+    puff.sprite.scale.setScalar(spark ? 7 : spec.size);
+    puff.sprite.visible = true;
+    puff.life = puff.ttl = spark ? 0.07 : spec.life;
+    puff.grow = spark ? 30 : spec.grow;
+    puff.rise = spark ? 0 : spec.rise;
+    puff.opacity = spark ? 1 : kind === Puff.blood ? 0.85 : 0.5;
+  }
+
+  spawnImpact(point: readonly number[], normal: readonly number[], material: number): void {
     const n = new THREE.Vector3(normal[0]!, normal[1]!, normal[2]!);
     if (n.lengthSq() < 1e-6) return;
     n.normalize();
+    // Stand the effect off the wall so the sprite is not cut by it.
+    const off = [point[0]! + n.x * 3, point[1]! + n.y * 3, point[2]! + n.z * 3];
+    this.spawnPuff(off, material);
+    if (material === Puff.metal || (material === Puff.concrete && Math.random() < 0.3)) {
+      this.spawnPuff(off, material, true);
+    }
 
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(7, 7), this.decalMaterial);
     // Float just off the surface so it doesn't z-fight the wall.
@@ -358,6 +433,16 @@ export class Renderer {
       this.retireTracer(tracer);
       return false;
     });
+
+    for (const puff of this.puffs) {
+      if (puff.ttl <= 0) continue;
+      puff.ttl -= dt;
+      const sprite = puff.sprite;
+      sprite.visible = puff.ttl > 0;
+      sprite.scale.addScalar(puff.grow * dt);
+      sprite.position.y += puff.rise * dt;
+      sprite.material.opacity = puff.opacity * Math.max(0, puff.ttl / puff.life);
+    }
 
     this.decals = this.decals.filter((decal) => {
       decal.ttl -= dt;

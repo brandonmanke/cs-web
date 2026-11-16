@@ -266,9 +266,10 @@ No binary assets. Nothing to license, nothing to download, everything diffs.
   for anything with length, ellipsoids for joints and gear, no flat-shaded
   boxes. A loft ring carries separate front and back depths and the mesh gets
   true surface normals, which is what makes a skull with a jaw and a face
-  plane, a chest, a calf — and what stops a limb shading like a pipe. Each
-  bone starts in a ball of its own girth so a bent joint stays closed, and
-  cloth repeats at one texel density on every limb. Pouches, straps and
+  plane, a chest, a calf — and what stops a limb shading like a pipe. An arm
+  is one sleeve and a leg one trouser, skinned across the elbow and knee to
+  the rig's own joint groups, so a joint bends rather than hinges; cloth
+  repeats at one texel density on every limb. Pouches, straps and
   camouflage are painted into per-team skins and the face into a 256px head
   wrap; helmet, goggles, cap, scarf, holster and boots are geometry.
   Arms are two-bone IK onto the weapon's grips, and the torso blades behind a
@@ -287,8 +288,9 @@ No binary assets. Nothing to license, nothing to download, everything diffs.
   silhouettes (`profile` in `art/geometry.ts`) extruded to thickness — receiver,
   stock, grip, curved magazine — plus faceted barrels, sights and optics, in
   real inches, with worn steel, wood and polymer textures. Fingerless-gloved
-  hands on lofted sleeves; support grips differ for rifles and pistols, and the
-  knife uses one hand. `art/geometry.ts` batches static parts by material
+  hands with three-bone capsule fingers wrapped round what they hold, on a
+  forearm with a rolled cuff; support grips differ for rifles and pistols, and
+  the knife uses one hand. `art/geometry.ts` batches static parts by material
   while preserving animated joints, including magazines and slides/bolts.
   Shared textures/materials survive swaps; each assembly owns its geometry.
   The first-person rig renders in a separate depth-cleared pass with a fixed
@@ -302,6 +304,11 @@ No binary assets. Nothing to license, nothing to download, everything diffs.
   countdown; the support sleeve stretches between the fixed elbow and moving
   wrist. Draws settle over 0.25s. A switch, cancellation or respawn clears the
   pose, and an accepted shot ends any remaining draw.
+- **Effects and HUD** (`client/src/renderer.ts`, `client/index.html`): a round
+  kicks a puff of dust the colour of what it hit, a spark off steel, blood off
+  a body — sprites from a fixed ring, so a spray allocates nothing. Taking a
+  hit flashes the screen edges red. Health and ammo are 1.6's heavy amber
+  numerals, health behind its cross and the magazine as `30 | 90`.
 - **Audio** (`client/src/audio.ts`): Web Audio synthesis, no samples. A shot is
   five layers — transient click, band of crack, soft-clipped body, lowpassed
   report, action clatter — moved around per weapon, with brass tinkling after
