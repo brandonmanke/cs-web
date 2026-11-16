@@ -154,6 +154,8 @@ function magazine(g: THREE.Group, at: V3, length: number, depth: number, bend: n
                   lean: number, width = 1.25): void {
   const mag = joint(g, "magazine", at);
   prof(mag, "steel", magazineOutline(length, depth, bend, lean), width);
+  // Stiffening ribs: the same outline again, narrower and standing proud.
+  prof(mag, "metal", magazineOutline(length * 0.82, depth * 0.3, bend * 0.82, lean), width + 0.12);
 }
 
 function ak47(): THREE.Group {
@@ -161,6 +163,12 @@ function ak47(): THREE.Group {
   // Stamped receiver and dust cover in one silhouette.
   prof(g, "metal", [[2, -0.4], [-8.3, -0.4], [-8.3, 1.9], [-7.6, 2.6], [1.2, 2.6], [2, 1.9]], 1.9);
   part(g, "dark", [0.08, 0.7, 2.6], [0.95, 1.55, -3.6]); // ejection port
+  // Pressed ribs across the dust cover, the magazine dimple, and the trunnion block.
+  for (const z of [-5.6, -3.4, -1.2]) part(g, "metal", [1.5, 0.16, 0.5], [0, 2.62, z]);
+  for (const x of [-0.96, 0.96]) part(g, "dark", [0.06, 0.55, 1.5], [x, 0.55, -5]);
+  part(g, "steel", [2, 1.5, 0.9], [0, 1.2, -7.9]);
+  part(g, "steel", [0.5, 0.5, 0.7], [0, -0.55, -3.55]); // magazine catch
+  for (const z of [-11.2, -12.4, -13.6]) part(g, "dark", [1.7, 0.3, 0.5], [0, 2.75, z]); // gas-tube vents
   part(g, "edge", [0.08, 0.3, 3.4], [0.97, 0.75, -1.9], 0.08); // selector lever
   for (const x of [-0.96, 0.96]) {
     for (const z of [-7.4, 1.2]) part(g, "edge", [0.06, 0.22, 0.22], [x, 0.1, z]); // rivets
@@ -188,7 +196,8 @@ function ak47(): THREE.Group {
   tube(g, "metal", 0.52, 0.9, [0, 1.6, -22.35]);
   muzzle(g, 0.52, 1.6, -22.8);
   trigger(g, -3.45);
-  part(joint(g, "action", [1.05, 1.75, -5.6]), "edge", [1, 0.32, 0.42], [0.35, 0, 0]);
+  part(joint(g, "action", [1.05, 1.75, -5.6]), "steel", [1, 0.32, 0.42], [0.35, 0, 0]);
+  for (const z of [3.2, 10.6]) part(g, "steel", [0.3, 0.9, 0.5], [-0.95, 0.2 - (z > 5 ? 2.4 : 0), z]); // sling loops
   magazine(g, [0, -0.4, -4.9], 7.2, 2.5, 0.62, 0.12);
   return g;
 }
@@ -199,7 +208,14 @@ function m4a1(): THREE.Group {
   prof(g, "metal", [[2.2, 2.5], [2.2, 0.3], [1.4, -0.4], [-3.4, -0.4], [-3.6, -1.6], [-6, -1.6],
                     [-6.2, 0.2], [-6.2, 2.5]], 1.7);
   part(g, "dark", [0.08, 0.7, 2.4], [0.86, 1.6, -3.2]);
-  tube(g, "edge", 0.3, 0.5, [0.95, 1.9, -0.6]); // forward assist
+  tube(g, "steel", 0.3, 0.5, [0.95, 1.9, -0.6]); // forward assist
+  // Left side, the one you look at: selector, bolt catch, magazine fence, pins.
+  part(g, "steel", [0.1, 0.3, 1.2], [-0.88, 0.5, 0.6], 0.5);
+  part(g, "steel", [0.12, 1, 0.6], [-0.88, 1, -2.6]);
+  part(g, "metal", [0.1, 1.1, 2.2], [-0.88, 0.2, -4.6]);
+  for (const z of [1.6, -5.6]) part(g, "steel", [1.8, 0.3, 0.3], [0, 0.35, z]); // takedown pins
+  part(g, "steel", [1.1, 0.5, 0.6], [0, 4.75, -4.2]); // rear sight drum
+  part(g, "metal", [0.6, 0.5, 0.7], [0, 0.55, -15]); // bayonet lug
   // Carry handle: an arch, open underneath.
   prof(g, "metal", [[1.6, 2.5], [1.6, 3.3], [0.6, 4.5], [-4.6, 4.5], [-5.4, 3.4], [-5.4, 2.5],
                     [-4.4, 2.5], [-4, 3.6], [-0.2, 3.6], [0.4, 2.5]], 0.9);
@@ -221,7 +237,7 @@ function m4a1(): THREE.Group {
   part(g, "dark", [1.6, 4.7, 0.3], [0, -0.3, 12.3]);
   prof(g, "polymer", [[-0.4, -0.4], [1.6, -0.4], [3.3, -4.2], [3, -4.6], [1.3, -4.6], [0.6, -2]], 1.4);
   trigger(g, -3.5, -2);
-  part(joint(g, "action", [0, 2.7, 2.2]), "steel", [1.5, 0.28, 0.5], [0, 0, 0]);
+  part(joint(g, "action", [0, 2.68, 2.2]), "steel", [1.15, 0.22, 0.45], [0, 0, 0]);
   magazine(g, [0, -1.2, -4.8], 6, 2.3, 0.22, 0.14, 1.1);
   return g;
 }
@@ -237,6 +253,10 @@ function awp(): THREE.Group {
   prof(g, "olive", [[3.9, -5], [4.4, -4.2], [9.5, -3.6], [9.5, -4.4]], 1.7);
   part(g, "dark", [2.1, 5.8, 0.4], [0, -1.2, 15]);
   part(g, "polymer", [1.9, 0.5, 5.5], [0, 2.45, 9.5]); // cheek piece
+  // Bedding screws along the stock and the bipod stud under the fore-end.
+  for (const z of [-10.5, -6, 6]) tube(g, "steel", 0.22, 2.5, [0, 0, z]);
+  for (const x of [-1.21, 1.21]) part(g, "dark", [0.05, 0.5, 5], [x, 0.2, -7]);
+  part(g, "steel", [0.6, 0.5, 0.9], [0, -0.9, -11.6]);
   // Action and free-floated barrel.
   tube(g, "metal", 0.8, 12, [0, 1.5, -4]);
   tube(g, "metal", 0.5, 19, [0, 1.4, -19.5]);
@@ -267,6 +287,11 @@ function mp5(): THREE.Group {
   prof(g, "metal", [[3, 1.9], [2.6, 2.5], [-7.5, 2.5], [-7.5, 0.2], [3, 0.2]], 1.6);
   part(g, "dark", [0.08, 0.6, 2], [0.81, 1.5, -3.5]);
   part(g, "metal", [1.1, 0.8, 1], [0, 2.9, 1.2]); // drum sight
+  // Selector and its markings, receiver pins, and the handguard's grip lines.
+  part(g, "steel", [0.1, 0.3, 1], [-0.78, -0.15, 1.1], 0.4);
+  for (const z of [2.6, -3.2, -7.2]) part(g, "steel", [1.7, 0.28, 0.28], [0, 0.45, z]);
+  for (const z of [-8.6, -9.8, -11]) for (const x of [-0.97, 0.97]) part(g, "dark", [0.05, 1.3, 0.3], [x, 0.9, z]);
+  part(g, "steel", [0.5, 0.9, 0.5], [0, -1.5, -3.3]); // magazine release paddle
   // Trigger group and grip in one moulding, magazine well ahead of it.
   prof(g, "polymer", [[2.4, 0.2], [-3.4, 0.2], [-3.4, -0.9], [-0.5, -0.9], [0.6, -2.2], [1.2, -4.8],
                       [2.9, -4.8], [3.3, -4.4], [1.9, -0.9], [2.4, -0.4]], 1.5);
