@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { Character, type Fall } from "./art/character";
+import { Character, type Fall, type Look } from "./art/character";
 import { DuskTraffic, duskSky, orbitalSky } from "./art/sky";
 import { canvasTexture } from "./art/textures";
 import { buildMapGeometry, sampleLight, type ShadowProbe } from "./map/build";
@@ -253,7 +253,8 @@ export class Renderer {
       // distinguishable from each other at distance.
       const skin = team === Team.ct || (team === Team.none && index % 2 === 0)
         ? "ct" : "t";
-      const character = new Character(skin);
+      // Alternate each side's two looks in pairs, so both show up on either team.
+      const character = new Character(skin, ((index >> 1) & 1) as Look);
       this.scene.add(character.root);
       this.characters.push(character);
       const shadow = new THREE.Mesh(this.shadowGeometry, this.shadowMaterial);

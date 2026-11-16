@@ -270,8 +270,10 @@ No binary assets. Nothing to license, nothing to download, everything diffs.
   is one sleeve and a leg one trouser, skinned across the elbow and knee to
   the rig's own joint groups, so a joint bends rather than hinges; cloth
   repeats at one texel density on every limb. Pouches, straps and
-  camouflage are painted into per-team skins and the face into a 256px head
-  wrap; helmet, goggles, cap, scarf, holster and boots are geometry.
+  camouflage are painted into skins and the face into a 256px head wrap;
+  headgear, holster and boots are geometry. Each side has two looks — helmet
+  and goggles or a peaked cap for CT, a cap and scarf or bare-headed in dark
+  glasses for T — with their own palettes, dealt out in pairs down the roster.
   Arms are two-bone IK onto the weapon's grips, and the torso blades behind a
   shouldered rifle.
   Animation follows GoldSrc's split: the lower body turns to the direction of

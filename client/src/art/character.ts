@@ -12,17 +12,29 @@ import { buildWeapon, muzzleFlashMaterial, muzzleOffset, supportGrip, WeaponId }
 // is what gives it a jaw, a chest and a calf; the detail a model of the era
 // kept in its skin — pouches, straps, the face — is painted.
 export type Team = "ct" | "t";
+/** Two looks a side, so a squad is not five copies of one man. */
+export type Look = 0 | 1;
 const PALETTE = {
-  ct: { cloth: "#566a82", camo: "#36455a", vest: "#3a434c", trim: "#9aa6ad", mask: "#30383f", gear: "#272d33" },
-  t: { cloth: "#8d7852", camo: "#6a5839", vest: "#4b4230", trim: "#a4483a", mask: "#34322e", gear: "#2a2620" },
+  ct: [
+    // Helmet, goggles and blue fatigues.
+    { cloth: "#566a82", camo: "#36455a", vest: "#3a434c", trim: "#9aa6ad", mask: "#30383f", gear: "#272d33" },
+    // Peaked cap and urban grey.
+    { cloth: "#737a80", camo: "#4d5359", vest: "#2f3338", trim: "#c9ced2", mask: "#26292d", gear: "#1f2226" },
+  ],
+  t: [
+    // Knitted cap, checked scarf, desert khaki.
+    { cloth: "#8d7852", camo: "#6a5839", vest: "#4b4230", trim: "#a4483a", mask: "#34322e", gear: "#2a2620" },
+    // Bare head, dark glasses, olive drab.
+    { cloth: "#5f6746", camo: "#434a30", vest: "#5a4a34", trim: "#c7b98f", mask: "#2b2a26", gear: "#262319" },
+  ],
 };
 const SKIN = "#c39776";
 type SkinPart = "cloth" | "vest" | "gear" | "head" | "skin" | "mask" | "scarf";
 const skins = new Map<string, THREE.CanvasTexture>();
 
 /** 256px wrapped once round the head: u = 0.5 (x 128) is the nose, v runs chin to crown. */
-function paintHead(c: Ctx, team: Team): void {
-  const colors = PALETTE[team], x = c.ctx;
+function paintHead(c: Ctx, team: Team, look: Look): void {
+  const colors = PALETTE[team][look]!, x = c.ctx;
   fill(c, SKIN);
   cloud(c, 12, 64, 3);
   // The face turns away into shadow at the temples and under the jaw.
@@ -62,8 +74,8 @@ function paintHead(c: Ctx, team: Team): void {
   grain(c, 6, 1);
 }
 
-function paintVest(c: Ctx, team: Team): void {
-  const colors = PALETTE[team], x = c.ctx;
+function paintVest(c: Ctx, team: Team, look: Look): void {
+  const colors = PALETTE[team][look]!, x = c.ctx;
   fill(c, colors.vest);
   cloud(c, 10, 48, 3);
   const dark = "rgba(0,0,0,0.38)", light = "rgba(255,255,255,0.09)";
@@ -90,14 +102,14 @@ function paintVest(c: Ctx, team: Team): void {
   stains(c, 5, "#15130f", 14);
 }
 
-function skin(team: Team, part: SkinPart): THREE.CanvasTexture {
-  const key = `${team}:${part}`;
+function skin(team: Team, look: Look, part: SkinPart): THREE.CanvasTexture {
+  const key = `${team}${look}:${part}`;
   let texture = skins.get(key);
   if (texture) return texture;
-  const colors = PALETTE[team];
-  texture = canvasTexture(part === "head" ? 256 : 128, team === "ct" ? 21 : 22, (c) => {
-    if (part === "head") return paintHead(c, team);
-    if (part === "vest") return paintVest(c, team);
+  const colors = PALETTE[team][look]!;
+  texture = canvasTexture(part === "head" ? 256 : 128, (team === "ct" ? 21 : 22) + look * 10, (c) => {
+    if (part === "head") return paintHead(c, team, look);
+    if (part === "vest") return paintVest(c, team, look);
     fill(c, part === "skin" ? SKIN : part === "scarf" ? colors.trim : colors[part]);
     cloud(c, 10, 48, 3);
     grain(c, 8, 1);
@@ -212,9 +224,9 @@ export class Character {
   private land = 0;
   private grounded = true;
 
-  constructor(team: Team) {
+  constructor(team: Team, look: Look = 0) {
     const mat = (part: SkinPart) => {
-      const material = new THREE.MeshLambertMaterial({ map: skin(team, part) });
+      const material = new THREE.MeshLambertMaterial({ map: skin(team, look, part) });
       this.materials.push(material);
       return material;
     };
@@ -263,14 +275,21 @@ export class Character {
                             [8, 2.9, 3.5, 0, 0, 4], [9.1, 2.1, 2.5, 0, 0.2, 3.1], [9.8, 0.9, 1, 0, 0.4, 1.6]]);
     const nose = team === "ct" ? mat("mask") : hand;
     lump(this.head, nose, [0.42, 0.85, 0.6], [0, 3.95, -3.75]);
-    if (team === "ct") {
+    if (team === "ct" && look === 0) {
       shell(this.head, gear, [[6.1, 3.5, 4.3, 0, 0, 4.65], [7, 3.75, 4.55, 0, 0, 4.85], [8.5, 3.55, 4.25, 0, 0, 4.65],
                               [9.7, 2.7, 3.2, 0, 0.2, 3.7], [10.4, 1.2, 1.4, 0, 0.3, 2]]);
       for (const x of [-3.5, 3.5]) lump(this.head, gear, [0.7, 1.5, 1.4], [x, 4.6, 0.5]); // ear cups
       // Goggles pushed up onto the helmet.
       shell(this.head, vest, [[7.3, 3.85, 4.65, 0, 0, 4.95], [7.9, 3.9, 4.7, 0, 0, 5], [8.5, 3.7, 4.45, 0, 0, 4.8]]);
       lump(this.head, vest, [2.7, 1, 0.8], [0, 7.9, -4.5]);
-    } else {
+    } else if (team === "ct") {
+      // Peaked cap over the balaclava, and a headset on one ear.
+      shell(this.head, gear, [[6.5, 3.35, 4.1, 0, 0, 4.4], [8, 3.3, 4, 0, 0, 4.35], [9.2, 2.6, 3.1, 0, 0.2, 3.5],
+                              [9.9, 1.1, 1.3, 0, 0.3, 1.9]]);
+      lump(this.head, gear, [2.7, 0.22, 2.1], [0, 6.75, -5.1]);
+      lump(this.head, vest, [0.6, 1.4, 1.3], [-3.4, 4.6, 0.5]);
+      lump(this.head, vest, [0.16, 0.16, 1.9], [-2.9, 3.6, -2.4]); // boom microphone
+    } else if (look === 0) {
       for (const x of [-3.15, 3.15]) lump(this.head, hand, [0.25, 0.75, 0.45], [x, 4.6, 0.5]); // ears
       // Knitted cap, rolled at the brim; the scarf is pulled up over the nose.
       shell(this.head, gear, [[6.6, 3.3, 4.05, 0, 0, 4.35], [8.1, 3.1, 3.7, 0, 0, 4.2], [9.3, 2.3, 2.7, 0, 0.2, 3.3],
@@ -278,6 +297,12 @@ export class Character {
       shell(this.head, vest, [[6.2, 3.4, 4.15, 0, 0, 4.45], [6.9, 3.5, 4.25, 0, 0, 4.55], [7.6, 3.35, 4.1, 0, 0, 4.4]]);
       shell(this.head, mat("scarf"), [[-1.4, 3.1, 3.2, 0, 0, 3.2], [0, 3.3, 3.9, 0, 0, 3.2], [1.6, 3.2, 4.2, 0, 0, 3.3],
                                       [3, 3.3, 4.3, 0, 0, 3.9], [3.7, 3.25, 4.15, 0, 0, 3.9]]);
+    } else {
+      // Bare-headed behind dark glasses, the scarf loose at the throat.
+      for (const x of [-3.15, 3.15]) lump(this.head, hand, [0.25, 0.75, 0.45], [x, 4.6, 0.5]);
+      lump(this.head, gear, [2.8, 0.78, 0.5], [0, 5, -3.6]);
+      for (const x of [-3.05, 3.05]) lump(this.head, gear, [0.2, 0.25, 1.9], [x, 5.15, -2]);
+      shell(this.head, mat("scarf"), [[-1.6, 3.2, 3.4, 0, 0, 3.3], [-0.4, 3.5, 3.9, 0, 0, 3.4], [0.7, 3.1, 3.4, 0, 0, 3.2]]);
     }
 
     this.torso.add(this.weaponSlot);
