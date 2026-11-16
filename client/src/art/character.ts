@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { canvasTexture, cloud, fill, grain, stains, type Ctx } from "./textures";
 import { ball, batchParts, disposeParts, loft, meshPart, type Ring, type V3 } from "./geometry";
 import { buildWeapon, muzzleFlashMaterial, muzzleOffset, supportGrip, WeaponId } from "./weapons";
@@ -144,6 +145,26 @@ function wrap(angle: number): number {
   return Math.atan2(Math.sin(angle), Math.cos(angle));
 }
 
+/**
+ * Weight a limb authored along -Y to two bones: everything above `joint`
+ * follows the first, everything below the second, blended across the joint so
+ * the cloth bends rather than breaks.
+ */
+function skinAcross(geometry: THREE.BufferGeometry, joint: number, blend = 2.4): THREE.BufferGeometry {
+  const position = geometry.getAttribute("position");
+  const indices = new Uint16Array(position.count * 4), weights = new Float32Array(position.count * 4);
+  for (let i = 0; i < position.count; ++i) {
+    const t = Math.max(0, Math.min(1, (joint + blend - position.getY(i)) / (2 * blend)));
+    const lower = t * t * (3 - 2 * t);
+    indices[i * 4 + 1] = 1;
+    weights[i * 4] = 1 - lower;
+    weights[i * 4 + 1] = lower;
+  }
+  geometry.setAttribute("skinIndex", new THREE.BufferAttribute(indices, 4));
+  geometry.setAttribute("skinWeight", new THREE.BufferAttribute(weights, 4));
+  return geometry;
+}
+
 export interface CharacterPose {
   speed: number;
   /** World yaw of travel; the legs turn to it while the torso holds the aim. */
@@ -172,6 +193,7 @@ export class Character {
   private weapon: THREE.Group | null = null;
   private weaponId = -1;
   private readonly materials: THREE.MeshLambertMaterial[] = [];
+  private readonly skeletons: THREE.Skeleton[] = [];
   private readonly direction = new THREE.Vector3();
   private readonly pole = new THREE.Vector3();
   private readonly elbow = new THREE.Vector3();
@@ -265,34 +287,54 @@ export class Character {
     this.flash.scale.setScalar(13);
     this.flash.visible = false;
     this.weaponSlot.add(this.flash);
+    const limbs: Array<[THREE.Group, THREE.Group, THREE.BufferGeometry, number]> = [];
     for (const side of [-1, 1]) {
       const upper = new THREE.Group(), lower = new THREE.Group();
-      // Each bone starts in a ball of its own girth, so a bent joint stays closed.
-      lump(upper, cloth, [2.7, 2.8, 2.8], [0, -0.3, 0]); // deltoid
-      tube(upper, cloth, [[-UPPER_ARM, 1.9, 1.9], [-8.5, 2.2, 2.3], [-4, 2.45, 2.5], [-1, 2.5, 2.5]]);
-      lump(lower, cloth, [2, 2, 2], [0, 0, 0]);
-      tube(lower, cloth, [[-FOREARM, 1.45, 1.3], [-7, 1.9, 1.8], [-3, 2.15, 2.05], [-0.5, 2.05, 1.95]]);
       shell(lower, gear, [[-FOREARM - 0.6, 1.4, 1.2], [-FOREARM + 0.6, 1.7, 1.5], [-FOREARM + 1.8, 1.65, 1.5]]); // cuff
       lump(lower, hand, [1.15, 1.9, 1.55], [0, -FOREARM - 1.8, 0]);
       this.torso.add(upper, lower);
       this.shoulders.push(upper); this.elbows.push(lower);
+      // One sleeve from deltoid to wrist, authored hanging straight down and
+      // skinned across the elbow, so the joint bends instead of hinging.
+      const U = UPPER_ARM;
+      limbs.push([upper, lower, mergeGeometries([
+        ball(2.7, 2.8, 2.8).translate(0, -0.3, 0),
+        loft([[-U - FOREARM, 1.45, 1.3], [-U - 7, 1.9, 1.8], [-U - 3, 2.15, 2.05], [-U - 1.2, 2.05, 2],
+              [-U, 1.95, 2], [-U + 1.5, 2, 2], [-U + 4, 2.2, 2.3], [-4, 2.45, 2.5], [-1, 2.5, 2.5]],
+          SIDES, { density: CLOTH_DENSITY }),
+      ])!, -U]);
 
       const hip = new THREE.Group(), knee = new THREE.Group();
       hip.position.set(side * 3.6, 0, 0);
       knee.position.y = -THIGH;
-      lump(hip, cloth, [3.6, 3.6, 3.9], [0, -0.6, 0.2]);
-      // Thigh and calf carry their mass at the back; the shin is straight in front.
-      tube(hip, cloth, [[-THIGH, 2.35, 2.4], [-13, 2.75, 2.9], [-7, 3.3, 3.5, 0, 0, 3.6], [-2, 3.6, 3.7, 0, 0, 3.9]]);
-      lump(knee, cloth, [2.45, 2.5, 2.5], [0, 0, 0]);
-      tube(knee, cloth, [[-SHIN + 3, 1.9, 1.9], [-10, 2.1, 2, 0, 0, 2.7], [-5.5, 2.4, 2.2, 0, 0, 3], [-0.5, 2.3, 2.4]]);
       lump(knee, gear, [2.2, 2.3, 0.9], [0, -0.4, -2.2]); // knee pad
       // Boot: shaft, instep, then a toe box that runs forward of the ankle.
       shell(knee, gear, [[-19, 2, 5.3, 0, -2.1], [-18.1, 2.25, 5.5, 0, -2.1], [-16.7, 2.2, 4.7, 0, -1.6],
                          [-15.2, 2.1, 3.1, 0, -0.4], [-13, 2.15, 2.5], [-10.4, 2.4, 2.6], [-9.6, 2.2, 2.4]]);
       hip.add(knee); this.hips.add(hip);
       this.legs.push(hip); this.knees.push(knee);
+      // Trouser leg, hip to boot top. Thigh and calf carry their mass at the
+      // back; the shin is straight in front.
+      const T = THIGH;
+      limbs.push([hip, knee, mergeGeometries([
+        ball(3.6, 3.6, 3.9).translate(0, -0.6, 0.2),
+        loft([[-T - SHIN + 3, 1.9, 1.9], [-T - 10, 2.1, 2, 0, 0, 2.7], [-T - 5.5, 2.4, 2.2, 0, 0, 3],
+              [-T - 1.5, 2.35, 2.4, 0, 0, 2.5], [-T, 2.4, 2.5], [-T + 1.5, 2.4, 2.45], [-T + 4.5, 2.75, 2.9],
+              [-7, 3.3, 3.5, 0, 0, 3.6], [-2, 3.6, 3.7, 0, 0, 3.9]], SIDES, { density: CLOTH_DENSITY }),
+      ])!, -T]);
     }
     batchParts(this.pivot);
+    // Skinned after batching, which would otherwise merge them into rigid parts.
+    for (const [parent, child, geometry, joint] of limbs) {
+      const mesh = new THREE.SkinnedMesh(skinAcross(geometry, joint), cloth);
+      // The bones are this rig's own joint groups; a Skeleton only reads their matrices.
+      const skeleton = new THREE.Skeleton([parent, child] as unknown as THREE.Bone[],
+        [new THREE.Matrix4(), new THREE.Matrix4().makeTranslation(0, -joint, 0)]);
+      mesh.bind(skeleton, new THREE.Matrix4());
+      mesh.frustumCulled = false; // posed far from its bind box; the body is tiny anyway
+      this.pivot.add(mesh);
+      this.skeletons.push(skeleton);
+    }
   }
 
   setTint(r: number, g: number, b: number): void {
@@ -470,6 +512,7 @@ export class Character {
     disposeParts(this.root);
     for (const material of this.materials) material.dispose();
     this.flash.material.dispose();
+    for (const skeleton of this.skeletons) skeleton.dispose();
     // Cached team textures and weapon materials outlive a roster rebuild.
   }
 }

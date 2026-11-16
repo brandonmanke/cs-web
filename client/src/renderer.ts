@@ -131,8 +131,8 @@ export class Renderer {
 
     // These light player bodies and their held weapons; the world is fully
     // baked into vertex colours.
-    this.scene.add(new THREE.HemisphereLight(0x8899aa, 0x2a2620, 0.55));
-    const key = new THREE.DirectionalLight(0xfff0d8, 0.75);
+    this.scene.add(new THREE.HemisphereLight(0xa9b6c4, 0x4a443c, 1.1));
+    const key = new THREE.DirectionalLight(0xfff0d8, 1.25);
     key.position.set(0.3, 1, 0.45);
     this.scene.add(key);
 
