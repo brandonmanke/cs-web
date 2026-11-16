@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { canvasTexture, cloud, fill, grain, stains } from "./textures";
-import { batchParts, bevelBox, loft, meshPart, profile, type V3 } from "./geometry";
+import { ball, batchParts, bevelBox, capsule, loft, meshPart, profile, type V3 } from "./geometry";
 
 // Original procedural models. Barrel points -Z, +Y up, origin at the grip.
 // GoldSrc inches; silhouettes and finish do the work, not high polygon counts.
@@ -24,7 +24,8 @@ function surface(base: string, seed: number, kind: "metal" | "polymer" | "wood" 
         c.ctx.bezierCurveTo(x + 14, 42, x - 12, 80, x + 3, 128);
         c.ctx.stroke();
       } else {
-        c.ctx.fillStyle = i % 2 ? "rgba(195,204,207,0.18)" : "rgba(0,0,0,0.22)";
+        if (i % 3) continue; // a few scuffs, not a hatch
+        c.ctx.fillStyle = i % 2 ? "rgba(195,204,207,0.1)" : "rgba(0,0,0,0.14)";
         c.ctx.fillRect(x, y, kind === "metal" ? 2 + c.random() * 12 : 1, 1);
       }
     }
@@ -55,7 +56,7 @@ function mats(): Record<MatKey, THREE.MeshPhongMaterial> {
       olive: new THREE.MeshPhongMaterial({ map: surface("#4f5a3a", 123, "polymer"), shininess: 6, specular: 0x202418 }),
       glass: new THREE.MeshPhongMaterial({ color: 0x35606e, emissive: 0x0b2029, shininess: 90 }),
       sleeve: new THREE.MeshPhongMaterial({ map: surface("#4f5d6b", 411, "cloth"), shininess: 2, specular: 0x111111 }),
-      glove: new THREE.MeshPhongMaterial({ map: surface("#3b3a36", 413, "cloth"), shininess: 6, specular: 0x1c1c1c }),
+      glove: new THREE.MeshPhongMaterial({ map: surface("#4b4a41", 413, "cloth"), shininess: 6, specular: 0x1c1c1c }),
       skin: new THREE.MeshPhongMaterial({ map: surface("#b98a68", 415, "cloth"), shininess: 4, specular: 0x221a14 }),
     };
   }
@@ -372,8 +373,10 @@ export function supportGrip(id: number): V3 {
  * glove's gauntlet over its last tenth, ending at the wrist (+0.5).
  */
 function forearm(group: THREE.Group): void {
-  meshPart(group, loft([[-0.5, 2.7, 2.7], [0.1, 2.1, 2.1], [0.42, 1.65, 1.65]], 8), mats().sleeve, [0, 0, 0]);
-  meshPart(group, loft([[0.39, 1.9, 1.9], [0.5, 1.6, 1.45]], 8), mats().glove, [0, 0, 0]);
+  // The muscle of the forearm, narrowing to a cuff rolled just short of the glove.
+  meshPart(group, loft([[-0.5, 2.6, 2.6], [-0.15, 2.55, 2.4], [0.15, 2.15, 1.95], [0.36, 1.75, 1.55],
+                        [0.4, 1.95, 1.75], [0.43, 1.7, 1.5]], 12), mats().sleeve, [0, 0, 0]);
+  meshPart(group, loft([[0.41, 1.75, 1.6], [0.46, 1.8, 1.6], [0.5, 1.55, 1.35]], 12), mats().glove, [0, 0, 0]);
 }
 
 const up = new THREE.Vector3(0, 1, 0);
@@ -385,7 +388,28 @@ function aimForearm(arm: THREE.Object3D, elbow: THREE.Vector3, wrist: THREE.Vect
   arm.quaternion.setFromUnitVectors(up, span.normalize());
 }
 
-/** Gloved firing hand around the grip, and a hand cupping the fore-end. */
+const from = new THREE.Vector3(), reachTo = new THREE.Vector3();
+/** A finger: capsules through each knuckle in turn, thinning toward the tip. */
+function digit(g: THREE.Group, mat: MatKey, radius: number, ...knuckles: V3[]): void {
+  for (let i = 0; i + 1 < knuckles.length; ++i) {
+    from.set(...knuckles[i]!);
+    reachTo.set(...knuckles[i + 1]!).sub(from);
+    const bone = meshPart(g, capsule(reachTo.length(), radius * (1 - i * 0.1)), mats()[mat],
+      knuckles[i]!);
+    bone.quaternion.setFromUnitVectors(up, reachTo.normalize());
+  }
+}
+
+/** A rounded mass of glove: palm, heel, the back of a hand. */
+function pad(g: THREE.Group, size: V3, at: V3, rotX = 0): void {
+  meshPart(g, ball(...size), mats().glove, at, [rotX, 0, 0]);
+}
+
+/**
+ * Fingerless-gloved firing hand around the grip, and a hand cupping the
+ * fore-end. Hands are the one model the player never stops looking at, so
+ * they get real fingers: three bones each, wrapped round what they hold.
+ */
 export function buildArms(id: number): THREE.Group {
   const g = new THREE.Group();
   if (id === WeaponId.none) return g;
@@ -396,16 +420,17 @@ export function buildArms(id: number): THREE.Group {
   forearm(sleeve);
   aimForearm(sleeve, new THREE.Vector3(8, -9, 19), new THREE.Vector3(1.3, -2.6, 4.3));
   firing.add(sleeve);
-  part(firing, "glove", [1.3, 3.3, 3.3], [1.2, -2.5, 1.7], -0.3); // back of the hand
-  part(firing, "glove", [2.5, 2, 1.6], [0.5, -1.5, 3.1], -0.3); // heel and web behind the grip
+  pad(firing, [0.6, 1.8, 1.75], [1.2, -2.5, 1.8], -0.3); // back of the hand
+  pad(firing, [1.05, 0.85, 0.7], [0.3, -1.15, 2.85], -0.3); // web behind the grip
   for (let i = 0; i < 3; ++i) {
+    // Knuckle on the far side, round the front of the grip, tip on the near side.
     const y = -1.75 - i * 0.85, z = -0.45 + i * 0.3;
-    part(firing, "skin", [2.7, 0.76, 0.95], [0, y, z]);
-    part(firing, "skin", [0.75, 0.74, 1.7], [-1.05, y, z + 0.8]);
-    part(firing, "polymer", [0.5, 0.6, 1.1], [1.75, y, z + 0.3]); // knuckle pads
+    digit(firing, "skin", 0.43, [1.45, y, z + 1], [0.9, y - 0.05, z - 0.3], [-0.55, y - 0.05, z - 0.25],
+      [-1.1, y, z + 0.95]);
+    meshPart(firing, ball(0.5, 0.42, 0.55), mats().glove, [1.6, y, z + 0.9]); // knuckle of the glove
   }
-  part(firing, "skin", [0.8, 0.76, 2.7], [1, -0.8, -1.1]); // trigger finger
-  part(firing, "skin", [0.8, 0.85, 2.5], [-1.02, -0.55, 1.3], 0.2); // thumb
+  digit(firing, "skin", 0.41, [1.35, -0.85, 0.5], [1.05, -0.8, -1.3], [0.45, -0.95, -2.2]); // trigger finger
+  digit(firing, "skin", 0.47, [-0.2, -0.7, 2.7], [-1, -0.5, 1.5], [-1.08, -0.55, 0.2]); // thumb
   if (id === WeaponId.knife) firing.position.set(0, 2.4, 0.6);
   else {
     const support = joint(g, "support_sleeve", [0, 0, 0]);
@@ -413,17 +438,23 @@ export function buildArms(id: number): THREE.Group {
     // A pistol's support arm comes up from below; a rifle's reaches in from the left.
     support.userData.elbow = pistol ? new THREE.Vector3(-8, -13, 9) : new THREE.Vector3(-14, -5, 7);
     const hand = joint(g, "support_hand", supportGrip(id));
-    part(hand, "glove", [2.5, 1.6, 2.1], [-0.6, -0.8, 1.1], 0.5); // heel, toward the wrist
+    pad(hand, [1.05, 0.75, 1.05], [-0.65, -0.9, 1.05], 0.5); // heel, toward the wrist
     if (pistol) {
       // Wrapped over the firing hand from the left.
-      part(hand, "glove", [1.1, 3.1, 3.1], [-0.2, 0.5, 0.6], -0.3);
-      for (let i = 0; i < 4; ++i) part(hand, "skin", [2.6, 0.72, 0.9], [1, 1.5 - i * 0.8, -1.25 + i * 0.28]);
-      part(hand, "skin", [0.8, 0.8, 2.4], [-0.1, 2.4, -0.4], 0.15);
+      pad(hand, [0.5, 1.6, 1.5], [-0.55, 0.5, 0.8], -0.3);
+      for (let i = 0; i < 4; ++i) {
+        const y = 1.5 - i * 0.8, z = -1 + i * 0.28;
+        digit(hand, "skin", 0.4, [-0.4, y, z + 0.6], [0.7, y, z - 0.45], [1.9, y, z - 0.35], [2.5, y, z + 0.6]);
+      }
+      digit(hand, "skin", 0.44, [-0.5, 1.9, 1.3], [-0.3, 2.4, 0], [-0.2, 2.5, -1.3]);
     } else {
       // Cupped under the fore-end: thumb along the near side, fingers up the far.
-      part(hand, "glove", [3.1, 1.1, 3.7], [0.1, 0.3, 0]);
-      part(hand, "skin", [0.85, 1, 2.9], [-1.75, 1.5, -0.8], 0.15);
-      for (let i = 0; i < 4; ++i) part(hand, "skin", [0.75, 2.3, 0.78], [1.7, 1.5, -1.3 + i * 0.85]);
+      pad(hand, [1.55, 0.6, 1.95], [0.1, 0.3, 0]);
+      digit(hand, "skin", 0.46, [-1.2, 0.3, 0.7], [-1.75, 1.3, -0.3], [-1.65, 1.9, -1.6]);
+      for (let i = 0; i < 4; ++i) {
+        const z = -1.3 + i * 0.85;
+        digit(hand, "skin", 0.4, [1.2, 0.2, z], [1.8, 1.2, z], [1.6, 2.2, z - 0.05], [1.05, 2.75, z - 0.1]);
+      }
     }
     poseSupportSleeve(support, hand);
   }

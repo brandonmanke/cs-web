@@ -164,9 +164,10 @@ export class Hud {
     const alive = (snapshot.flags & Flags.alive) !== 0;
 
     const name = WEAPON_NAMES[snapshot.weapon] ?? "?";
-    const ammoText = snapshot.reload > 0
-      ? `${name} <span class="dim">RELOADING</span>`
-      : `${name} <span class="mag">${snapshot.magazine}</span> / ${snapshot.reserve}`;
+    const ammoText = `<span class="name">${name}</span>` + (snapshot.reload > 0
+      ? `<span class="dim">RELOADING</span>`
+      : `${snapshot.magazine}<span class="sep">|</span>` +
+        `<span class="reserve">${snapshot.reserve}</span>`);
     // Six DOM writes a frame is cheap but not free; skip the ones that changed
     // nothing, which is most of them most frames.
     if (ammoText !== this.lastAmmoText) {
@@ -178,7 +179,6 @@ export class Hud {
     const healthText = String(healthValue);
     if (healthText !== this.lastHealthText) {
       this.health.textContent = healthText;
-      this.health.classList.toggle("hurt", healthValue <= 60 && healthValue > 25);
       this.health.classList.toggle("critical", healthValue <= 25);
       this.lastHealthText = healthText;
     }

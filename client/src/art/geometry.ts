@@ -174,3 +174,13 @@ export function loft(rings: Ring[], sides = 8, options: LoftOptions = {}): THREE
 export function ball(rx: number, ry = rx, rz = rx): THREE.BufferGeometry {
   return new THREE.SphereGeometry(1, 12, 8).scale(rx, ry, rz);
 }
+
+/**
+ * A tapered, round-ended segment from the origin along +Y: one bone of a
+ * finger. Chain a few and they read as knuckles.
+ */
+export function capsule(length: number, radius: number, sides = 6): THREE.BufferGeometry {
+  const tip = radius * 0.86;
+  return loft([[-radius * 0.7, radius * 0.5, radius * 0.5], [0, radius, radius], [length, tip, tip],
+               [length + tip * 0.7, tip * 0.5, tip * 0.5]], sides);
+}
