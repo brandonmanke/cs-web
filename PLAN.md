@@ -258,14 +258,21 @@ No binary assets. Nothing to license, nothing to download, everything diffs.
   the surface; seams, rivets, drips and soft stains sit on top. A crate texture
   is one whole framed, braced crate and is fitted to each face, not tiled by
   world position.
-- **Characters** (`client/src/art/character.ts`): 72u tall like the hull, hip
-  joint at 35u. The whole figure is one smooth-shaded language: 12-sided lofts
+- **Characters** (`client/src/art/character.ts`): 72u (six feet) tall like the
+  hull, built to real adult proportions in the manner of CS:Source rather than
+  1.6's stylised ones — a 9u head, 15u between the shoulder joints, the hip
+  joint at half height — so the figure sits inside the sim hitboxes instead of
+  filling them. The whole figure is one smooth-shaded language: 12-sided lofts
   for anything with length, ellipsoids for joints and gear, no flat-shaded
-  boxes, and one cloth texel density on every limb. Each bone starts in a ball
-  of its own girth so a bent joint stays closed. Pouches, straps, camouflage
-  and the face are painted into per-team skins; helmet, goggles, cap, scarf,
-  holster and boots are geometry. Arms are two-bone IK onto
-  the weapon's grips, and the torso blades behind a shouldered rifle.
+  boxes. A loft ring carries separate front and back depths and the mesh gets
+  true surface normals, which is what makes a skull with a jaw and a face
+  plane, a chest, a calf — and what stops a limb shading like a pipe. Each
+  bone starts in a ball of its own girth so a bent joint stays closed, and
+  cloth repeats at one texel density on every limb. Pouches, straps and
+  camouflage are painted into per-team skins and the face into a 256px head
+  wrap; helmet, goggles, cap, scarf, holster and boots are geometry.
+  Arms are two-bone IK onto the weapon's grips, and the torso blades behind a
+  shouldered rifle.
   Animation follows GoldSrc's split: the lower body turns to the direction of
   travel (and backpedals rather than turn past a quarter) while the upper body
   holds the aim; knees fold through the swing; shots recoil through the arms
