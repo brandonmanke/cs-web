@@ -259,9 +259,12 @@ No binary assets. Nothing to license, nothing to download, everything diffs.
   is one whole framed, braced crate and is fitted to each face, not tiled by
   world position.
 - **Characters** (`client/src/art/character.ts`): 72u tall like the hull, hip
-  joint at 35u. Torso, head and limbs are lofted, smooth-shaded tubes; pouches,
-  straps, camouflage and the face are painted into per-team skins, with helmet,
-  goggles, cap, scarf, holster and boots as geometry. Arms are two-bone IK onto
+  joint at 35u. The whole figure is one smooth-shaded language: 12-sided lofts
+  for anything with length, ellipsoids for joints and gear, no flat-shaded
+  boxes, and one cloth texel density on every limb. Each bone starts in a ball
+  of its own girth so a bent joint stays closed. Pouches, straps, camouflage
+  and the face are painted into per-team skins; helmet, goggles, cap, scarf,
+  holster and boots are geometry. Arms are two-bone IK onto
   the weapon's grips, and the torso blades behind a shouldered rifle.
   Animation follows GoldSrc's split: the lower body turns to the direction of
   travel (and backpedals rather than turn past a quarter) while the upper body

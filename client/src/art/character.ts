@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { canvasTexture, fill, grain, stains, type Ctx } from "./textures";
-import { batchParts, bevelBox, disposeParts, loft, meshPart, profile, type V3 } from "./geometry";
+import { ball, batchParts, disposeParts, loft, meshPart, type Ring, type V3 } from "./geometry";
 import { buildWeapon, muzzleFlashMaterial, muzzleOffset, supportGrip, WeaponId } from "./weapons";
 
 // Rigid articulated bodies, authored from the feet and 72u tall like the hull.
@@ -76,7 +76,7 @@ function paintVest(c: Ctx, team: Team): void {
   for (const y of [66, 96, 114]) { x.fillRect(0, y, 30, 1); x.fillRect(98, y, 30, 1); }
   x.fillStyle = colors.trim;
   x.fillRect(team === "ct" ? 46 : 50, 30, team === "ct" ? 12 : 6, 5);
-  x.fillRect(118, 30, 10, 6); x.fillRect(0, 30, 10, 6);
+  x.fillRect(123, 30, 5, 5); x.fillRect(0, 30, 5, 5);
   stains(c, 5, "#15130f", 14);
 }
 
@@ -108,6 +108,9 @@ function skin(team: Team, part: SkinPart): THREE.CanvasTexture {
 
 const THIGH = 16.5, SHIN = 13.5, UPPER_ARM = 12.5, FOREARM = 11.5;
 const HIP_Y = 35;
+/** Facets round every limb, and fatigue cloth per texture repeat, the same everywhere. */
+const SIDES = 12;
+const CLOTH_DENSITY = 22;
 /** The torso turns its support shoulder toward the target; the weapon stays on the aim line. */
 const BLADE = 0.4;
 /** Kneeling pose height over the 36u ducked hull: squash the remainder. */
@@ -176,47 +179,53 @@ export class Character {
     };
     const cloth = mat("cloth"), vest = mat("vest"), gear = mat("gear");
     const face = mat("head"), hand = mat("skin");
-    const box = (group: THREE.Group, material: THREE.Material, size: V3, at: V3, rotX = 0) =>
-      meshPart(group, bevelBox(...size, 0.5), material, at, [rotX, 0, 0]);
+    // One smooth-shaded language for the whole figure: lofts for anything
+    // with length, ellipsoids for joints and gear. No part has a hard corner,
+    // so a pouch and the chest it sits on take the light the same way.
+    const tube = (group: THREE.Group, material: THREE.Material, rings: Ring[], square = 2) =>
+      meshPart(group, loft(rings, SIDES, { density: CLOTH_DENSITY, square }), material, [0, 0, 0]);
+    const lump = (group: THREE.Group, material: THREE.Material, size: V3, at: V3) =>
+      meshPart(group, ball(...size), material, at);
 
     this.root.add(this.pivot);
     this.pivot.add(this.hips);
     this.hips.position.y = HIP_Y;
-    meshPart(this.hips, loft([[-5, 6.8, 5.2], [-1, 9, 5.9], [4, 8.5, 5.5]]), cloth, [0, 0, 0]);
-    meshPart(this.hips, loft([[2.6, 9, 6], [4.6, 9, 6]]), gear, [0, 0, 0]); // belt
-    box(this.hips, gear, [2.2, 6, 4], [10, -2.5, 0.5]); // holster
-    box(this.hips, gear, [5, 3.4, 2.4], [-3, 2.2, 6.2]); // rear pouch
+    tube(this.hips, cloth, [[-7.6, 1.5, 2.6], [-6.2, 5, 4.5], [-4, 7.7, 5.5], [-1, 9, 5.9], [2, 8.9, 5.8], [4, 8.5, 5.5]], 2.4);
+    tube(this.hips, gear, [[2.5, 9, 6], [3.5, 9.15, 6.1], [4.6, 9, 6]], 2.4); // belt
+    lump(this.hips, gear, [1.2, 3.2, 2.2], [9.6, -4, 0.4]); // holster
+    lump(this.hips, gear, [3, 2, 1.6], [-3.2, 2, 6.2]); // rear pouch
 
     this.hips.add(this.torso);
     this.torso.position.y = 4;
-    meshPart(this.torso, loft([[0, 8.5, 5.5], [5, 9.3, 5.9], [11, 10.9, 6.6], [16, 10.6, 5.9],
-                               [18.4, 5, 4], [20.4, 2.7, 2.9]]), cloth, [0, 0, 0]);
-    // Plate carrier: a shell over the fatigues, its pouches painted on.
-    meshPart(this.torso, loft([[2.5, 9.9, 6.7], [7, 10.6, 7.2], [12, 11.5, 7.5], [16.6, 10, 6.5],
-                               [18, 6, 4.8]], 10), vest, [0, 0, 0]);
-    for (const x of [-5.6, -1.9, 1.9, 5.6]) box(this.torso, vest, [3.3, 5.4, 1.6], [x, 6.6, -7.7]);
-    box(this.torso, gear, [2.2, 3.6, 1.6], [-7, 14.6, -6.2]); // radio
-    box(this.torso, gear, [0.4, 4.5, 0.4], [-7.6, 18.4, -6]);
-    box(this.torso, vest, [11, 10, 2.4], [0, 10.5, 7.2]); // back panel
+    tube(this.torso, cloth, [[0, 8.5, 5.5], [5, 9.3, 5.9], [11, 10.9, 6.6], [14.5, 11, 6.3], [16.6, 9.6, 5.6],
+                             [18.2, 5.6, 4.2], [19.2, 3.2, 3.2], [20.6, 2.8, 3]], 2.4);
+    // Plate carrier: a shell over the fatigues. Its pouch row and back panel
+    // are swellings in the shell, with the detail painted over them.
+    meshPart(this.torso, loft([[2.4, 9.6, 6.5], [3.4, 10.2, 7.4, 0, -0.5], [6.5, 10.7, 8, 0, -0.7],
+                               [9.5, 11.2, 7.6, 0, -0.1], [12.5, 11.6, 7.7, 0, 0.3], [15.5, 11.2, 7, 0, 0.3],
+                               [17.2, 9.2, 5.8], [18.3, 6.2, 4.7]], SIDES, { square: 2.6 }), vest, [0, 0, 0]);
+    lump(this.torso, gear, [1.2, 2.2, 1], [-7.2, 15, -6.4]); // radio
+    meshPart(this.torso, loft([[16.5, 0.22, 0.22, -7.6, -6.2], [21.5, 0.15, 0.15, -7.6, -6.2]], 5), gear, [0, 0, 0]);
 
     this.torso.add(this.head);
     this.head.position.y = 20;
     this.head.scale.setScalar(1.1);
-    meshPart(this.head, loft([[0, 2.7, 2.9], [1.6, 3.7, 4.1], [4, 4.3, 4.8], [7, 4.5, 5],
-                              [9.6, 3.9, 4.4], [11, 2, 2.4]]), face, [0, 0, 0]);
-    box(this.head, face, [1.3, 2, 1.2], [0, 5.2, -5]); // nose, under the paint
+    meshPart(this.head, loft([[0, 2.7, 2.9], [1.2, 3.3, 3.7], [2.6, 4, 4.5], [4.4, 4.4, 4.9], [6.6, 4.55, 5.05],
+                              [8.6, 4.3, 4.8], [10.1, 3.4, 3.8], [11, 1.8, 2.1]], SIDES), face, [0, 0, 0]);
     if (team === "ct") {
-      meshPart(this.head, loft([[7.7, 5, 5.6], [9, 5.35, 5.95], [11, 4.6, 5.2], [12.6, 2.4, 2.8]], 10),
-        gear, [0, 0, 0]);
-      for (const x of [-5.2, 5.2]) box(this.head, gear, [1.2, 3.6, 3.4], [x, 5, 0.4]); // ear cups
+      meshPart(this.head, loft([[7.6, 4.9, 5.5], [8.4, 5.3, 5.9], [9.8, 5.2, 5.8], [11.2, 4.4, 5],
+                                [12.2, 3, 3.4], [12.7, 1.2, 1.4]], SIDES), gear, [0, 0, 0]);
+      for (const x of [-5, 5]) lump(this.head, gear, [0.9, 1.9, 1.8], [x, 5.2, 0.4]); // ear cups
       // Goggles pushed up onto the helmet.
-      box(this.head, vest, [8.4, 2.4, 1.4], [0, 10, -5.6], -0.3);
-      meshPart(this.head, loft([[9.4, 5.45, 6.05], [10.4, 5.1, 5.7]], 10), vest, [0, 0, 0]);
+      meshPart(this.head, loft([[9.2, 5.4, 6], [9.8, 5.5, 6.1], [10.4, 5.2, 5.8]], SIDES), vest, [0, 0, 0]);
+      lump(this.head, vest, [3.9, 1.3, 1], [0, 9.9, -5.6]);
     } else {
-      // Knitted cap, rolled at the brim.
-      meshPart(this.head, loft([[7.4, 4.75, 5.25], [9.8, 4.3, 4.8], [11.6, 2.3, 2.7]], 10), gear, [0, 0, 0]);
-      meshPart(this.head, loft([[7, 4.95, 5.45], [8.3, 4.95, 5.45]], 10), vest, [0, 0, 0]);
-      meshPart(this.head, loft([[-0.6, 4.2, 4.5], [1.6, 4.4, 4.9]], 10), face, [0, 0, 0]); // scarf
+      // Knitted cap, rolled at the brim, and the scarf bunched at the throat.
+      meshPart(this.head, loft([[7.6, 4.7, 5.2], [9.4, 4.5, 5], [10.8, 3.5, 3.9], [11.7, 1.6, 1.9]], SIDES),
+        gear, [0, 0, 0]);
+      meshPart(this.head, loft([[7, 4.8, 5.3], [7.7, 5, 5.5], [8.4, 4.8, 5.3]], SIDES), vest, [0, 0, 0]);
+      meshPart(this.head, loft([[-1, 3.6, 3.9], [0.2, 4.4, 4.8], [1.6, 4.3, 4.8], [2.4, 4, 4.5]], SIDES),
+        face, [0, 0, 0]);
     }
 
     this.torso.add(this.weaponSlot);
@@ -228,23 +237,29 @@ export class Character {
     this.weaponSlot.add(this.flash);
     for (const side of [-1, 1]) {
       const upper = new THREE.Group(), lower = new THREE.Group();
-      meshPart(upper, loft([[-UPPER_ARM, 2.7, 2.7], [-6, 3.4, 3.4], [0, 3.6, 3.6]]), cloth, [0, 0, 0]);
-      box(upper, vest, [6, 3, 6], [0, -2.4, 0]); // shoulder patch
-      meshPart(lower, loft([[-FOREARM, 2, 2], [-7, 2.7, 2.7], [0, 2.8, 2.8]]), cloth, [0, 0, 0]);
-      meshPart(lower, loft([[-FOREARM - 0.4, 2.1, 2.2], [-FOREARM + 2, 2.35, 2.35]]), gear, [0, 0, 0]);
-      box(lower, hand, [2.6, 3.6, 3], [0, -FOREARM - 1.6, 0]);
+      // Each bone starts in a ball of its own girth, so a bent joint stays closed.
+      lump(upper, cloth, [3.5, 3.5, 3.5], [0, 0, 0]);
+      tube(upper, cloth, [[-UPPER_ARM, 2.7, 2.7], [-9, 3, 3], [-5, 3.4, 3.4], [-1, 3.6, 3.6]]);
+      lump(lower, cloth, [2.8, 2.8, 2.8], [0, 0, 0]);
+      tube(lower, cloth, [[-FOREARM, 2, 2], [-8.5, 2.4, 2.4], [-4, 2.75, 2.75], [-0.5, 2.8, 2.8]]);
+      meshPart(lower, loft([[-FOREARM - 0.5, 2, 2.1], [-FOREARM + 0.8, 2.3, 2.35], [-FOREARM + 2, 2.2, 2.25]], SIDES),
+        gear, [0, 0, 0]); // glove cuff
+      lump(lower, hand, [1.5, 2.1, 1.9], [0, -FOREARM - 1.7, 0]);
       this.torso.add(upper, lower);
       this.shoulders.push(upper); this.elbows.push(lower);
 
       const hip = new THREE.Group(), knee = new THREE.Group();
       hip.position.set(side * 4.7, 0, 0);
       knee.position.y = -THIGH;
-      meshPart(hip, loft([[-THIGH, 3.5, 3.7], [-8, 4.5, 4.8], [0, 4.9, 5.1]]), cloth, [0, 0, 0]);
-      box(hip, cloth, [1.6, 5.4, 4.6], [side * 4.5, -7.5, 0]); // cargo pocket
-      meshPart(knee, loft([[-SHIN, 2.7, 2.9], [-6.5, 3.5, 3.8], [0, 3.4, 3.6]]), cloth, [0, 0, 0]);
-      box(knee, gear, [5.6, 4.4, 1.6], [0, -0.6, -3.4]); // knee pad
-      meshPart(knee, profile([[2.9, -11.5], [2.9, -18.5], [-6.6, -18.5], [-6.8, -17], [-4.2, -15.4],
-                              [-2.8, -11.5]], 5.8, 0.4), gear, [0, 0, 0]);
+      lump(hip, cloth, [4.9, 4.6, 5.1], [0, -0.6, 0]);
+      tube(hip, cloth, [[-THIGH, 3.5, 3.7], [-12, 3.9, 4.2], [-7, 4.6, 4.9], [-2, 4.9, 5.1]]);
+      lump(knee, cloth, [3.5, 3.5, 3.7], [0, 0, 0]);
+      tube(knee, cloth, [[-SHIN, 2.7, 2.9], [-9, 3.2, 3.6], [-5, 3.5, 3.8], [-0.5, 3.4, 3.6]]);
+      lump(knee, gear, [3.1, 2.8, 1.1], [0, -0.4, -3.2]); // knee pad
+      // Boot: shaft, instep, then a toe box that runs forward of the ankle.
+      meshPart(knee, loft([[-18.5, 2.6, 4.9, 0, -1.9], [-17.6, 2.9, 5.2, 0, -1.9], [-16, 2.9, 4.6, 0, -1.4],
+                           [-14.4, 2.8, 3.5, 0, -0.4], [-12.6, 2.9, 3.1], [-10.8, 3, 3.2]], SIDES),
+        gear, [0, 0, 0]);
       hip.add(knee); this.hips.add(hip);
       this.legs.push(hip); this.knees.push(knee);
     }
