@@ -1,6 +1,8 @@
 import * as THREE from "three";
-import { TEXTURE_SCALE, textures, type TextureKey } from "../art/textures";
-import { brushFaces, type Brush, type Face, type Vec3 } from "./brush";
+import { clonePropModel, getDetailTexture } from "../art/loader";
+import { mapDecalTexture, TEXTURE_SCALE, textures, type TextureKey } from "../art/textures";
+import { brushFaces, dot, type Brush, type Face, type Vec3 } from "./brush";
+import type { MapDecalDef, PropDef, SunLight } from "./mapdef";
 
 // Brushes -> renderable geometry, with GoldSrc-style baked lightmaps.
 //
@@ -24,6 +26,12 @@ export type ShadowProbe = (from: Vec3, to: Vec3) => boolean;
 /** World units per lightmap sample. */
 const LUXEL = 16;
 const ATLAS_WIDTH = 1024;
+/** 1px gutter between packed charts prevents bilinear edge bleed across faces. */
+const CHART_PAD = 1;
+/** Distance for directional sun shadow rays (GoldSrc light_environment). */
+const SUN_RAY_DIST = 6144;
+/** Distance for upward sky-visibility probe. */
+const SKY_RAY_DIST = 2048;
 /** Diffuse wrap, standing in for bounce light. 0 = pure Lambert. */
 const WRAP = 0.45;
 /** How far an ambient-occlusion ray looks for a neighbouring surface. */
@@ -96,18 +104,18 @@ function chartFace(face: Face): Chart {
   };
 }
 
-/** Shelf-pack every chart into the atlas; returns the height used. */
+/** Shelf-pack every chart into the atlas with 1px gutters; returns the height used. */
 function packCharts(charts: Chart[]): number {
-  let x = 0, y = 0, shelf = 0;
+  let x = CHART_PAD, y = CHART_PAD, shelf = 0;
   for (const chart of [...charts].sort((a, b) => b.height - a.height)) {
-    if (x + chart.width > ATLAS_WIDTH) {
-      x = 0; y += shelf; shelf = 0;
+    if (x + chart.width + CHART_PAD > ATLAS_WIDTH) {
+      x = CHART_PAD; y += shelf + CHART_PAD; shelf = 0;
     }
     chart.x = x; chart.y = y;
-    x += chart.width;
+    x += chart.width + CHART_PAD;
     shelf = Math.max(shelf, chart.height);
   }
-  return y + shelf;
+  return Math.max(16, y + shelf + CHART_PAD);
 }
 
 function insideAnyBrush(point: Vec3, brushes: Brush[]): boolean {
@@ -141,7 +149,7 @@ function occlusionRays(normal: Vec3): Vec3[] {
 
 function bakeLuxel(
   origin: Vec3, normal: Vec3, rays: Vec3[], lights: MapLight[],
-  ambient: [number, number, number], probe: ShadowProbe,
+  ambient: [number, number, number], probe: ShadowProbe, sun?: SunLight,
 ): [number, number, number] {
   // Ambient occlusion: what fraction of the open hemisphere is close geometry.
   let blocked = 0;
@@ -152,6 +160,36 @@ function bakeLuxel(
   let r = ambient[0] * open;
   let g = ambient[1] * open;
   let b = ambient[2] * open;
+
+  // GoldSrc `light_environment`: crisp directional sun + cool hemisphere sky fill
+  // for outdoor areas while interiors stay moody and shaded.
+  if (sun) {
+    const skyUp: Vec3 = [
+      origin[0] + normal[0] * 120,
+      origin[1] + SKY_RAY_DIST,
+      origin[2] + normal[2] * 120,
+    ];
+    if (!probe(origin, skyUp)) {
+      const skyWeight = (0.45 + 0.55 * Math.max(0, normal[1])) * sun.skyIntensity * (0.5 + 0.5 * open);
+      r += sun.skyColor[0] * skyWeight;
+      g += sun.skyColor[1] * skyWeight;
+      b += sun.skyColor[2] * skyWeight;
+    }
+    const sunNdotL = normal[0] * sun.dir[0] + normal[1] * sun.dir[1] + normal[2] * sun.dir[2];
+    if (sunNdotL > 0.01) {
+      const sunTarget: Vec3 = [
+        origin[0] + sun.dir[0] * SUN_RAY_DIST,
+        origin[1] + sun.dir[1] * SUN_RAY_DIST,
+        origin[2] + sun.dir[2] * SUN_RAY_DIST,
+      ];
+      if (!probe(origin, sunTarget)) {
+        const direct = sunNdotL * sun.intensity * (0.75 + 0.25 * open);
+        r += sun.color[0] * direct;
+        g += sun.color[1] * direct;
+        b += sun.color[2] * direct;
+      }
+    }
+  }
 
   for (const light of lights) {
     const dx = light.pos[0] - origin[0];
@@ -179,7 +217,7 @@ function bakeLuxel(
     g += light.color[1] * energy;
     b += light.color[2] * energy;
   }
-  return [Math.min(r, 1.6), Math.min(g, 1.6), Math.min(b, 1.6)];
+  return [Math.min(r, 1.85), Math.min(g, 1.85), Math.min(b, 1.85)];
 }
 
 /**
@@ -189,7 +227,7 @@ function bakeLuxel(
  */
 function bakeChart(
   face: Face, chart: Chart, atlas: Float32Array, brushes: Brush[], lights: MapLight[],
-  ambient: [number, number, number], probe: ShadowProbe,
+  ambient: [number, number, number], probe: ShadowProbe, sun?: SunLight,
 ): void {
   const { s, t, width, height } = chart;
   const drop = faceAxes(face.normal)[2];
@@ -209,7 +247,7 @@ function bakeChart(
       // Lift the sample off the surface so it doesn't shadow-test against itself.
       const origin: Vec3 = [point[0] + n[0] * 1.5, point[1] + n[1] * 1.5, point[2] + n[2] * 1.5];
       if (insideAnyBrush(origin, brushes)) continue;
-      const colour = bakeLuxel(origin, n, rays, lights, ambient, probe);
+      const colour = bakeLuxel(origin, n, rays, lights, ambient, probe, sun);
       const at = ((chart.y + j) * ATLAS_WIDTH + chart.x + i) * 3;
       atlas[at] = colour[0]; atlas[at + 1] = colour[1]; atlas[at + 2] = colour[2];
       valid[j * width + i] = 1;
@@ -249,10 +287,28 @@ function bakeChart(
  * the point cannot see are skipped, so a body behind a wall stays in its shadow.
  */
 export function sampleLight(pos: Vec3, lights: MapLight[], ambient: [number, number, number],
-                            probe?: ShadowProbe): [number, number, number] {
+                            probe?: ShadowProbe, sun?: SunLight): [number, number, number] {
   let r = ambient[0];
   let g = ambient[1];
   let b = ambient[2];
+  if (sun) {
+    const skyOpen = !probe || !probe(pos, [pos[0], pos[1] + SKY_RAY_DIST, pos[2]]);
+    if (skyOpen) {
+      r += sun.skyColor[0] * sun.skyIntensity * 0.7;
+      g += sun.skyColor[1] * sun.skyIntensity * 0.7;
+      b += sun.skyColor[2] * sun.skyIntensity * 0.7;
+    }
+    const sunTarget: Vec3 = [
+      pos[0] + sun.dir[0] * SUN_RAY_DIST,
+      pos[1] + sun.dir[1] * SUN_RAY_DIST,
+      pos[2] + sun.dir[2] * SUN_RAY_DIST,
+    ];
+    if (!probe || !probe(pos, sunTarget)) {
+      r += sun.color[0] * sun.intensity * 0.65;
+      g += sun.color[1] * sun.intensity * 0.65;
+      b += sun.color[2] * sun.intensity * 0.65;
+    }
+  }
   for (const light of lights) {
     const dx = light.pos[0] - pos[0];
     const dy = light.pos[1] - pos[1];
@@ -269,16 +325,38 @@ export function sampleLight(pos: Vec3, lights: MapLight[], ambient: [number, num
   return [Math.min(r, 1.5), Math.min(g, 1.5), Math.min(b, 1.5)];
 }
 
+/** GoldSrc `r_detailtextures`: multiplies subtle high-frequency grit up close. */
+function applyDetailTexture(material: THREE.MeshBasicMaterial, detail: THREE.Texture): void {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uDetailMap = { value: detail };
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nvarying float vDetailDist;")
+      .replace("#include <project_vertex>", "#include <project_vertex>\nvDetailDist = -mvPosition.z;");
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", "#include <common>\nuniform sampler2D uDetailMap;\nvarying float vDetailDist;")
+      .replace(
+        "#include <map_fragment>",
+        "#include <map_fragment>\n#ifdef USE_MAP\n" +
+        "\tfloat detailFade = smoothstep( 480.0, 64.0, vDetailDist );\n" +
+        "\tfloat detailVal = texture2D( uDetailMap, vMapUv * 4.0 ).r * 2.0;\n" +
+        "\tdiffuseColor.rgb *= mix( 1.0, detailVal, 0.36 * detailFade );\n" +
+        "#endif",
+      );
+  };
+  material.customProgramCacheKey = () => "goldsrc-detail";
+}
+
 export interface BuiltMap {
-  meshes: THREE.Mesh[];
+  meshes: THREE.Object3D[];
   shadowRays: number;
 }
 
 export function buildMapGeometry(
   brushes: Brush[], lights: MapLight[], ambient: [number, number, number],
-  probe: ShadowProbe,
+  probe: ShadowProbe, sun?: SunLight, props?: PropDef[], decals?: MapDecalDef[],
 ): BuiltMap {
   const atlas = textures();
+  const detail = getDetailTexture();
   const groups = new Map<string, {
     positions: number[]; normals: number[]; uvs: number[]; lightUvs: number[];
   }>();
@@ -288,6 +366,9 @@ export function buildMapGeometry(
     ++shadowRays;
     return probe(from, to);
   };
+
+  // Only solid brushes occlude luxels in `insideAnyBrush`.
+  const solidBrushes = brushes.filter((b) => b.solid !== false);
 
   // Light panels and glass glow on their own; everything else gets a chart.
   const emission: Record<string, Vec3> = {
@@ -305,21 +386,26 @@ export function buildMapGeometry(
       groups.set(face.tex, group);
     }
     const chart = charts[index] ?? null;
-    if (chart) bakeChart(face, chart, luxels, brushes, lights, ambient, countingProbe);
+    if (chart) bakeChart(face, chart, luxels, solidBrushes, lights, ambient, countingProbe, sun);
 
     const [s, t] = faceAxes(face.normal);
-    // A crate texture is one whole crate, so fit it to the face instead of
-    // letting the world grid cut it wherever the brush happens to sit.
-    const fit = face.tex === "crate" && chart ? chart.bounds : null;
+    // Crates and compound doors fit their face when no explicit Valve 220 UV is authored.
+    const fit = !face.uv && (face.tex === "crate" || face.tex === "wood_door") && chart
+      ? chart.bounds : null;
     for (const tri of faceTriangles(face)) {
       for (const point of [tri.a, tri.b, tri.c]) {
         group.positions.push(point[0], point[1], point[2]);
         group.normals.push(face.normal[0], face.normal[1], face.normal[2]);
-        if (fit) {
+        if (face.uv) {
+          const u = (dot(point, face.uv.uAxis) / face.uv.uScale + face.uv.uOffset) / TEXTURE_SCALE;
+          const v = -(dot(point, face.uv.vAxis) / face.uv.vScale + face.uv.vOffset) / TEXTURE_SCALE;
+          group.uvs.push(u, v);
+        } else if (fit) {
           const across = fit[1] - fit[0], up = fit[3] - fit[2];
+          const span = face.tex === "wood_door" ? 160 : CRATE_SPAN;
           group.uvs.push(
-            (point[s]! - fit[0]) / across * Math.max(1, Math.round(across / CRATE_SPAN)),
-            -(point[t]! - fit[2]) / up * Math.max(1, Math.round(up / CRATE_SPAN)),
+            (point[s]! - fit[0]) / across * Math.max(1, Math.round(across / span)),
+            -(point[t]! - fit[2]) / up * Math.max(1, Math.round(up / span)),
           );
         } else {
           group.uvs.push(point[s]! / TEXTURE_SCALE, (t === 1 ? -1 : 1) * point[t]! / TEXTURE_SCALE);
@@ -350,7 +436,7 @@ export function buildMapGeometry(
   lightMap.channel = 1;
   lightMap.needsUpdate = true;
 
-  const meshes: THREE.Mesh[] = [];
+  const meshes: THREE.Object3D[] = [];
   for (const [tex, group] of groups) {
     if (group.positions.length === 0) continue;
     const geometry = new THREE.BufferGeometry();
@@ -375,11 +461,69 @@ export function buildMapGeometry(
       material.lightMap = lightMap;
       // The basic material divides a lightmap by pi; the bake is already final.
       material.lightMapIntensity = Math.PI;
+      if (detail) applyDetailTexture(material, detail);
     }
     const mesh = new THREE.Mesh(geometry, material);
     mesh.frustumCulled = true;
     mesh.name = `world:${tex}`;
     meshes.push(mesh);
   }
+
+  // Place painted map decals (bombsite A/B stencils, arrows, grime overlays).
+  if (decals) {
+    const zAxis = new THREE.Vector3(0, 0, 1);
+    for (const decal of decals) {
+      const n = new THREE.Vector3(...decal.normal).normalize();
+      const tint = sampleLight(
+        [decal.pos[0] + n.x * 4, decal.pos[1] + n.y * 4, decal.pos[2] + n.z * 4],
+        lights, ambient, countingProbe, sun,
+      );
+      const mat = new THREE.MeshBasicMaterial({
+        map: mapDecalTexture(decal.kind),
+        transparent: true,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -3,
+      });
+      mat.color.setRGB(
+        Math.min(1.2, 0.25 + tint[0] * 0.85),
+        Math.min(1.2, 0.25 + tint[1] * 0.85),
+        Math.min(1.2, 0.25 + tint[2] * 0.85),
+      );
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(decal.size, decal.size), mat);
+      mesh.position.set(decal.pos[0] + n.x * 0.45, decal.pos[1] + n.y * 0.45, decal.pos[2] + n.z * 0.45);
+      mesh.quaternion.setFromUnitVectors(zAxis, n);
+      if (decal.rotation) mesh.rotateZ(decal.rotation);
+      mesh.name = `decal:${decal.kind}`;
+      meshes.push(mesh);
+    }
+  }
+
+  // Place static CC0 GLB world props tinted by baked lighting at their position.
+  if (props) {
+    for (const prop of props) {
+      const obj = clonePropModel(prop.model);
+      if (!obj) continue;
+      obj.position.set(...prop.pos);
+      obj.rotation.y = prop.yaw;
+      if (prop.scale) obj.scale.setScalar(prop.scale);
+      const liftY = prop.model === "lamp_ind" ? -28 : 24;
+      const tint = sampleLight(
+        [prop.pos[0], prop.pos[1] + liftY, prop.pos[2]],
+        lights, ambient, countingProbe, sun,
+      );
+      const r = 0.35 + tint[0] * 0.78;
+      const g = 0.35 + tint[1] * 0.78;
+      const b = 0.35 + tint[2] * 0.78;
+      obj.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
+          child.material.color.setRGB(r, g, b);
+          child.material.envMapIntensity = 0.35;
+        }
+      });
+      meshes.push(obj);
+    }
+  }
+
   return { meshes, shadowRays };
 }

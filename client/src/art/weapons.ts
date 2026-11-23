@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { cloneWeaponGlb, getPhotoTexture } from "./loader";
 import {
   camo, canvasTexture, cloud, fill, grain, reliefTextures, stains, type ReliefTextures,
 } from "./textures";
@@ -89,16 +90,26 @@ function mats(): Record<MatKey, THREE.MeshStandardMaterial> {
     // Cloth and rubber take almost nothing from the room: left at full
     // strength its glare greys them out like clay.
     const make = (textures: ReliefTextures, metalness: number, roughness: number, bumpScale: number,
-                  envMapIntensity = 1) =>
-      new THREE.MeshStandardMaterial({ ...textures, metalness, roughness, bumpScale, envMapIntensity });
+                  envMapIntensity = 1, photoKey?: string, tint?: number) => {
+      const photo = photoKey ? getPhotoTexture(photoKey) : null;
+      return new THREE.MeshStandardMaterial({
+        map: photo ?? textures.map,
+        bumpMap: textures.bumpMap,
+        color: photo && tint !== undefined ? tint : 0xffffff,
+        metalness,
+        roughness,
+        bumpScale,
+        envMapIntensity,
+      });
+    };
     materials = {
       // Parkerized receiver steel, and the darker blued steel of magazines and slides.
-      metal: make(surface("#555b61", 5150, "metal"), 0.85, 0.4, 0.5),
-      steel: make(surface("#33373b", 5152, "metal"), 0.92, 0.3, 0.5),
+      metal: make(surface("#555b61", 5150, "metal"), 0.85, 0.4, 0.5, 1, "metal", 0x9aa2a8),
+      steel: make(surface("#33373b", 5152, "metal"), 0.92, 0.3, 0.5, 1, "metal", 0x565c62),
       edge: make(surface("#a0a9ae", 5151, "metal"), 1, 0.24, 0.4),
       dark: new THREE.MeshStandardMaterial({ color: 0x0b0d0f, metalness: 0.3, roughness: 0.75 }),
       polymer: make(surface("#232629", 7, "polymer"), 0.04, 0.62, 1.4, 0.45),
-      wood: make(surface("#84491f", 99, "wood"), 0, 0.34, 0.22, 0.7),
+      wood: make(surface("#84491f", 99, "wood"), 0, 0.36, 0.28, 0.65, "wood", 0xc8834d),
       olive: make(surface("#4a5536", 123, "polymer"), 0.04, 0.7, 1.4, 0.4),
       glass: new THREE.MeshStandardMaterial({ color: 0x1b3b45, metalness: 0.7, roughness: 0.06 }),
       sleeve: make(surface("#4f6177", 411, "cloth", ["#3b4a5f", "#647890"]), 0, 0.95, 2.2, 0.15),
@@ -433,6 +444,38 @@ function knife(): THREE.Group {
 }
 
 export function buildWeapon(id: number): THREE.Group {
+  // Prefer preloaded CC0 GLB firearms when available (falls back cleanly to
+  // procedural geometry in headless tests or before assets load).
+  if (id === WeaponId.awp) {
+    const glb = cloneWeaponGlb("awp");
+    if (glb) {
+      const g = new THREE.Group();
+      g.add(glb);
+      // Preserve magazine & bolt anchor groups for viewmodel reload choreography.
+      part(joint(g, "magazine", [0, -1.3, -3.2]), "steel", [1.4, 1.5, 3.0], [0, -0.75, 0]);
+      joint(g, "action", [0.9, 1.6, 1]);
+      return g;
+    }
+  } else if (id === WeaponId.usp || id === WeaponId.glock) {
+    const glb = cloneWeaponGlb("pistol");
+    if (glb) {
+      const g = new THREE.Group();
+      g.add(glb);
+      // Hidden magazine anchor tucked inside the grip for reload choreography.
+      const mag = joint(g, "magazine", [0, -0.8, 0.4]);
+      part(mag, "steel", [0.7, 2.8, 1.1], [0, -1.6, 0.2], -0.22);
+      joint(g, "action", [0, 0, 0]);
+      if (id === WeaponId.usp) {
+        // Coaxial tactical suppressor threaded flush onto the GLB barrel bore
+        // (bore axis y = 0.58, muzzle face z = -6.47).
+        tube(g, "metal", 0.34, 0.5, [0, 0.58, -6.55]);
+        tube(g, "steel", 0.54, 5.8, [0, 0.58, -9.55]);
+        muzzle(g, 0.54, 0.58, -12.45);
+      }
+      return g;
+    }
+  }
+
   let g: THREE.Group;
   switch (id) {
     case WeaponId.ak47: g = ak47(); break;
@@ -540,14 +583,19 @@ export function buildArms(id: number): THREE.Group {
   forearm(sleeve);
   firing.add(sleeve);
   if (id === WeaponId.knife) {
-    // A fist round a handle that runs fore and aft, thumb laid along the spine.
-    aimForearm(sleeve, new THREE.Vector3(8, -9, 19), new THREE.Vector3(1.1, -0.7, 4.9));
-    palm(firing, [1.1, -0.6, 4.7], [0.95, 0.5, 1.9], [1, 0.2, 0], 3.6, 1.3);
+    // Clean forward tactical grip: forearm runs straight into the wrist, palm
+    // wraps the right/outer side of the handle, four fingers curl naturally
+    // underneath to the inner side, and the thumb braces along the top-inner bolster.
+    aimForearm(sleeve, new THREE.Vector3(5.6, -7.2, 17.2), new THREE.Vector3(1.1, -0.45, 4.5));
+    palm(firing, [1.05, -0.4, 4.35], [1.0, -0.1, 1.05], [1, 0.15, 0], 3.2, 1.15);
+    meshPart(firing, roundBox(0.35, 2.3, 1.6, 4), mats().polymer, [1.55, -0.2, 2.6]); // back plate
     for (let i = 0; i < 4; ++i) {
-      const z = 0.5 + i * 0.9;
-      digit(firing, "glove", 0.42, [0.8, 0.75, z], [-0.65, 0.8, z], [-0.95, -0.4, z], [-0.15, -1, z]);
+      const z = 0.65 + i * 0.85;
+      digit(firing, "glove", 0.4,
+        [0.95, -0.2, z], [0.7, -0.95, z], [-0.45, -0.95, z], [-0.72, -0.15, z]);
+      meshPart(firing, roundBox(0.38, 0.55, 0.72, 4), mats().polymer, [1.35, -0.15, z]);
     }
-    digit(firing, "glove", 0.5, [0.9, 0.2, 3.9], [0.1, 1.05, 2.4], [-0.3, 1.05, 0.9]);
+    digit(firing, "glove", 0.48, [0.55, 0.35, 3.4], [-0.35, 0.82, 2.1], [-0.35, 0.86, 0.55]);
     batchParts(g);
     return g;
   }

@@ -113,6 +113,24 @@ const OCCLUSION = [
 
 type Point = readonly number[];
 
+const SAMPLE_URLS: Record<string, string> = {
+  shot_2: "/assets/audio/usp.mp3",
+  shot_3: "/assets/audio/glock.mp3",
+  shot_4: "/assets/audio/ak47.mp3",
+  shot_5: "/assets/audio/m4a1.mp3",
+  shot_6: "/assets/audio/awp.mp3",
+  shot_7: "/assets/audio/mp5.mp3",
+  reload_rifle: "/assets/audio/reload_rifle.mp3",
+  reload_pistol: "/assets/audio/reload_pistol.mp3",
+  cock: "/assets/audio/cock.mp3",
+  step_stone_1: "/assets/audio/step_stone_1.mp3",
+  step_stone_2: "/assets/audio/step_stone_2.mp3",
+  step_stone_3: "/assets/audio/step_stone_3.mp3",
+  step_sand_1: "/assets/audio/step_sand_1.mp3",
+  step_sand_2: "/assets/audio/step_sand_2.mp3",
+  step_sand_3: "/assets/audio/step_sand_3.mp3",
+};
+
 export class GameAudio {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
@@ -121,6 +139,8 @@ export class GameAudio {
   private readonly driveCurve = Float32Array.from({ length: 257 }, (_, i) => Math.tanh((i / 128 - 1) * 2.5));
   private reloading: GainNode | null = null;
   private noise: AudioBuffer | null = null;
+  private readonly samples = new Map<string, AudioBuffer>();
+  private samplesLoading = false;
   private volume = DEFAULT_VOLUME;
   private occlusion: ((at: Point) => number) | null = null;
 
@@ -150,7 +170,34 @@ export class GameAudio {
       this.room.connect(reverb);
     }
     if (this.ctx.state === "suspended") void this.ctx.resume();
+    if (!this.samplesLoading) this.loadSamples(this.ctx);
     return this.ctx;
+  }
+
+  /** Fetch and decode CC0 firearm, reload, and footstep MP3 samples asynchronously. */
+  private loadSamples(ctx: AudioContext): void {
+    if (typeof fetch === "undefined") return;
+    this.samplesLoading = true;
+    for (const [key, url] of Object.entries(SAMPLE_URLS)) {
+      void fetch(url)
+        .then((res) => (res.ok ? res.arrayBuffer() : null))
+        .then((buf) => (buf ? ctx.decodeAudioData(buf) : null))
+        .then((decoded) => {
+          if (decoded) this.samples.set(key, decoded);
+        })
+        .catch(() => {});
+    }
+  }
+
+  private playSample(out: AudioNode, t: number, buffer: AudioBuffer, gainValue: number, rate = 1): void {
+    const ctx = this.ctx!;
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.playbackRate.setValueAtTime(rate, t);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(gainValue, t);
+    src.connect(gain).connect(out);
+    src.start(t);
   }
 
   /**
@@ -348,9 +395,24 @@ export class GameAudio {
       return;
     }
     const voice = VOICES[weapon] ?? DEFAULT_VOICE;
+    const sample = this.samples.get(`shot_${weapon}`);
+    const pitch = 0.96 + Math.random() * 0.08;
+    if (sample) {
+      const sink = this.sink(at, sample.duration + 0.2, voice.room);
+      this.playSample(sink, t, sample, voice.gain * 1.15, pitch);
+      if (!at && weapon !== AWP) {
+        const land = t + 0.34 + Math.random() * 0.16;
+        for (let bounce = 0; bounce < 3; ++bounce) {
+          this.tone(sink, land + bounce * (0.07 + Math.random() * 0.03), {
+            type: "sine", from: 3600 + Math.random() * 1800, gain: 0.028 / (bounce + 1), decay: 0.05,
+          });
+        }
+      }
+      return;
+    }
+
     const sink = this.sink(at, Math.max(voice.tail, 0.2), voice.room);
     // No two rounds are loaded alike; without this a spray is a drum machine.
-    const pitch = 0.96 + Math.random() * 0.08;
     const g = voice.gain;
 
     this.burst(sink, t, { type: "highpass", freq: 5000, gain: g * 0.5, decay: 0.006 });
@@ -394,7 +456,20 @@ export class GameAudio {
     send.gain.value = 0.12;
     bus.connect(send).connect(this.room!);
     const t = ctx.currentTime;
-    const heavy = weapon === AWP ? 0.8 : weapon === 2 || weapon === 3 ? 1.5 : 1;
+    const isPistol = weapon === 2 || weapon === 3;
+    const reloadSample = this.samples.get(isPistol ? "reload_pistol" : "reload_rifle");
+    if (reloadSample) {
+      // Scale playback slightly so the mechanical rack lands with the sim countdown.
+      const rate = Math.max(0.75, Math.min(1.35, reloadSample.duration / Math.max(0.8, seconds * 0.92)));
+      this.playSample(bus, t + 0.08, reloadSample, 0.9, rate);
+      window.setTimeout(() => {
+        bus.disconnect();
+        send.disconnect();
+        if (this.reloading === bus) this.reloading = null;
+      }, (seconds + 0.5) * 1000);
+      return;
+    }
+    const heavy = weapon === AWP ? 0.8 : isPistol ? 1.5 : 1;
     const out = t + seconds * RELOAD_CUES.out, seat = t + seconds * RELOAD_CUES.seat;
     const rack = t + seconds * RELOAD_CUES.rack, home = t + seconds * RELOAD_CUES.home;
     // Release catch, and the magazine sliding free.
@@ -425,7 +500,12 @@ export class GameAudio {
   /** Drawing a weapon: webbing and cloth, then the hand finding the grip. */
   draw(): void {
     const ctx = this.ensure();
-    const t = ctx.currentTime, sink = this.sink(undefined, 0.3);
+    const t = ctx.currentTime, sink = this.sink(undefined, 0.45);
+    const cock = this.samples.get("cock");
+    if (cock) {
+      this.playSample(sink, t + 0.04, cock, 0.22, 1.15);
+      return;
+    }
     this.burst(sink, t, { type: "bandpass", freq: 900, to: 2200, q: 0.8, gain: 0.09, decay: 0.16 });
     this.burst(sink, t + 0.14, { type: "bandpass", freq: 2800, q: 4, gain: 0.1, decay: 0.025 });
   }
@@ -466,6 +546,17 @@ export class GameAudio {
     const level = spec.gain * (hard ? 2.4 : 1.1 + Math.random() * 0.4);
     // Vary the band per step, or a run reads as a metronome.
     const vary = 0.88 + Math.random() * 0.24;
+    const pick = 1 + Math.floor(Math.random() * 3);
+    const stepSample = material === 0
+      ? this.samples.get(`step_stone_${pick}`)
+      : material === SAND
+        ? this.samples.get(`step_sand_${pick}`)
+        : undefined;
+    if (stepSample) {
+      this.playSample(sink, t, stepSample, Math.min(1, level * 1.15), vary);
+      if (hard) this.tone(sink, t, { type: "sine", from: 110, to: 48, gain: 0.28, decay });
+      return;
+    }
 
     // The sole: surface-coloured scuff. The heel: weight arriving under it.
     this.burst(sink, t, { type: "bandpass", freq: spec.cutoff * vary, q: spec.q, gain: level, decay });

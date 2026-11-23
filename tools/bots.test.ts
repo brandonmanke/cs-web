@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Flags, Sim, Snapshot, Team } from "../client/src/sim";
 import { brushPlaneArray } from "../client/src/map/brush";
+import { DUSTYARD } from "../client/src/map/maps/dustyard";
 import { FOUNDRY } from "../client/src/map/maps/foundry";
 import { DEPOT } from "../client/src/map/maps/depot";
 import { SILO } from "../client/src/map/maps/silo";
 import { RELAY } from "../client/src/map/maps/relay";
 import { PRACTICE } from "../client/src/map/maps/practice";
 
-for (const [map, upperFloor] of [[FOUNDRY, 208], [DEPOT, 160], [SILO, 128], [RELAY, 384], [PRACTICE, 64]] as const) {
+for (const [map, upperFloor] of [[DUSTYARD, 128], [FOUNDRY, 208], [DEPOT, 160], [SILO, 128], [RELAY, 384], [PRACTICE, 64]] as const) {
   test(`${map.name}: bots roam between levels without falling or embedding`, async () => {
     const sim = await Sim.load();
     for (const brush of map.brushes) sim.addBrush(brushPlaneArray(brush), brush.surface);

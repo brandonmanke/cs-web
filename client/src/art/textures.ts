@@ -1,10 +1,11 @@
 import * as THREE from "three";
+import { getPhotoTexture } from "./loader";
+import type { MapDecalKind } from "../map/mapdef";
 
-// Procedural GoldSrc-era textures, remastered. Everything is drawn to a canvas
-// with a seeded RNG, so the atlas is deterministic, diffable as source, and
-// carries no licensing baggage. The era lives in the palette and the tiling
-// (rust, sodium light, sickly green, wet concrete), not in visible pixels:
-// like the GL renderer of the day, textures are bilinear-filtered and mipped.
+// World textures: prefers preloaded CC0 / original photo-sourced textures from
+// `/assets/textures/` (loaded by `loader.ts`) for authentic CS 1.6 grit, while
+// keeping deterministic procedural canvas generators as instant fallbacks (and
+// for emissive light panels, hazard stripes, glass, and character/decal sheets).
 
 const SIZE = 256;
 /** The repeat most surface detail is laid out on: 64u, two to a tile. */
@@ -537,27 +538,45 @@ function hazard(seed: number): THREE.CanvasTexture {
 
 export type TextureKey =
   | "concrete" | "concrete_dark" | "metal" | "rust" | "grate" | "brick"
-  | "sand" | "crate" | "tech" | "light" | "hazard" | "alloy" | "deck" | "light_cool" | "glass";
+  | "sand" | "crate" | "tech" | "light" | "hazard" | "alloy" | "deck" | "light_cool" | "glass"
+  | "sandstone" | "plaster" | "dust_wall" | "industrial_wall" | "wood_door"
+  | "asphalt" | "corrugated" | "shutter" | "wood" | "container" | "crate_wood";
 
-let cache: Map<TextureKey, THREE.CanvasTexture> | null = null;
+let cache: Map<TextureKey, THREE.Texture> | null = null;
 
-export function textures(): Map<TextureKey, THREE.CanvasTexture> {
+/** Resolve a texture: prefer the preloaded photo-sourced asset, fall back to procedural canvas. */
+function photoOr(key: TextureKey, fallback: () => THREE.CanvasTexture): THREE.Texture {
+  return getPhotoTexture(key) ?? fallback();
+}
+
+export function textures(): Map<TextureKey, THREE.Texture> {
   if (cache) return cache;
-  cache = new Map<TextureKey, THREE.CanvasTexture>([
-    ["concrete", concrete(1337, "#6f7069")],
-    ["concrete_dark", concrete(4242, "#4a4b46")],
-    ["metal", metalPanel(77)],
-    ["rust", rustedMetal(915)],
-    ["grate", grate(31)],
-    ["brick", brick(2024)],
-    ["sand", sand(808)],
-    ["crate", crate(511)],
-    ["tech", techPanel(66)],
+  cache = new Map<TextureKey, THREE.Texture>([
+    ["concrete", photoOr("concrete", () => concrete(1337, "#6f7069"))],
+    ["concrete_dark", photoOr("concrete_dark", () => concrete(4242, "#4a4b46"))],
+    ["metal", photoOr("metal", () => metalPanel(77))],
+    ["rust", photoOr("rust", () => rustedMetal(915))],
+    ["grate", photoOr("grate", () => grate(31))],
+    ["brick", photoOr("brick", () => brick(2024))],
+    ["sand", photoOr("sand", () => sand(808))],
+    ["crate", photoOr("crate", () => crate(511))],
+    ["crate_wood", photoOr("crate_wood", () => crate(512))],
+    ["tech", photoOr("tech", () => techPanel(66))],
     ["light", lightPanel(9)],
     ["hazard", hazard(404)],
-    ["alloy", alloy(702)],
-    ["deck", deck(703)],
+    ["alloy", photoOr("alloy", () => alloy(702))],
+    ["deck", photoOr("deck", () => deck(703))],
     ["light_cool", lightPanel(704, true)],
+    ["sandstone", photoOr("sandstone", () => sand(901))],
+    ["plaster", photoOr("plaster", () => concrete(902, "#b59a6d"))],
+    ["dust_wall", photoOr("dust_wall", () => concrete(903, "#b99b6a"))],
+    ["industrial_wall", photoOr("industrial_wall", () => concrete(904, "#7a7d79"))],
+    ["wood_door", photoOr("wood_door", () => crate(905))],
+    ["asphalt", photoOr("asphalt", () => concrete(906, "#3a3c3e"))],
+    ["corrugated", photoOr("corrugated", () => rustedMetal(907))],
+    ["shutter", photoOr("shutter", () => metalPanel(908))],
+    ["wood", photoOr("wood", () => crate(909))],
+    ["container", photoOr("container", () => metalPanel(910))],
     ["glass", draw(705, (c) => {
       fill(c, "rgba(115,191,214,0.08)");
       // Faint rubbed streaks leave the space beyond the pane readable.
@@ -572,4 +591,87 @@ export function textures(): Map<TextureKey, THREE.CanvasTexture> {
     })],
   ]);
   return cache;
+}
+
+const mapDecals = new Map<MapDecalKind, THREE.CanvasTexture>();
+
+/**
+ * Iconic CS 1.6 spray-painted wall/floor overlays: bombsite A/B markers,
+ * directional arrows, and grime stains. Drawn once and cached.
+ */
+export function mapDecalTexture(kind: MapDecalKind): THREE.CanvasTexture {
+  const existing = mapDecals.get(kind);
+  if (existing) return existing;
+  const tex = canvasTexture(128, 3300 + kind.length * 17, (c) => {
+    const x = c.ctx;
+    x.clearRect(0, 0, 128, 128);
+    if (kind === "grime") {
+      const g = x.createRadialGradient(64, 64, 8, 64, 64, 60);
+      g.addColorStop(0, "rgba(18,16,12,0.52)");
+      g.addColorStop(0.6, "rgba(24,21,16,0.24)");
+      g.addColorStop(1, "rgba(24,21,16,0)");
+      x.fillStyle = g;
+      x.fillRect(0, 0, 128, 128);
+      for (let i = 0; i < 40; ++i) {
+        x.fillStyle = `rgba(15,12,9,${0.08 + c.random() * 0.14})`;
+        x.fillRect(20 + c.random() * 88, 20 + c.random() * 88, 2 + c.random() * 4, 8 + c.random() * 24);
+      }
+      return;
+    }
+
+    // Weathered red/rust spray-paint stencil (like de_dust2 / de_inferno site marks).
+    x.save();
+    x.fillStyle = "rgba(162, 34, 24, 0.86)";
+    x.strokeStyle = "rgba(115, 20, 14, 0.72)";
+    x.lineWidth = 4;
+    x.lineJoin = "round";
+    if (kind === "site_a" || kind === "site_b") {
+      // Overspray halo
+      const halo = x.createRadialGradient(64, 64, 14, 64, 64, 58);
+      halo.addColorStop(0, "rgba(145, 28, 18, 0.22)");
+      halo.addColorStop(1, "rgba(145, 28, 18, 0)");
+      x.fillStyle = halo;
+      x.fillRect(0, 0, 128, 128);
+
+      x.fillStyle = "rgba(168, 36, 24, 0.88)";
+      x.font = "900 84px Impact, 'Arial Black', sans-serif";
+      x.textAlign = "center";
+      x.textBaseline = "middle";
+      const letter = kind === "site_a" ? "A" : "B";
+      x.fillText(letter, 64, 68);
+      // Stencil bridges + paint drips
+      x.globalCompositeOperation = "destination-out";
+      for (let i = 0; i < 24; ++i) {
+        x.fillStyle = `rgba(0,0,0,${0.18 + c.random() * 0.35})`;
+        x.fillRect(24 + c.random() * 80, 20 + c.random() * 88, 2 + c.random() * 4, 2 + c.random() * 4);
+      }
+      x.globalCompositeOperation = "source-over";
+      for (let i = 0; i < 7; ++i) {
+        const dx = 40 + c.random() * 48;
+        const dy = 78 + c.random() * 14;
+        x.fillStyle = "rgba(148, 28, 18, 0.65)";
+        x.fillRect(dx, dy, 2, 10 + c.random() * 20);
+      }
+    } else {
+      const flip = kind === "arrow_l" ? -1 : 1;
+      x.translate(64, 64);
+      x.scale(flip, 1);
+      x.beginPath();
+      x.moveTo(-44, -12);
+      x.lineTo(10, -12);
+      x.lineTo(10, -30);
+      x.lineTo(48, 0);
+      x.lineTo(10, 30);
+      x.lineTo(10, 12);
+      x.lineTo(-44, 12);
+      x.closePath();
+      x.fill();
+      x.stroke();
+    }
+    x.restore();
+  });
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  mapDecals.set(kind, tex);
+  return tex;
 }

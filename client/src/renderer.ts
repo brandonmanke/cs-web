@@ -1,10 +1,10 @@
 import * as THREE from "three";
 import { Character, type Fall, type Look } from "./art/character";
 import { reflectionRoom } from "./art/weapons";
-import { DuskTraffic, duskSky, orbitalSky } from "./art/sky";
+import { desertSky, DuskTraffic, duskSky, orbitalSky } from "./art/sky";
 import { canvasTexture } from "./art/textures";
 import { buildMapGeometry, sampleLight, type ShadowProbe } from "./map/build";
-import type { MapDef } from "./map/mapdef";
+import type { MapDef, SunLight } from "./map/mapdef";
 import { Flags, Team, TICK_SECONDS, type Snapshot } from "./sim";
 
 // Rendering only. The world is drawn unlit against a baked lightmap, so the
@@ -90,26 +90,64 @@ function shadowTexture(): THREE.CanvasTexture {
   return texture;
 }
 
-function decalTexture(): THREE.CanvasTexture {
-  const texture = canvasTexture(32, 1234, (c) => {
-    c.ctx.clearRect(0, 0, 32, 32);
-    // Dark core with a ragged rim; alpha falls off to nothing at the edges.
-    const gradient = c.ctx.createRadialGradient(16, 16, 1, 16, 16, 15);
-    gradient.addColorStop(0, "rgba(10,9,8,0.95)");
-    gradient.addColorStop(0.55, "rgba(24,20,16,0.75)");
-    gradient.addColorStop(1, "rgba(30,26,20,0)");
-    c.ctx.fillStyle = gradient;
-    c.ctx.fillRect(0, 0, 32, 32);
-    for (let i = 0; i < 14; ++i) {
+/** Per-material bullet holes + crimson wall blood splatter (classic 1.6 FX). */
+function decalTexture(kind: number): THREE.CanvasTexture {
+  const texture = canvasTexture(48, 1234 + kind * 97, (c) => {
+    const x = c.ctx;
+    x.clearRect(0, 0, 48, 48);
+    if (kind === Puff.blood) {
+      // Dark crimson spray splatter for walls behind hit enemies.
+      const g = x.createRadialGradient(24, 24, 2, 24, 24, 20);
+      g.addColorStop(0, "rgba(96, 8, 6, 0.92)");
+      g.addColorStop(0.5, "rgba(74, 6, 5, 0.68)");
+      g.addColorStop(1, "rgba(50, 4, 4, 0)");
+      x.fillStyle = g;
+      x.fillRect(0, 0, 48, 48);
+      for (let i = 0; i < 24; ++i) {
+        const a = c.random() * Math.PI * 2;
+        const r = 4 + c.random() * 18;
+        const sz = 1.5 + c.random() * 3.5;
+        x.fillStyle = `rgba(${70 + Math.floor(c.random() * 45)}, 6, 5, ${0.45 + c.random() * 0.45})`;
+        x.beginPath();
+        x.arc(24 + Math.cos(a) * r, 24 + Math.sin(a) * r, sz, 0, Math.PI * 2);
+        x.fill();
+      }
+      return;
+    }
+
+    // Core hole + material-specific spall/splinter/scorch ring.
+    const outer = kind === Puff.wood ? "rgba(86, 62, 34, 0.72)"
+      : kind === Puff.metal ? "rgba(185, 192, 198, 0.65)"
+      : "rgba(96, 92, 84, 0.65)";
+    const gradient = x.createRadialGradient(24, 24, 1.5, 24, 24, 20);
+    gradient.addColorStop(0, "rgba(8, 7, 6, 0.98)");
+    gradient.addColorStop(0.32, "rgba(18, 16, 14, 0.90)");
+    gradient.addColorStop(0.55, outer);
+    gradient.addColorStop(1, "rgba(30, 26, 20, 0)");
+    x.fillStyle = gradient;
+    x.fillRect(0, 0, 48, 48);
+    for (let i = 0; i < 16; ++i) {
       const angle = c.random() * Math.PI * 2;
-      const radius = 5 + c.random() * 8;
-      c.ctx.fillStyle = `rgba(8,7,6,${0.25 + c.random() * 0.4})`;
-      c.ctx.fillRect(16 + Math.cos(angle) * radius, 16 + Math.sin(angle) * radius, 2, 2);
+      const radius = 6 + c.random() * 13;
+      x.fillStyle = kind === Puff.wood
+        ? `rgba(110, 78, 42, ${0.35 + c.random() * 0.45})`
+        : `rgba(14, 13, 12, ${0.28 + c.random() * 0.45})`;
+      const w = kind === Puff.wood ? 5 : 2.2;
+      x.save();
+      x.translate(24 + Math.cos(angle) * radius, 24 + Math.sin(angle) * radius);
+      x.rotate(angle);
+      x.fillRect(-w / 2, -1, w, 2);
+      x.restore();
     }
   });
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
   return texture;
+}
+
+function lerpAngle(a: number, b: number, t: number): number {
+  const diff = Math.atan2(Math.sin(b - a), Math.cos(b - a));
+  return a + diff * t;
 }
 
 export class Renderer {
@@ -125,18 +163,26 @@ export class Renderer {
   private readonly puffs: PuffSprite[] = [];
   private readonly puffMap = puffTexture();
   private nextPuff = 0;
-  private readonly shadowGeometry = new THREE.PlaneGeometry(44, 44).rotateX(-Math.PI / 2);
+  private readonly shadowGeometry = new THREE.PlaneGeometry(34, 34).rotateX(-Math.PI / 2);
   private readonly shadowMaterial: THREE.MeshBasicMaterial;
+  private readonly sceneKey: THREE.DirectionalLight;
+  private readonly sceneHemi: THREE.HemisphereLight;
   private readonly weaponFill: THREE.HemisphereLight;
   private readonly weaponKey: THREE.DirectionalLight;
   private readonly weaponTint = new THREE.Vector3(1, 1, 1);
   private probe: ShadowProbe | undefined;
   private tracers: Tracer[] = [];
   private decals: Decal[] = [];
-  private readonly decalMaterial: THREE.MeshBasicMaterial;
-  private readonly tracerGeometry = new THREE.CylinderGeometry(0.7, 0.7, 1, 4, 1, true);
+  private readonly decalGeometry = new THREE.PlaneGeometry(6.5, 6.5);
+  private readonly bloodDecalGeometry = new THREE.PlaneGeometry(24, 24);
+  private readonly decalMaterials: Record<number, THREE.MeshBasicMaterial>;
+  private readonly tracerGeometry = new THREE.CylinderGeometry(0.18, 0.18, 1, 4, 1, true);
+  private readonly tracerMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffe9b5, transparent: true, opacity: 0.34, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
 
   private mapLights: MapDef["lights"] = [];
+  private mapSun: SunLight | undefined;
   private mapAmbient: [number, number, number] = [0.2, 0.2, 0.2];
   private fov = 90;
   /** Step smoothing: how far the camera is currently behind the eye, and where
@@ -149,6 +195,9 @@ export class Renderer {
     this.gl.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.gl.setSize(window.innerWidth, window.innerHeight);
     this.gl.outputColorSpace = THREE.SRGBColorSpace;
+    // ACES Filmic rolls off HDR lightmap overbrights & PBR highlights cleanly.
+    this.gl.toneMapping = THREE.ACESFilmicToneMapping;
+    this.gl.toneMappingExposure = 1.06;
     container.appendChild(this.gl.domElement);
 
     this.camera = new THREE.PerspectiveCamera(
@@ -169,20 +218,28 @@ export class Renderer {
     this.weaponKey.target.position.set(0, 0, -25);
     this.weaponCamera.add(this.weaponKey, this.weaponKey.target);
 
-    // Weapons are physically-based and need a room to reflect. This one is
-    // generated — strip lights in a dim box, prefiltered once — and shared by
-    // both scenes.
-    const room = new THREE.PMREMGenerator(this.gl).fromScene(reflectionRoom(), 0.03).texture;
+    // Weapons and GLB props reflect a generated strip-lit room, prefiltered once.
+    const pmrem = new THREE.PMREMGenerator(this.gl);
+    const envScene = reflectionRoom();
+    const room = pmrem.fromScene(envScene, 0.03).texture;
+    pmrem.dispose();
+    envScene.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        obj.geometry.dispose();
+        (obj.material as THREE.Material).dispose();
+      }
+    });
     this.weaponScene.environment = room;
     this.scene.environment = room;
     this.scene.environmentIntensity = 0.4;
 
-    // These light player bodies and their held weapons; the world is fully
-    // baked into vertex colours.
-    this.scene.add(new THREE.HemisphereLight(0xa9b6c4, 0x4a443c, 1.1));
-    const key = new THREE.DirectionalLight(0xfff0d8, 1.25);
-    key.position.set(0.3, 1, 0.45);
-    this.scene.add(key);
+    // Dynamic lighting for characters, held weapons, and GLB props; world
+    // architecture uses the baked lightmap atlas.
+    this.sceneHemi = new THREE.HemisphereLight(0xa9b6c4, 0x4a443c, 1.15);
+    this.scene.add(this.sceneHemi);
+    this.sceneKey = new THREE.DirectionalLight(0xfff0d8, 1.35);
+    this.sceneKey.position.set(0.3, 1, 0.45);
+    this.scene.add(this.sceneKey);
 
     this.shadowMaterial = new THREE.MeshBasicMaterial({
       map: shadowTexture(),
@@ -191,13 +248,20 @@ export class Renderer {
       polygonOffset: true,
       polygonOffsetFactor: -2,
     });
-    this.decalMaterial = new THREE.MeshBasicMaterial({
-      map: decalTexture(),
+    const makeDecalMat = (kind: number) => new THREE.MeshBasicMaterial({
+      map: decalTexture(kind),
       transparent: true,
       depthWrite: false,
       polygonOffset: true,
       polygonOffsetFactor: -4,
     });
+    this.decalMaterials = {
+      [Puff.concrete]: makeDecalMat(Puff.concrete),
+      [Puff.wood]: makeDecalMat(Puff.wood),
+      [Puff.metal]: makeDecalMat(Puff.metal),
+      [Puff.sand]: makeDecalMat(Puff.concrete),
+      [Puff.blood]: makeDecalMat(Puff.blood),
+    };
 
     window.addEventListener("resize", () => this.resize());
   }
@@ -226,11 +290,14 @@ export class Renderer {
   /** Build world geometry and bake its lighting. Returns the shadow ray count. */
   buildMap(map: MapDef, probe: ShadowProbe): number {
     this.mapLights = map.lights;
+    this.mapSun = map.sun;
     this.mapAmbient = map.ambient;
     this.probe = probe;
 
-    this.scene.background = map.sky === "orbital" ? orbitalSky() :
-      map.sky === "dusk" ? duskSky() : new THREE.Color(map.background);
+    this.scene.background = map.sky === "orbital" ? orbitalSky()
+      : map.sky === "dusk" ? duskSky()
+      : map.sky === "desert" ? desertSky()
+      : new THREE.Color(map.background);
     this.scene.fog = new THREE.Fog(map.background, map.fog[0], map.fog[1]);
     if (this.skyTraffic) {
       this.scene.remove(this.skyTraffic.root);
@@ -239,7 +306,18 @@ export class Renderer {
     this.skyTraffic = map.sky === "dusk" ? new DuskTraffic() : null;
     if (this.skyTraffic) this.scene.add(this.skyTraffic.root);
 
-    const built = buildMapGeometry(map.brushes, map.lights, map.ambient, probe);
+    // Align scene dynamic key/hemi lights with the map's sun so characters and
+    // GLB props match the direction and colour temperature of the baked world.
+    if (map.sun) {
+      this.sceneKey.position.set(...map.sun.dir);
+      this.sceneKey.color.setRGB(...map.sun.color);
+      this.sceneKey.intensity = 1.45;
+      this.sceneHemi.color.setRGB(...map.sun.skyColor);
+    }
+
+    const built = buildMapGeometry(
+      map.brushes, map.lights, map.ambient, probe, map.sun, map.props, map.decals,
+    );
     for (const mesh of built.meshes) this.scene.add(mesh);
     return built.shadowRays;
   }
@@ -311,8 +389,8 @@ export class Renderer {
         moveYaw: Math.atan2(from.x - view.x, from.z - view.z),
         flinch: view.flash > 0,
         onGround: (view.flags & Flags.onGround) !== 0,
-        yaw: view.yaw,
-        pitch: view.pitch,
+        yaw: lerpAngle(from.yaw, view.yaw, blend),
+        pitch: from.pitch + (view.pitch - from.pitch) * blend,
         alive: (view.flags & Flags.alive) !== 0,
         weapon: view.weapon,
         ducked: (view.flags & Flags.ducked) !== 0,
@@ -323,12 +401,7 @@ export class Renderer {
       if (view.flash > 0 && (view.flags & Flags.alive) !== 0) {
         character.setTint(1.5, 0.5, 0.4);
       } else {
-        // Tint, not dim. Raw irradiance in a shadowed corner is ~0.2, and a CT
-        // skin is already dark navy — multiplied straight through, a body in
-        // shadow becomes an unreadable silhouette. Lifting the floor keeps the
-        // bake's relative light/dark while leaving the model legible, which for
-        // a shooter matters more than the physics of it.
-        const tint = sampleLight([x, y, z], this.mapLights, this.mapAmbient, this.probe);
+        const tint = sampleLight([x, y, z], this.mapLights, this.mapAmbient, this.probe, this.mapSun);
         character.setTint(...(tint.map(CHARACTER_LIFT) as [number, number, number]));
       }
     }
@@ -353,21 +426,17 @@ export class Renderer {
     const from = new THREE.Vector3(start[0]!, start[1]!, start[2]!);
     const to = new THREE.Vector3(end[0]!, end[1]!, end[2]!);
     const length = from.distanceTo(to);
-    if (length < 1) return;
+    if (length < 24) return;
 
-    const mesh = new THREE.Mesh(
-      this.tracerGeometry,
-      new THREE.MeshBasicMaterial({
-        color: 0xffe6a8, transparent: true, opacity: 0.55, depthWrite: false,
-      }),
-    );
+    // Subtle, fast CS 1.6-style bullet streak (shared material, zero per-shot alloc).
+    const mesh = new THREE.Mesh(this.tracerGeometry, this.tracerMaterial);
     mesh.scale.set(1, length, 1);
     mesh.position.copy(from).add(to).multiplyScalar(0.5);
     mesh.quaternion.setFromUnitVectors(
       new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize(),
     );
     this.scene.add(mesh);
-    this.tracers.push({ mesh, ttl: 0.055 });
+    this.tracers.push({ mesh, ttl: 0.032 });
 
     while (this.tracers.length > MAX_TRACERS) this.retireTracer(this.tracers.shift()!);
   }
@@ -408,38 +477,35 @@ export class Renderer {
     // Stand the effect off the wall so the sprite is not cut by it.
     const off = [point[0]! + n.x * 3, point[1]! + n.y * 3, point[2]! + n.z * 3];
     this.spawnPuff(off, material);
-    if (material === Puff.metal || (material === Puff.concrete && Math.random() < 0.3)) {
+    if (material === Puff.metal || (material === Puff.concrete && Math.random() < 0.35)) {
       this.spawnPuff(off, material, true);
     }
 
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(7, 7), this.decalMaterial);
+    const mat = this.decalMaterials[material] ?? this.decalMaterials[Puff.concrete]!;
+    const geom = material === Puff.blood ? this.bloodDecalGeometry : this.decalGeometry;
+    const mesh = new THREE.Mesh(geom, mat);
     // Float just off the surface so it doesn't z-fight the wall.
     mesh.position.set(point[0]!, point[1]!, point[2]!).addScaledVector(n, 0.35);
     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
     mesh.rotateZ(Math.random() * Math.PI * 2);
     this.scene.add(mesh);
-    this.decals.push({ mesh, ttl: 22 });
+    this.decals.push({ mesh, ttl: 26 });
 
     while (this.decals.length > MAX_DECALS) this.retireDecal(this.decals.shift()!);
   }
 
   private retireTracer(tracer: Tracer): void {
     this.scene.remove(tracer.mesh);
-    (tracer.mesh.material as THREE.Material).dispose();
   }
 
   private retireDecal(decal: Decal): void {
     this.scene.remove(decal.mesh);
-    decal.mesh.geometry.dispose();
   }
 
   updateEffects(dt: number): void {
     this.tracers = this.tracers.filter((tracer) => {
       tracer.ttl -= dt;
-      if (tracer.ttl > 0) {
-        (tracer.mesh.material as THREE.MeshBasicMaterial).opacity = tracer.ttl * 10;
-        return true;
-      }
+      if (tracer.ttl > 0) return true;
       this.retireTracer(tracer);
       return false;
     });
@@ -493,7 +559,7 @@ export class Renderer {
    */
   private lightWeapon(dt: number): void {
     const eye = this.camera.position;
-    const [r, g, b] = sampleLight([eye.x, eye.y, eye.z], this.mapLights, this.mapAmbient, this.probe);
+    const [r, g, b] = sampleLight([eye.x, eye.y, eye.z], this.mapLights, this.mapAmbient, this.probe, this.mapSun);
     const tint = this.weaponTint;
     tint.lerp(scratchTint.set(r, g, b), Math.min(1, dt * 6));
     const level = (tint.x + tint.y + tint.z) / 3;

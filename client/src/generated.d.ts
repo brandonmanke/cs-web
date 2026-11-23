@@ -1,5 +1,10 @@
 // Type surface of the Emscripten module emitted by `npm run wasm` into
 // client/src/generated/sim.mjs (gitignored build artifact).
+declare module "*.map" {
+  const content: string;
+  export default content;
+}
+
 declare module "*/generated/sim.mjs" {
   export interface SimModule {
     HEAPF32: Float32Array;

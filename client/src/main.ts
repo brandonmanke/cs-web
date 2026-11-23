@@ -1,10 +1,12 @@
 import * as THREE from "three";
+import { preloadAssets } from "./art/loader";
 import { GameAudio } from "./audio";
 import { Hud } from "./hud";
 import { DEFAULT_SENSITIVITY, DEFAULT_TOUCH_SENSITIVITY, Input } from "./input";
 import { brushPlaneArray } from "./map/brush";
 import type { MapDef } from "./map/mapdef";
 import { DEPOT } from "./map/maps/depot";
+import { DUSTYARD } from "./map/maps/dustyard";
 import { FOUNDRY } from "./map/maps/foundry";
 import { PRACTICE } from "./map/maps/practice";
 import { RELAY } from "./map/maps/relay";
@@ -49,6 +51,7 @@ const listenerFwd = new THREE.Vector3();
 const listenerUp = new THREE.Vector3();
 
 const MAPS: Record<string, MapDef> = {
+  dustyard: DUSTYARD,
   foundry: FOUNDRY,
   depot: DEPOT,
   silo: SILO,
@@ -64,7 +67,7 @@ const MODE_LABELS: Record<number, string> = {
 
 function chooseMap(): MapDef {
   const requested = new URLSearchParams(location.search).get("map");
-  return MAPS[requested ?? ""] ?? FOUNDRY;
+  return MAPS[requested ?? ""] ?? DUSTYARD;
 }
 
 /**
@@ -94,11 +97,11 @@ function initialRoster(map: MapDef): Roster {
 
 async function boot(): Promise<void> {
   const hud = new Hud();
-  hud.setStatus("LOADING SIM");
+  hud.setStatus("LOADING ASSETS");
 
   const container = document.getElementById("app")!;
   const renderer = new Renderer(container);
-  const sim = await Sim.load();
+  const [sim] = await Promise.all([Sim.load(), preloadAssets()]);
   const input = new Input(container);
   const touch = new TouchControls(
     (dx, dy) => input.addTouchLook(dx, dy),
@@ -150,6 +153,7 @@ async function boot(): Promise<void> {
   hud.setStatus("BUILDING WORLD");
   let rejected = 0;
   for (const brush of map.brushes) {
+    if (brush.solid === false) continue;
     if (!sim.addBrush(brushPlaneArray(brush), brush.surface)) ++rejected;
   }
   if (rejected > 0) {
@@ -425,9 +429,20 @@ async function boot(): Promise<void> {
       first = false;
     });
 
-    // A round that found a body ends on it: that is where the blood is.
+    // A round that found a body ends on it: blood mist + classic 1.6 blood splatter
+    // cast onto any wall directly behind the struck player.
     if (event.result === ShotResult.hit || event.result === ShotResult.kill) {
       renderer.spawnPuff(event.end, Puff.blood);
+      const dx = event.end[0] - event.start[0];
+      const dy = event.end[1] - event.start[1];
+      const dz = event.end[2] - event.start[2];
+      const len = Math.hypot(dx, dy, dz) || 1;
+      const behind = sim.traceRay(event.end, [
+        event.end[0] + (dx / len) * 140,
+        event.end[1] + (dy / len) * 140,
+        event.end[2] + (dz / len) * 140,
+      ]);
+      if (behind) renderer.spawnImpact(behind.point, behind.normal, Puff.blood);
     }
 
     if (local && event.result === ShotResult.hit) {

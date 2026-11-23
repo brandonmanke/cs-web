@@ -23,12 +23,26 @@ export const Surface = {
 } as const;
 export type Surface = (typeof Surface)[keyof typeof Surface];
 
+export interface FaceUv {
+  /** Valve 220 texture projection axes (world-space, Y-up). */
+  uAxis: Vec3;
+  uOffset: number;
+  uScale: number;
+  vAxis: Vec3;
+  vOffset: number;
+  vScale: number;
+}
+
 export interface Brush {
   planes: Plane[];
   surface: Surface;
   tex: string;
   /** Per-face texture override, keyed by the index of the plane it sits on. */
   faceTex?: Record<number, string>;
+  /** Optional Valve 220 per-face UV projection, keyed by plane index. */
+  faceUv?: Record<number, FaceUv>;
+  /** When false, renders as architectural detail without adding collision. */
+  solid?: boolean;
 }
 
 export interface Face {
@@ -36,6 +50,7 @@ export interface Face {
   normal: Vec3;
   tex: string;
   surface: Surface;
+  uv?: FaceUv;
 }
 
 export const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -279,6 +294,7 @@ export function brushFaces(brush: Brush): Face[] {
       normal: plane.n,
       tex: brush.faceTex?.[i] ?? brush.tex,
       surface: brush.surface,
+      uv: brush.faceUv?.[i],
     });
   }
   return faces;

@@ -76,6 +76,7 @@ export class Viewmodel {
   private readonly target = new THREE.Vector3();
   private weaponId = -1;
   private kick = 0;
+  private slash = 0;
   private draw = 0;
   private flashTime = 0;
   private reloadDuration = 0;
@@ -138,7 +139,7 @@ export class Viewmodel {
   /** A weapon switch or respawn starts a fresh draw, never a leftover reload. */
   reset(): void {
     this.draw = 1;
-    this.kick = this.flashTime = this.reloadDuration = this.lastReloadTicks = 0;
+    this.kick = this.slash = this.flashTime = this.reloadDuration = this.lastReloadTicks = 0;
   }
 
   /** Observe every sim tick so a slow render frame cannot miss reload start. */
@@ -155,6 +156,10 @@ export class Viewmodel {
 
   onShot(): void {
     this.draw = 0; // an accepted shot means the sim has finished drawing
+    if (this.weaponId === WeaponId.knife) {
+      this.slash = 1;
+      return;
+    }
     this.kick = 1;
     this.flashTime = 0.045;
     this.flash.material.rotation = Math.random() * Math.PI;
@@ -185,6 +190,7 @@ export class Viewmodel {
 
   update(dt: number, pose: ViewmodelPose): void {
     this.kick = Math.max(0, this.kick - dt * 8.5);
+    this.slash = Math.max(0, this.slash - dt * 3.8);
     this.draw = Math.max(0, this.draw - dt * 4);
 
     // Flash decay.
@@ -250,7 +256,10 @@ export class Viewmodel {
     }
 
     const target = this.target.copy(BASE);
-    if (this.weaponId >= WeaponId.knife && this.weaponId <= WeaponId.glock) {
+    if (this.weaponId === WeaponId.knife) {
+      // Tactical knife carry: held forward-right with the wrist naturally aligned.
+      target.set(5.2, -5.4, -12.6);
+    } else if (this.weaponId === WeaponId.usp || this.weaponId === WeaponId.glock) {
       // Short weapons need the grip higher in frame to keep both hands visible.
       target.x -= 1.2;
       target.y += 1.7;
@@ -261,18 +270,19 @@ export class Viewmodel {
     target.y += reload * 1.4;
     target.z += reload * 0.7;
     const settle = Math.sin((1 - this.draw) * Math.PI) * this.draw;
+    const slashArc = Math.sin(this.slash * Math.PI);
     this.rig.position.set(
-      target.x,
-      target.y + breath * 0.05 + this.kick * 0.25,
-      target.z - this.bob * 0.4 + this.kick * 1.4,
+      target.x - slashArc * 5.2,
+      target.y + breath * 0.05 + this.kick * 0.25 - slashArc * 1.4,
+      target.z - this.bob * 0.4 + this.kick * 1.4 - slashArc * 3.8,
     );
-    // A knife is carried blade up across the view, not pointed like a barrel.
+    // A knife angles cleanly across the right view so the flat of the blade reads.
     const blade = this.weaponId === WeaponId.knife ? 1 : 0;
     this.rig.rotation.set(
-      blade * 0.55 + BASE_ROTATION.x + this.kick * 0.055 + reload * (pistol ? 0.38 : 0.16) + this.draw * 0.4 - settle * 0.15,
-      blade * 0.6 + BASE_ROTATION.y + this.kick * this.kickYaw + reload * 0.55,
-      BASE_ROTATION.z + this.kick * this.kickRoll + breath * 0.004 - reload * 0.45 +
-        this.draw * (this.weaponId === WeaponId.knife ? -1.1 : pistol ? 0.4 : 0.18),
+      blade * 0.22 + BASE_ROTATION.x + this.kick * 0.055 - slashArc * 0.42 + reload * (pistol ? 0.38 : 0.16) + this.draw * 0.4 - settle * 0.15,
+      blade * 0.38 + BASE_ROTATION.y + this.kick * this.kickYaw + slashArc * 0.75 + reload * 0.55,
+      blade * 0.22 + BASE_ROTATION.z + this.kick * this.kickRoll + slashArc * 0.55 + breath * 0.004 - reload * 0.45 +
+        this.draw * (this.weaponId === WeaponId.knife ? -0.9 : pistol ? 0.4 : 0.18),
     );
   }
 }

@@ -436,8 +436,26 @@ Next, in order:
 - **M-polish** — reload/draw viewmodel animations landed in September 2026;
   the 1.6-remaster art pass (lightmaps, rebuilt models, GoldSrc animation,
   layered audio with a fixed room reverb) in November 2026.
-  Next: reverb sized to the room the listener is standing in, perf pass
-  (instancing, draw batching).
+- **M-assets (CS 1.6 asset & `.map` pipeline)** — landed on
+  `feat/cs16-assets-pipeline`:
+  - Standard TrenchBroom / Valve-220 `.map` importer (`client/src/map/mapformat.ts`)
+    supporting per-face UV offset/scale/rotation, `light_environment`,
+    `prop_static`, and `infodecal`, plus flagship sunlit compound map `dustyard`
+    (`client/src/map/maps/dustyard.map`).
+  - Vetted CC0 & original assets in `client/public/assets/` (all recorded in
+    `PROVENANCE.md`): 22 photo-sourced/bespoke 1.6 textures + GoldSrc
+    `r_detailtextures` detail map, 7 CC0 `.glb` world props & firearms, and
+    15 CC0 field-recorded firearm/reload/footstep `.mp3` samples routed through
+    the existing HRTF panner, occlusion, and reverb.
+  - ACES Filmic tone mapping, padded lightmap atlas charts, directional
+    `light_environment` sun + sky fill, per-material bullet holes + wall blood
+    splatters, knife slash animation, bot yaw/pitch interpolation, and pooled FX.
+- **M-lighting (next: Lighting Quality Buff)** — built directly on the `.map`
+  `light_environment` and padded atlas hooks from M-assets:
+  - 1–2 bounce radiosity (real colour bleeding into shaded arches/interiors)
+  - 2×2 supersampled soft shadows + Web Worker / pre-baked lightmap cache
+  - World light-grid probes matching character/prop/viewmodel shading to the room
+  - Dynamic muzzle-flash world lights + room-sized reverb.
 
 ## 8. Rules that don't change
 

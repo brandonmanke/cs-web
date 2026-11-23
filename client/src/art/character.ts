@@ -339,11 +339,25 @@ export class Character {
     this.fall = fall;
   }
 
-  private aimBone(bone: THREE.Group, from: THREE.Vector3, to: THREE.Vector3, length: number): void {
+  private readonly boneX = new THREE.Vector3();
+  private readonly boneZ = new THREE.Vector3();
+  private readonly boneMat = new THREE.Matrix4();
+
+  private aimBone(bone: THREE.Group, from: THREE.Vector3, to: THREE.Vector3, length: number,
+                  ref: THREE.Vector3): void {
     bone.position.copy(from);
     this.direction.copy(to).sub(from);
-    bone.scale.y = this.direction.length() / length;
-    bone.quaternion.setFromUnitVectors(this.down, this.direction.normalize());
+    const len = this.direction.length();
+    bone.scale.y = len / length;
+    if (len < 1e-5) return;
+    // Construct a twist-free orthonormal basis with -Y along the bone and +Z
+    // facing the elbow pole so sleeve details never spin unpredictably.
+    const yAxis = this.direction.multiplyScalar(-1 / len);
+    this.boneX.crossVectors(yAxis, ref);
+    if (this.boneX.lengthSq() < 1e-5) this.boneX.set(1, 0, 0);
+    else this.boneX.normalize();
+    this.boneZ.crossVectors(this.boneX, yAxis).normalize();
+    bone.quaternion.setFromRotationMatrix(this.boneMat.makeBasis(this.boneX, yAxis, this.boneZ));
   }
 
   /** Two-bone IK: put the hand on `wrist` and let the elbow fall out and down. */
@@ -358,8 +372,8 @@ export class Character {
     this.pole.set(side * 0.7, -1, 0.25).addScaledVector(span, -this.pole.dot(span)).normalize();
     this.elbow.copy(shoulder).addScaledVector(span, along).addScaledVector(this.pole, out);
     this.wrist.copy(wrist);
-    this.aimBone(this.shoulders[i]!, shoulder.clone(), this.elbow, UPPER_ARM);
-    this.aimBone(this.elbows[i]!, this.elbow, this.wrist, FOREARM + 1.6);
+    this.aimBone(this.shoulders[i]!, shoulder.clone(), this.elbow, UPPER_ARM, this.pole);
+    this.aimBone(this.elbows[i]!, this.elbow, this.wrist, FOREARM + 1.6, this.pole);
   }
 
   update(dt: number, pose: CharacterPose): void {

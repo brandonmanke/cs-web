@@ -7,6 +7,7 @@ import * as THREE from "three";
 const SIZE = 512;
 let orbital: THREE.CubeTexture | null = null;
 let dusk: THREE.CubeTexture | null = null;
+let desert: THREE.CubeTexture | null = null;
 
 function hash(x: number, y: number, z: number): number {
   let n = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(z, 2147483647) ^ 9277;
@@ -373,6 +374,61 @@ export function duskSky(): THREE.CubeTexture {
     industrialGround(direction, color);
   });
   return dusk;
+}
+
+/**
+ * Classic CS 1.6 sunlit desert / Mediterranean skybox (de_dust / de_dust2 feel):
+ * crisp azure zenith fading to dusty warm golden-ochre horizon haze, high sun,
+ * soft sunlit cumulus banks, and distant layered desert mesas.
+ */
+export function desertSky(): THREE.CubeTexture {
+  if (desert) return desert;
+  const sun = new THREE.Vector3(0.45, 0.72, 0.55).normalize();
+  desert = paintSky((direction, color) => {
+    const { x, y, z } = direction;
+    const up = Math.max(0, y);
+    const horizon = Math.exp(-up * 4.2);
+    const facing = Math.max(0, direction.dot(sun));
+    const glow = Math.pow(facing, 10);
+    const disc = Math.min(1, Math.max(0, (facing - 0.9975) / 0.0012));
+
+    // Crisp dry blue zenith -> dusty warm ochre-cream horizon.
+    let r = 82 + horizon * 144 + glow * 42 + disc * 110;
+    let g = 132 + horizon * 88 + glow * 32 + disc * 95;
+    let b = 188 + horizon * 12 + glow * 8 + disc * 60;
+
+    // Soft bright cumulus wisps drifting overhead.
+    if (y > 0.02) {
+      const c1 = noise(x * 3.5 + 1.2, y * 7, z * 3.5 - 0.8);
+      const c2 = noise(x * 11, y * 16, z * 11);
+      const cloud = c1 * 0.7 + c2 * 0.3;
+      const alpha = Math.min(0.62, Math.max(0, (cloud - 0.50) * 2.6)) * Math.min(1, y * 5);
+      const lit = 0.86 + glow * 0.14;
+      r = r * (1 - alpha) + 242 * lit * alpha;
+      g = g * (1 - alpha) + 232 * lit * alpha;
+      b = b * (1 - alpha) + 210 * lit * alpha;
+    }
+
+    // Distant sandstone ridge line along the horizon.
+    const elevation = y / Math.max(0.001, Math.hypot(x, z));
+    const bearing = (Math.atan2(z, x) / (Math.PI * 2) + 1) % 1;
+    const farRidge = 0.02 + noise(Math.cos(bearing * Math.PI * 2) * 4, 2.3, Math.sin(bearing * Math.PI * 2) * 4) * 0.09;
+    const nearRidge = -0.01 + noise(Math.cos(bearing * Math.PI * 2) * 8, 7.1, Math.sin(bearing * Math.PI * 2) * 8) * 0.055;
+    if (elevation < farRidge) {
+      const shade = 0.82 + noise(x * 24, y * 24, z * 24) * 0.2;
+      r = 178 * shade; g = 152 * shade; b = 118 * shade;
+    }
+    if (elevation < nearRidge) {
+      const shade = 0.78 + noise(x * 32, y * 32, z * 32) * 0.22;
+      r = 148 * shade; g = 122 * shade; b = 90 * shade;
+    }
+    if (elevation < -0.06) {
+      r = 158; g = 136; b = 104;
+    }
+
+    color.set(Math.min(255, r), Math.min(255, g), Math.min(255, b));
+  });
+  return desert;
 }
 
 function paintSky(paint: (direction: THREE.Vector3, color: THREE.Vector3) => void): THREE.CubeTexture {
