@@ -2,6 +2,7 @@ import * as THREE from "three";
 import {
   ball, batchParts, disposeParts, loft, meshPart, roundBox, type Bump, type LoftOptions, type Ring, type V3,
 } from "./geometry";
+import { cloneHeadgearGlb } from "./loader";
 import { lensMaterial, skinMaterial, type Look, type SkinPart, type Team } from "./skins";
 import { buildWeapon, muzzleFlashMaterial, muzzleOffset, supportGrip, WeaponId } from "./weapons";
 
@@ -135,7 +136,7 @@ export class Character {
     const wrapped = (group: THREE.Group, material: THREE.Material, rings: Ring[], options: LoftOptions = {},
                      sides = SIDES) => meshPart(group, loft(rings, sides, options), material, [0, 0, 0]);
     const kit = (group: THREE.Group, material: THREE.Material, size: V3, at: V3, rotation: V3 = [0, 0, 0],
-                 round = 5) => meshPart(group, roundBox(...size, round), material, at, rotation);
+                 round = 8) => meshPart(group, roundBox(...size, round), material, at, rotation);
     const lump = (group: THREE.Group, material: THREE.Material, size: V3, at: V3) =>
       meshPart(group, ball(...size), material, at);
 
@@ -208,14 +209,18 @@ export class Character {
       }
       kit(this.head, gear, [2.4, 0.9, 1.1], [0, 0.9, -3.3]); // chin cup
     } else if (team === "ct") {
-      // Peaked cap over the balaclava, ballistic glasses, a headset on one ear.
+      // Iconic CS 1.6 SAS / urban operator: ballistic helmet + dual-lens respirator gas mask.
       const cap = mat("helmet");
-      wrapped(this.head, cap, [[6.5, 3.35, 4.1, 0, 0, 4.4], [8, 3.3, 4, 0, 0, 4.35], [9.2, 2.6, 3.1, 0, 0.2, 3.5],
-                               [9.9, 1.1, 1.3, 0, 0.3, 1.9]], { smooth: 2 }, 20);
-      kit(this.head, cap, [5.6, 0.4, 4], [0, 6.7, -5.4], [0.12, 0, 0], 3);
-      kit(this.head, lens, [5.4, 1.2, 0.45], [0, 5.15, -3.75], [0, 0, 0], 4);
-      lump(this.head, gear, [0.65, 1.4, 1.3], [-3.4, 4.6, 0.5]);
-      kit(this.head, gear, [0.3, 0.3, 3.6], [-3, 3.5, -2.2], [0.25, 0.3, 0]); // boom microphone
+      wrapped(this.head, cap, [[6.0, 3.65, 4.35, 0, 0, 4.75], [7.2, 3.6, 4.3, 0, 0, 4.7],
+                               [8.6, 3.25, 3.9, 0, 0, 4.35], [9.8, 2.4, 2.85, 0, 0.2, 3.35],
+                               [10.4, 1.1, 1.3, 0, 0.3, 1.85]], { smooth: 2 }, 20);
+      const gasmask = cloneHeadgearGlb("ct_gasmask");
+      if (gasmask) {
+        this.head.add(gasmask);
+      } else {
+        kit(this.head, lens, [5.4, 1.2, 0.45], [0, 5.15, -3.75], [0, 0, 0], 6);
+        lump(this.head, gear, [0.65, 1.4, 1.3], [-3.4, 4.6, 0.5]);
+      }
     } else if (look === 0) {
       ears();
       // Knitted cap, rolled at the brim; the scarf is pulled up over the nose.

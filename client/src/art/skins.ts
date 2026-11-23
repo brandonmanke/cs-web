@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { getPhotoTexture } from "./loader";
 import {
   camo, cloud, fill, grain, reliefTextures, type Ctx, type Relief, type ReliefTextures,
 } from "./textures";
@@ -385,13 +386,27 @@ function sheet(team: Team, look: Look, part: SkinPart): ReliefTextures {
   return textures;
 }
 
-/** How each surface answers light: cloth soaks it up, leather and nylon give a little back. */
+/** How each surface answers light: matte cloth/skin, subtle sheen on leather/nylon. */
 const FINISH: Record<SkinPart, [shininess: number, specular: number, bump: number]> = {
-  cloth: [4, 0x0c0c0c, 1.6], legs: [4, 0x0c0c0c, 2.2], arms: [4, 0x0c0c0c, 2.2],
-  vest: [8, 0x161616, 2.6], pouch: [8, 0x161616, 1.6], gear: [14, 0x1c1c1c, 1.4],
-  boot: [26, 0x2a2622, 2.4], helmet: [10, 0x181818, 2], head: [10, 0x1c1410, 1.2],
-  skin: [12, 0x1c1410, 0], hand: [8, 0x141414, 1], scarf: [3, 0x080808, 2.4],
+  cloth: [3, 0x080808, 1.4], legs: [3, 0x080808, 1.8], arms: [3, 0x080808, 1.8],
+  vest: [6, 0x101010, 2.2], pouch: [6, 0x101010, 1.4], gear: [10, 0x161616, 1.2],
+  boot: [22, 0x24201c, 2.2], helmet: [8, 0x141414, 1.8], head: [5, 0x0e0a08, 0.8],
+  skin: [6, 0x100c0a, 0], hand: [7, 0x121212, 1.0], scarf: [3, 0x080808, 2.2],
 };
+
+/** Resolve a gritty preloaded operator texture for a skin part when available. */
+function operatorPhotoMap(team: Team, look: Look, part: SkinPart): THREE.Texture | null {
+  if (part === "head") return getPhotoTexture(team === "ct" ? "ct_head" : "t_head");
+  if (part === "vest") return getPhotoTexture(team === "ct" ? "ct_vest" : "t_vest");
+  if (part === "cloth" || part === "legs" || part === "arms") {
+    // Look 0 uses primary team BDU; Look 1 keeps a distinct tint/camo contrast.
+    if (look === 0) return getPhotoTexture(team === "ct" ? "ct_cloth" : "t_cloth");
+    return getPhotoTexture(team === "ct" ? "ct_cloth" : "t_cloth");
+  }
+  if (part === "hand" && (team === "ct" || look === 1)) return getPhotoTexture("glove");
+  if (part === "pouch" || part === "gear") return getPhotoTexture("glove");
+  return null;
+}
 
 /**
  * Source's character shading on a Phong material: half-Lambert, so the side of
@@ -406,7 +421,7 @@ function sourceShade(material: THREE.MeshPhongMaterial): void {
         "float halfNL = dot( geometryNormal, directLight.direction ) * 0.5 + 0.5;\n\tfloat dotNL = halfNL * halfNL;"))
       .replace("#include <opaque_fragment>",
         "float rim = pow( 1.0 - saturate( dot( normalize( vViewPosition ), normal ) ), 3.0 );\n" +
-        "\toutgoingLight += diffuseColor.rgb * rim * 0.32;\n\t#include <opaque_fragment>");
+        "\toutgoingLight += diffuseColor.rgb * rim * 0.24;\n\t#include <opaque_fragment>");
   };
   material.customProgramCacheKey = () => "source-shade";
 }
@@ -414,10 +429,19 @@ function sourceShade(material: THREE.MeshPhongMaterial): void {
 /** A fresh material per body (each is tinted on its own) over the shared, cached sheets. */
 export function skinMaterial(team: Team, look: Look, part: SkinPart): THREE.MeshPhongMaterial {
   const textures = sheet(team, look, part);
+  const photo = operatorPhotoMap(team, look, part);
   const [shininess, specular, bumpScale] = FINISH[part];
   const material = new THREE.MeshPhongMaterial({
-    map: textures.map, bumpMap: bumpScale > 0 ? textures.bumpMap : null, bumpScale, shininess, specular,
+    map: photo ?? textures.map,
+    bumpMap: bumpScale > 0 ? textures.bumpMap : null,
+    bumpScale,
+    shininess,
+    specular,
   });
+  // Slight palette distinction between Look 0 and Look 1 when sharing photo cloth.
+  if (photo && look === 1 && (part === "cloth" || part === "legs" || part === "arms")) {
+    material.color.setHex(team === "ct" ? 0xbec6ce : 0x8b9676);
+  }
   sourceShade(material);
   return material;
 }

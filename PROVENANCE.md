@@ -45,13 +45,22 @@ this project (no copyrighted source material):
 | `dust_wall.jpg` | Horizontally-tileable desert sandstone & weathered plaster compound wall with masonry wainscot and cornice | Original (project license) |
 | `wood_door.jpg` | Weathered heavy timber double doors with iron strap hinges and latch | Original (project license) |
 | `industrial_wall.jpg` | Horizontally-tileable industrial warehouse wall with cinderblock dado, hazard stripe, and concrete panels | Original (project license) |
+| `ct_head.jpg` | Cylindrical UV head wrap: dark ribbed-knit SWAT balaclava with realistic shadowed eyes in eye-slit | Original (project license) |
+| `t_head.jpg` | Cylindrical UV head wrap: rugged dark-haired guerrilla operator face with stubble and cropped hair | Original (project license) |
+| `ct_vest.jpg` | Dark charcoal-navy SWAT Cordura plate carrier with stitched MOLLE webbing and scuffed buckles | Original (project license) |
+| `t_vest.jpg` | Weathered olive-drab canvas tactical chest rig with brass snaps and stitched pouches | Original (project license) |
+| `t_cloth.jpg`, `ct_cloth.jpg` | Seamless khaki/olive guerrilla BDU twill cloth and dark navy/slate SWAT urban BDU variant | Original (project license) |
+| `glove.jpg` | Scuffed black Nomex and grained leather combat glove material with Kevlar double-stitching | Original (project license) |
+| `gunmetal.jpg` | Seamless worn parkerized/blued firearm steel with horizontal machining grain | Original (project license) |
+| `ak_wood.jpg` | Seamless Russian AK-47 shellac laminated birch stock wood grain | Original (project license) |
 
 ---
 
 ## 3D Models (`client/public/assets/models/`)
 
-All `.glb` models were packed directly from [Poly Haven](https://polyhaven.com/models)
-1K glTF downloads under **CC0 1.0 Universal** (with embedded 512×512 JPEG maps):
+### Poly Haven (CC0 1.0 Public Domain)
+Packed/decimated from [Poly Haven](https://polyhaven.com/models) 1K glTF downloads
+under **CC0 1.0 Universal** (with embedded 512×512 JPEG maps):
 
 | File | Poly Haven Asset ID | License | Source URL |
 |---|---|---|---|
@@ -60,8 +69,22 @@ All `.glb` models were packed directly from [Poly Haven](https://polyhaven.com/m
 | `crate_mil.glb` | `old_military_crate` | CC0 | https://polyhaven.com/a/old_military_crate |
 | `ammo_box.glb` | `ammo_box` | CC0 | https://polyhaven.com/a/ammo_box |
 | `lamp_ind.glb` | `hanging_industrial_lamp` | CC0 | https://polyhaven.com/a/hanging_industrial_lamp |
-| `awp.glb` | `bolt_action_rifle_7_62` | CC0 | https://polyhaven.com/a/bolt_action_rifle_7_62 |
-| `pistol.glb` | `service_pistol` | CC0 | https://polyhaven.com/a/service_pistol |
+| `awp.glb` | `bolt_action_rifle_7_62` (decimated + baked transforms in Blender) | CC0 | https://polyhaven.com/a/bolt_action_rifle_7_62 |
+| `pistol.glb` | `service_pistol` (decimated + baked transforms in Blender) | CC0 | https://polyhaven.com/a/service_pistol |
+
+### Original Blender-Authored Low-Poly Models
+Modeled cleanly in Blender 5.3 for cs-web (GoldSrc inch scale, UV-mapped to the
+original textures above):
+
+| File | Description | License |
+|---|---|---|
+| `ak47.glb` | Sculpted low-poly AK-47 rifle with animated curved `magazine` and right-side `action` bolt carrier | Original (project license) |
+| `m4a1.glb` | Sculpted low-poly M4A1 carbine with carry handle, ribbed handguard, animated `magazine` and `action` T-handle | Original (project license) |
+| `mp5.glb` | Sculpted low-poly MP5 SMG with hooded drum sight, animated `magazine` and left-side `action` cocking handle | Original (project license) |
+| `knife.glb` | Hollow-ground beveled clip-point combat Bowie knife with fuller groove and ribbed tactical grip | Original (project license) |
+| `hand_gun_r.glb`, `hand_rifle_l.glb`, `hand_pistol_l.glb`, `hand_knife_r.glb` | Continuous sculpted first-person tactical gloved hands | Original (project license) |
+| `sleeve_ct.glb`, `sleeve_t.glb` | Wrinkled BDU forearm sleeves with leather glove gauntlets (CT navy / T khaki) | Original (project license) |
+| `ct_gasmask.glb` | Dual-lens SAS-style tactical respirator gas mask with side filter canister | Original (project license) |
 
 ---
 

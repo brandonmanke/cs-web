@@ -12,7 +12,7 @@ import type { PropKey } from "../map/mapdef";
 /** GoldSrc units per metre (1u = 1 inch). */
 const UNITS_PER_METER = 39.3701;
 
-/** Photo-sourced world & material textures loaded from `/assets/textures/`. */
+/** Photo-sourced & bespoke textures loaded from `/assets/textures/`. */
 export const PHOTO_TEXTURE_KEYS = [
   "concrete",
   "concrete_dark",
@@ -36,9 +36,28 @@ export const PHOTO_TEXTURE_KEYS = [
   "alloy",
   "deck",
   "tech",
+  // Character, first-person glove, and firearm surface sheets
+  "ct_head",
+  "t_head",
+  "ct_vest",
+  "t_vest",
+  "ct_cloth",
+  "t_cloth",
+  "glove",
+  "gunmetal",
+  "ak_wood",
 ] as const;
 
 export type PhotoTextureKey = (typeof PHOTO_TEXTURE_KEYS)[number];
+export type WeaponGlbKey = "ak47" | "m4a1" | "mp5" | "knife" | "awp" | "pistol";
+export type HandGlbKey =
+  | "hand_gun_r"
+  | "hand_rifle_l"
+  | "hand_pistol_l"
+  | "hand_knife_r"
+  | "sleeve_ct"
+  | "sleeve_t";
+export type HeadgearGlbKey = "ct_gasmask";
 
 const loadedTextures = new Map<string, THREE.Texture>();
 let loadedDetail: THREE.Texture | null = null;
@@ -102,54 +121,20 @@ function prepareProp(raw: THREE.Group, key: PropKey): THREE.Group {
   return root;
 }
 
-/**
- * Normalise a Poly Haven GLB firearm into our weapon-local frame:
- * GoldSrc inches (1u = 1 inch), barrel pointing -Z, +Y up, grip near [0, 0, 0].
- * Strips loose demo parts (extra variant pistols, floating cartridges) so only
- * the single assembled weapon renders.
- */
-function prepareWeaponGlb(raw: THREE.Group, key: "awp" | "pistol"): THREE.Group {
-  const root = new THREE.Group();
-  root.name = `glb:${key}`;
-
-  // Strip stray showcase objects bundled in Poly Haven multi-variant scenes.
-  const drop: THREE.Object3D[] = [];
-  raw.traverse((obj) => {
-    const n = obj.name.toLowerCase();
-    if (key === "pistol") {
-      if (n.endsWith("_b") || n.includes("magazine_empty") || n.includes("bullet") || n.includes("magazine_loaded")) {
-        drop.push(obj);
-      }
-    } else if (key === "awp") {
-      if (n.includes("bullet")) drop.push(obj);
+function cloneWithOwnMaterials(template: THREE.Group): THREE.Group {
+  const clone = template.clone(true);
+  clone.traverse((obj) => {
+    if (obj instanceof THREE.Mesh && obj.material) {
+      obj.material = Array.isArray(obj.material)
+        ? obj.material.map((m) => m.clone())
+        : obj.material.clone();
     }
   });
-  for (const obj of drop) obj.parent?.remove(obj);
-
-  // Poly Haven firearms point along +X; rotate +90° around Y so barrel faces -Z.
-  const holder = new THREE.Group();
-  holder.rotation.y = Math.PI / 2;
-  holder.scale.setScalar(UNITS_PER_METER);
-  holder.add(raw);
-  holder.updateMatrixWorld(true);
-
-  const box = new THREE.Box3().setFromObject(holder);
-  const center = box.getCenter(new THREE.Vector3());
-  if (key === "pistol") {
-    // Align trigger (raw y≈1.02, z≈-2.07) onto the firing finger (y=-0.85, z=-1.7),
-    // putting the barrel bore cleanly at y=+0.58 and muzzle face at z=-6.47.
-    holder.position.set(-center.x, -1.87, 0.37);
-  } else {
-    // Align bolt-action trigger (raw y≈-0.41, z≈+11.36) onto the firing finger
-    // (y=-0.85, z=-1.7) so the stock, grip and fore-end sit naturally in both hands.
-    holder.position.set(-center.x, -0.44, -13.06);
-  }
-  root.add(holder);
-  return root;
+  return clone;
 }
 
 /**
- * Preload all photo textures, detail map, and GLB props/weapons in parallel.
+ * Preload all photo textures, detail map, and GLB props/weapons/hands in parallel.
  * Safe to call multiple times; a no-op outside the browser.
  */
 export async function preloadAssets(): Promise<void> {
@@ -174,13 +159,31 @@ export async function preloadAssets(): Promise<void> {
     if (raw) loadedModels.set(key, prepareProp(raw, key));
   });
 
-  const weaponKeys: Array<"awp" | "pistol"> = ["awp", "pistol"];
+  // Weapons, hands, sleeves and headgear are pre-exported from Blender directly
+  // in GoldSrc inches (1u = 1 inch, barrel/blade along -Z, +Y up).
+  const weaponKeys: WeaponGlbKey[] = ["ak47", "m4a1", "mp5", "knife", "awp", "pistol"];
   const weaponPromises = weaponKeys.map(async (key) => {
     const raw = await loadGlb(gltfLoader, `/assets/models/${key}.glb`);
-    if (raw) loadedModels.set(`weapon:${key}`, prepareWeaponGlb(raw, key));
+    if (raw) loadedModels.set(`weapon:${key}`, raw);
   });
 
-  await Promise.all([...texPromises, detailPromise, ...propPromises, ...weaponPromises]);
+  const handKeys: HandGlbKey[] = [
+    "hand_gun_r", "hand_rifle_l", "hand_pistol_l", "hand_knife_r", "sleeve_ct", "sleeve_t",
+  ];
+  const handPromises = handKeys.map(async (key) => {
+    const raw = await loadGlb(gltfLoader, `/assets/models/${key}.glb`);
+    if (raw) loadedModels.set(`hand:${key}`, raw);
+  });
+
+  const headgearKeys: HeadgearGlbKey[] = ["ct_gasmask"];
+  const headgearPromises = headgearKeys.map(async (key) => {
+    const raw = await loadGlb(gltfLoader, `/assets/models/${key}.glb`);
+    if (raw) loadedModels.set(`headgear:${key}`, raw);
+  });
+
+  await Promise.all([
+    ...texPromises, detailPromise, ...propPromises, ...weaponPromises, ...handPromises, ...headgearPromises,
+  ]);
 }
 
 export function getPhotoTexture(key: string): THREE.Texture | null {
@@ -191,35 +194,26 @@ export function getDetailTexture(): THREE.Texture | null {
   return loadedDetail;
 }
 
-/**
- * Clone a preloaded static prop GLB with per-instance material copies so each
- * placed prop can be tinted cleanly by the map's baked lighting at its origin.
- */
+/** Clone a preloaded static prop GLB with per-instance material copies for tinting. */
 export function clonePropModel(key: PropKey): THREE.Group | null {
   const template = loadedModels.get(key);
-  if (!template) return null;
-  const clone = template.clone(true);
-  clone.traverse((obj) => {
-    if (obj instanceof THREE.Mesh && obj.material) {
-      obj.material = Array.isArray(obj.material)
-        ? obj.material.map((m) => m.clone())
-        : obj.material.clone();
-    }
-  });
-  return clone;
+  return template ? cloneWithOwnMaterials(template) : null;
 }
 
-/** Clone a preloaded GLB firearm if available (null in headless tests or for procedural guns). */
-export function cloneWeaponGlb(key: "awp" | "pistol"): THREE.Group | null {
+/** Clone a preloaded GLB firearm if available (null in headless tests). */
+export function cloneWeaponGlb(key: WeaponGlbKey): THREE.Group | null {
   const template = loadedModels.get(`weapon:${key}`);
-  if (!template) return null;
-  const clone = template.clone(true);
-  clone.traverse((obj) => {
-    if (obj instanceof THREE.Mesh && obj.material) {
-      obj.material = Array.isArray(obj.material)
-        ? obj.material.map((m) => m.clone())
-        : obj.material.clone();
-    }
-  });
-  return clone;
+  return template ? cloneWithOwnMaterials(template) : null;
+}
+
+/** Clone a preloaded first-person sculpted gloved hand or BDU sleeve GLB. */
+export function cloneHandGlb(key: HandGlbKey): THREE.Group | null {
+  const template = loadedModels.get(`hand:${key}`);
+  return template ? cloneWithOwnMaterials(template) : null;
+}
+
+/** Clone a preloaded operator headgear GLB (e.g. CT SAS respirator gas mask). */
+export function cloneHeadgearGlb(key: HeadgearGlbKey): THREE.Group | null {
+  const template = loadedModels.get(`headgear:${key}`);
+  return template ? cloneWithOwnMaterials(template) : null;
 }
