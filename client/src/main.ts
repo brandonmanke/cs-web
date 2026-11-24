@@ -1,17 +1,19 @@
 import * as THREE from "three";
+import { preloadAssets } from "./art/loader";
 import { GameAudio } from "./audio";
 import { Hud } from "./hud";
 import { DEFAULT_SENSITIVITY, DEFAULT_TOUCH_SENSITIVITY, Input } from "./input";
 import { brushPlaneArray } from "./map/brush";
 import type { MapDef } from "./map/mapdef";
 import { DEPOT } from "./map/maps/depot";
+import { DUSTYARD } from "./map/maps/dustyard";
 import { FOUNDRY } from "./map/maps/foundry";
 import { PRACTICE } from "./map/maps/practice";
 import { RELAY } from "./map/maps/relay";
 import { SILO } from "./map/maps/silo";
 import { DeathCam } from "./deathcam";
 import { loadSetting, Menu, PASSIVE_SKILL, Settings, type Roster } from "./menu";
-import { Renderer } from "./renderer";
+import { Puff, Renderer } from "./renderer";
 import { TouchControls } from "./touch";
 import {
   EventKind, Flags, MAX_PLAYERS, Mode, ShotResult, Sim, Snapshot, StepKind, Team,
@@ -37,6 +39,8 @@ const IMPACT_OVERSHOOT = 4;
 const MAX_BOT_SKILL = 2;
 const DEFAULT_BOT_SKILL = 1;
 const MAX_BOTS = MAX_PLAYERS - 1;
+/** cs::HitHead. */
+const HIT_HEAD = 1;
 
 const scratch = new THREE.Vector3();
 const walkFrom = [0, 0, 0];
@@ -47,6 +51,7 @@ const listenerFwd = new THREE.Vector3();
 const listenerUp = new THREE.Vector3();
 
 const MAPS: Record<string, MapDef> = {
+  dustyard: DUSTYARD,
   foundry: FOUNDRY,
   depot: DEPOT,
   silo: SILO,
@@ -62,7 +67,7 @@ const MODE_LABELS: Record<number, string> = {
 
 function chooseMap(): MapDef {
   const requested = new URLSearchParams(location.search).get("map");
-  return MAPS[requested ?? ""] ?? FOUNDRY;
+  return MAPS[requested ?? ""] ?? DUSTYARD;
 }
 
 /**
@@ -92,11 +97,11 @@ function initialRoster(map: MapDef): Roster {
 
 async function boot(): Promise<void> {
   const hud = new Hud();
-  hud.setStatus("LOADING SIM");
+  hud.setStatus("LOADING ASSETS");
 
   const container = document.getElementById("app")!;
   const renderer = new Renderer(container);
-  const sim = await Sim.load();
+  const [sim] = await Promise.all([Sim.load(), preloadAssets()]);
   const input = new Input(container);
   const touch = new TouchControls(
     (dx, dy) => input.addTouchLook(dx, dy),
@@ -148,6 +153,7 @@ async function boot(): Promise<void> {
   hud.setStatus("BUILDING WORLD");
   let rejected = 0;
   for (const brush of map.brushes) {
+    if (brush.solid === false) continue;
     if (!sim.addBrush(brushPlaneArray(brush), brush.surface)) ++rejected;
   }
   if (rejected > 0) {
@@ -218,9 +224,14 @@ async function boot(): Promise<void> {
   let accumulator = 0;
   let lastTime = performance.now();
   let wasAlive = true;
+  let lastReload = 0;
+  let lastWeapon = curr.weapon;
 
   function frame(now: number): void {
-    let dt = (now - lastTime) / 1000;
+    // A frame's timestamp is when it was scheduled, so the first one after the
+    // bake blocked the thread can predate `lastTime`. Negative time must never
+    // reach the smoothing below it: every ease there would run backward.
+    let dt = Math.max(0, (now - lastTime) / 1000);
     lastTime = now;
     if (dt > MAX_FRAME_SECONDS) dt = MAX_FRAME_SECONDS;
     accumulator += dt;
@@ -233,6 +244,13 @@ async function boot(): Promise<void> {
       input.notifyWeapon(curr.weapon);
       viewmodel.setWeapon(curr.weapon);
       viewmodel.setReloadTicks(curr.reload);
+      // A countdown that jumps up is a reload starting; one that vanishes
+      // before reaching its last tick was cancelled.
+      if (curr.reload > lastReload) audio.reload(curr.weapon, curr.reload * TICK_SECONDS);
+      else if (curr.reload === 0 && lastReload > 1) audio.cancelReload();
+      lastReload = curr.reload;
+      if (curr.weapon !== lastWeapon) audio.draw();
+      lastWeapon = curr.weapon;
       // Events are per-tick, not cumulative: read them before the next step
       // overwrites them, which is exactly what this loop does.
       for (let i = 0; i < curr.eventCount; ++i) handleEvent(curr.events[i]!);
@@ -254,7 +272,6 @@ async function boot(): Promise<void> {
     }
 
     const alpha = accumulator / TICK_SECONDS;
-    input.takeViewDelta();
     input.setFov(curr.fov);
     renderer.setFov(curr.fov);
     renderer.updatePlayers(prev, curr, alpha, dt, curr.localIndex);
@@ -266,15 +283,13 @@ async function boot(): Promise<void> {
       speedH: curr.speedH,
       onGround: (curr.flags & Flags.onGround) !== 0,
       tickAlpha: alpha,
-      yawDelta: input.yawDelta,
-      pitchDelta: input.pitchDelta,
     });
     hud.setScoreboard(input.scoreboard);
     hud.update(curr, dt);
     const death = deathCam.update(dt, curr, input.yaw, input.pitch);
     renderer.render(
       prev, curr, alpha, dt,
-      death?.yaw ?? input.yaw, death?.pitch ?? input.pitch, death?.eyeHeight,
+      death?.yaw ?? input.yaw, death?.pitch ?? input.pitch, viewmodel.bob, death?.eyeHeight,
     );
     // Ears follow the camera, after it has been placed for this frame.
     renderer.camera.getWorldPosition(listenerPos);
@@ -343,6 +358,7 @@ async function boot(): Promise<void> {
   function handleEvent(event: EventView): void {
     if (event.kind === EventKind.death) {
       hud.onDeath(event.actor, event.victim, event.weapon, curr.localIndex);
+      renderer.onDeath(curr, event.victim, event.actor, event.hitGroup === HIT_HEAD);
       if (event.actor === curr.localIndex) audio.kill();
       if (event.victim === curr.localIndex) deathCam.onKilled(event.actor, curr.localIndex);
       return;
@@ -366,6 +382,7 @@ async function boot(): Promise<void> {
     if (!local && !audible(event.start)) return;
 
     audio.shot(event.weapon, local ? undefined : event.start);
+    renderer.onShot(event.actor);
 
     if (local) {
       viewmodel.onShot();
@@ -407,15 +424,32 @@ async function boot(): Promise<void> {
 
     let first = true;
     eachSurface(event.start, to, MAX_IMPACT_SURFACES, (hit) => {
-      renderer.spawnImpact(hit.point, hit.normal);
+      renderer.spawnImpact(hit.point, hit.normal, hit.material);
       if (first) audio.impact(hit.material, hit.point);
       first = false;
     });
+
+    // A round that found a body ends on it: blood mist + classic 1.6 blood splatter
+    // cast onto any wall directly behind the struck player.
+    if (event.result === ShotResult.hit || event.result === ShotResult.kill) {
+      renderer.spawnPuff(event.end, Puff.blood);
+      const dx = event.end[0] - event.start[0];
+      const dy = event.end[1] - event.start[1];
+      const dz = event.end[2] - event.start[2];
+      const len = Math.hypot(dx, dy, dz) || 1;
+      const behind = sim.traceRay(event.end, [
+        event.end[0] + (dx / len) * 140,
+        event.end[1] + (dy / len) * 140,
+        event.end[2] + (dz / len) * 140,
+      ]);
+      if (behind) renderer.spawnImpact(behind.point, behind.normal, Puff.blood);
+    }
 
     if (local && event.result === ShotResult.hit) {
       audio.hit();
     } else if (event.victim === curr.localIndex) {
       audio.hurt();
+      hud.onHurt();
     }
   }
 

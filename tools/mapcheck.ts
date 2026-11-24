@@ -12,6 +12,7 @@
 import { brushFaces, brushPlaneArray } from "../client/src/map/brush";
 import type { MapDef } from "../client/src/map/mapdef";
 import { DEPOT } from "../client/src/map/maps/depot";
+import { DUSTYARD } from "../client/src/map/maps/dustyard";
 import { FOUNDRY } from "../client/src/map/maps/foundry";
 import { PRACTICE } from "../client/src/map/maps/practice";
 import { RELAY } from "../client/src/map/maps/relay";
@@ -20,6 +21,7 @@ import { Flags, MAX_PLAYERS, Mode, Sim, Snapshot, Team } from "../client/src/sim
 import { checkRoutes } from "./maproutes";
 
 const MAPS: Record<string, MapDef> = {
+  dustyard: DUSTYARD,
   foundry: FOUNDRY,
   depot: DEPOT,
   silo: SILO,

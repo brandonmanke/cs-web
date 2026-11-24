@@ -1,15 +1,19 @@
 import * as THREE from "three";
-import { buildArms, buildWeapon, muzzleOffset, poseSupportSleeve, WeaponId } from "./art/weapons";
+import {
+  buildArms, buildWeapon, muzzleFlashMaterial, muzzleOffset, poseSupportSleeve, WeaponId,
+} from "./art/weapons";
 import { disposeParts } from "./art/geometry";
 
 // First-person weapon rig. Everything here is cosmetic: the sim decides where
-// bullets go, this decides how it feels to hold the thing. Bob sells speed,
-// sway sells weight, and the recoil kick sells the shot — the view punch that
+// bullets go, this decides how it feels to hold the thing, and the feel it is
+// after is 1.6's. The gun is bolted to the view — no mouse lag — and rides the
+// same bob as the camera; a shot jolts it back with a little scatter, throws a
+// star of flame off the muzzle and brass out of the port. The view punch that
 // actually moves the camera comes from the sim.
 
 // Far enough forward that the stock isn't pressed against the near plane, and
 // angled across the view the way a held weapon actually sits.
-const BASE = new THREE.Vector3(5.8, -6.5, -17);
+const BASE = new THREE.Vector3(5, -6.1, -11.5);
 const LOWERED = new THREE.Vector3(9.5, -17, -20);
 const BASE_ROTATION = new THREE.Euler(-0.02, 0.14, 0.02);
 
@@ -18,19 +22,44 @@ function ease(t: number, start: number, end: number): number {
   return x * x * (3 - 2 * x);
 }
 
+/** GoldSrc's view bob (cl_bob 0.01, cl_bobcycle 0.8, cl_bobup 0.5), in units. */
+function viewBob(time: number, speed: number): number {
+  const cycle = (time % 0.8) / 0.8;
+  const angle = cycle < 0.5 ? Math.PI * cycle / 0.5 : Math.PI + Math.PI * (cycle - 0.5) / 0.5;
+  const bob = speed * 0.01;
+  return Math.max(-7, Math.min(4, bob * 0.3 + bob * 0.7 * Math.sin(angle)));
+}
+
+const SHELLS = 6;
+const SHELL_SECONDS = 0.55;
+const SHELL_GRAVITY = 70;
+/** Ejection port, rig-local. Close enough for every receiver in the set. */
+const PORT = new THREE.Vector3(1.1, 1.7, -3.4);
+
+interface Shell {
+  mesh: THREE.Mesh;
+  velocity: THREE.Vector3;
+  ttl: number;
+}
+
 export interface ViewmodelPose {
   speedH: number;
   onGround: boolean;
   tickAlpha: number;
-  /** Mouse delta this frame, radians — drives lag/sway. */
-  yawDelta: number;
-  pitchDelta: number;
 }
 
 export class Viewmodel {
   private readonly rig = new THREE.Group();
   private readonly slot = new THREE.Group();
-  private readonly flash: THREE.Mesh;
+  private readonly flash: THREE.Sprite;
+  private readonly shells: Shell[] = [];
+  private nextShell = 0;
+  /** This frame's view bob, for the camera to share. */
+  bob = 0;
+  private bobTime = 0;
+  private idle = 0;
+  private kickYaw = 0;
+  private kickRoll = 0;
   private readonly flashLight: THREE.PointLight;
 
   private model: THREE.Group | null = null;
@@ -47,10 +76,8 @@ export class Viewmodel {
   private readonly target = new THREE.Vector3();
   private weaponId = -1;
   private kick = 0;
+  private slash = 0;
   private draw = 0;
-  private bobPhase = 0;
-  private swayYaw = 0;
-  private swayPitch = 0;
   private flashTime = 0;
   private reloadDuration = 0;
   private lastReloadTicks = 0;
@@ -58,20 +85,22 @@ export class Viewmodel {
   constructor(private readonly camera: THREE.PerspectiveCamera) {
     this.rig.add(this.slot);
     this.rig.position.copy(BASE);
-    this.rig.scale.setScalar(0.62);
     camera.add(this.rig);
 
-    // Muzzle flash: an emissive quad and a brief light on the weapon and hands.
-    const flashMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffd88a,
-      transparent: true,
-      opacity: 0.95,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    this.flash = new THREE.Mesh(new THREE.PlaneGeometry(7, 7), flashMaterial);
+    // Muzzle flash: an additive star and a brief light on the weapon and hands.
+    this.flash = new THREE.Sprite(muzzleFlashMaterial());
     this.flash.visible = false;
     this.slot.add(this.flash);
+
+    // Spent brass lives in view space, so it falls away as the gun recoils.
+    const brass = new THREE.MeshPhongMaterial({ color: 0xb8923c, shininess: 60 });
+    const casing = new THREE.CylinderGeometry(0.2, 0.2, 1, 6).rotateX(Math.PI / 2);
+    for (let i = 0; i < SHELLS; ++i) {
+      const mesh = new THREE.Mesh(casing, brass);
+      mesh.visible = false;
+      camera.add(mesh);
+      this.shells.push({ mesh, velocity: new THREE.Vector3(), ttl: 0 });
+    }
 
     this.flashLight = new THREE.PointLight(0xffc266, 0, 500, 2);
     this.flashLight.visible = false;
@@ -110,7 +139,7 @@ export class Viewmodel {
   /** A weapon switch or respawn starts a fresh draw, never a leftover reload. */
   reset(): void {
     this.draw = 1;
-    this.kick = this.flashTime = this.reloadDuration = this.lastReloadTicks = 0;
+    this.kick = this.slash = this.flashTime = this.reloadDuration = this.lastReloadTicks = 0;
   }
 
   /** Observe every sim tick so a slow render frame cannot miss reload start. */
@@ -127,11 +156,25 @@ export class Viewmodel {
 
   onShot(): void {
     this.draw = 0; // an accepted shot means the sim has finished drawing
+    if (this.weaponId === WeaponId.knife) {
+      this.slash = 1;
+      return;
+    }
     this.kick = 1;
     this.flashTime = 0.045;
-    this.flash.rotation.z = Math.random() * Math.PI;
-    const scale = 0.75 + Math.random() * 0.5;
-    this.flash.scale.setScalar(scale);
+    this.flash.material.rotation = Math.random() * Math.PI;
+    this.flash.scale.setScalar(7 + Math.random() * 4);
+    // No two shots of a spray sit the gun back in quite the same place.
+    this.kickYaw = (Math.random() - 0.5) * 0.03;
+    this.kickRoll = (Math.random() - 0.5) * 0.05;
+    if (this.weaponId >= WeaponId.usp && this.weaponId !== WeaponId.awp) {
+      const shell = this.shells[this.nextShell++ % SHELLS]!;
+      shell.mesh.position.copy(PORT).applyQuaternion(this.rig.quaternion).add(this.rig.position);
+      shell.mesh.rotation.set(Math.random() * 3, Math.random() * 3, 0);
+      shell.velocity.set(11 + Math.random() * 6, 9 + Math.random() * 5, 2 + Math.random() * 4);
+      shell.ttl = SHELL_SECONDS;
+      shell.mesh.visible = true;
+    }
   }
 
   /** Match the overlay's screen position when the tracer uses the world FOV. */
@@ -147,6 +190,7 @@ export class Viewmodel {
 
   update(dt: number, pose: ViewmodelPose): void {
     this.kick = Math.max(0, this.kick - dt * 8.5);
+    this.slash = Math.max(0, this.slash - dt * 3.8);
     this.draw = Math.max(0, this.draw - dt * 4);
 
     // Flash decay.
@@ -156,20 +200,23 @@ export class Viewmodel {
     this.flashLight.visible = lit;
     this.flashLight.intensity = lit ? 2.6 : 0;
 
-    // Bob: phase advances with distance travelled, not time, so it stays
-    // locked to footfalls at any speed.
-    const speedFactor = Math.min(pose.speedH / 250, 1.2);
-    if (pose.onGround && pose.speedH > 10) {
-      this.bobPhase += dt * (2.2 + speedFactor * 9);
+    for (const shell of this.shells) {
+      if (shell.ttl <= 0) continue;
+      shell.ttl -= dt;
+      shell.velocity.y -= SHELL_GRAVITY * dt;
+      shell.mesh.position.addScaledVector(shell.velocity, dt);
+      shell.mesh.rotation.x += dt * 14;
+      shell.mesh.visible = shell.ttl > 0;
     }
-    const bobX = Math.sin(this.bobPhase) * 0.5 * speedFactor;
-    const bobY = Math.abs(Math.cos(this.bobPhase)) * 0.42 * speedFactor;
 
-    // Sway: the weapon lags the view, then eases back.
-    this.swayYaw += (-pose.yawDelta * 9 - this.swayYaw) * Math.min(1, dt * 11);
-    this.swayPitch += (-pose.pitchDelta * 9 - this.swayPitch) * Math.min(1, dt * 11);
-    const swayX = Math.max(-2.5, Math.min(2.5, this.swayYaw));
-    const swayY = Math.max(-2.5, Math.min(2.5, this.swayPitch));
+    // The engine's bob: the clock always runs and speed sets the size, so the
+    // gun pumps forward and back along the view as you run and is dead still
+    // when you stop. Eased, so landing does not snap it.
+    this.bobTime += dt;
+    this.idle += dt;
+    const bob = viewBob(this.bobTime, pose.onGround ? pose.speedH : 0);
+    this.bob += (bob - this.bob) * Math.min(1, dt * 12);
+    const breath = Math.sin(this.idle * 1.3);
 
     // Normalize the countdown observed from the sim, including frame fractions.
     // Cancellation, switching and the final ammo-transfer tick all return home.
@@ -209,27 +256,33 @@ export class Viewmodel {
     }
 
     const target = this.target.copy(BASE);
-    if (this.weaponId >= WeaponId.knife && this.weaponId <= WeaponId.glock) {
+    if (this.weaponId === WeaponId.knife) {
+      // Tactical knife carry: held forward-right with the wrist naturally aligned.
+      target.set(5.2, -5.4, -12.6);
+    } else if (this.weaponId === WeaponId.usp || this.weaponId === WeaponId.glock) {
       // Short weapons need the grip higher in frame to keep both hands visible.
-      target.x -= 1.3;
-      target.y += 1.4;
-      target.z -= 1.5;
+      target.x -= 1.2;
+      target.y += 1.7;
+      target.z -= 3.2;
     }
     target.lerp(LOWERED, this.draw * this.draw);
     target.x -= reload * (pistol ? 2 : 3.2);
     target.y += reload * 1.4;
     target.z += reload * 0.7;
     const settle = Math.sin((1 - this.draw) * Math.PI) * this.draw;
+    const slashArc = Math.sin(this.slash * Math.PI);
     this.rig.position.set(
-      target.x + bobX + swayX,
-      target.y - bobY + swayY - (pose.onGround ? 0 : 0.8),
-      target.z + this.kick * 2.2,
+      target.x - slashArc * 5.2,
+      target.y + breath * 0.05 + this.kick * 0.25 - slashArc * 1.4,
+      target.z - this.bob * 0.4 + this.kick * 1.4 - slashArc * 3.8,
     );
+    // A knife angles cleanly across the right view so the flat of the blade reads.
+    const blade = this.weaponId === WeaponId.knife ? 1 : 0;
     this.rig.rotation.set(
-      BASE_ROTATION.x + this.kick * 0.16 + reload * (pistol ? 0.38 : 0.16) + this.draw * 0.4 - settle * 0.15,
-      BASE_ROTATION.y + swayX * 0.04 + reload * 0.55,
-      BASE_ROTATION.z - swayY * 0.03 - reload * 0.45 +
-        this.draw * (this.weaponId === WeaponId.knife ? -1.1 : pistol ? 0.4 : 0.18),
+      blade * 0.22 + BASE_ROTATION.x + this.kick * 0.055 - slashArc * 0.42 + reload * (pistol ? 0.38 : 0.16) + this.draw * 0.4 - settle * 0.15,
+      blade * 0.38 + BASE_ROTATION.y + this.kick * this.kickYaw + slashArc * 0.75 + reload * 0.55,
+      blade * 0.22 + BASE_ROTATION.z + this.kick * this.kickRoll + slashArc * 0.55 + breath * 0.004 - reload * 0.45 +
+        this.draw * (this.weaponId === WeaponId.knife ? -0.9 : pistol ? 0.4 : 0.18),
     );
   }
 }

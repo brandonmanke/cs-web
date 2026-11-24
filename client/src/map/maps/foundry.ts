@@ -200,6 +200,21 @@ export const FOUNDRY: MapDef = {
   name: "foundry",
   brushes,
   lights,
+  sun: {
+    dir: [-0.45, 0.58, 0.68],
+    color: [1.0, 0.72, 0.44],
+    intensity: 0.95,
+    skyColor: [0.46, 0.54, 0.72],
+    skyIntensity: 0.38,
+  },
+  props: [
+    { model: "barrel", pos: [-352, 0, 140], yaw: 0.4, scale: 1.05 },
+    { model: "barrel", pos: [-324, 0, 168], yaw: 1.9, scale: 1.0 },
+    { model: "barrel", pos: [348, 0, -148], yaw: 2.3, scale: 1.05 },
+    { model: "crate_mil", pos: [-680, WALK_Y, -240], yaw: 0.25, scale: 1.15 },
+    { model: "crate_mil", pos: [680, WALK_Y, 240], yaw: -0.3, scale: 1.15 },
+    { model: "ammo_box", pos: [-272, 128, -288], yaw: 0.6, scale: 1.4 },
+  ],
   ambient: [0.12, 0.135, 0.17],
   mode: Mode.team,
   bots: 7, // 4v4 including you

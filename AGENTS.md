@@ -67,16 +67,20 @@ no third-party C dependencies and no binary assets.
 
 ## Assets
 
-- There are none, by design, and there is no longer an `assets/` directory to
-  put any in. Art is procedural (PLAN.md §5).
-- `vite.config.ts` `publicDir` **must never** be repointed at a directory of
-  binaries: Vite copies publicDir verbatim into `dist/`, which once staged
-  Valve-derived `*_ref.glb` files into the deploy artifact.
-- Any new asset must be original or CC0 with provenance recorded in the commit.
-  Prefer generating it in code: it diffs, it has no licence, and it costs no
-  download.
-- Art direction: PSX/GoldSrc-era low-poly **with textures** — no modern
-  flat-shaded stylized low-poly.
+- Runtime binary assets live under `client/public/assets/` (`textures/`,
+  `models/`, `audio/`) and **must be original or CC0/permissively licensed**
+  with full source URL and license recorded in `PROVENANCE.md`.
+- Never place Valve-derived or unlicensed reference packs in `client/public/`.
+  `client/src/art/loader.ts` loads binary assets with procedural fallbacks so
+  headless Node tests (`mapcheck`, `test:art`) work offline without a DOM.
+- Maps may be authored in standard TrenchBroom Valve-220 `.map` format
+  (`client/src/map/mapformat.ts`) or TypeScript brush constructors; both feed
+  `sim_add_brush` and the winding clipper through the exact same path.
+- Art direction: the Counter-Strike of 1.6 and Source, with original designs —
+  realistic operators, real-world firearms at real-world scale (1u = 1 inch),
+  gritty photo-sourced architectural textures with GoldSrc detail maps, baked
+  sunlight/lightmaps, and crisp sampled firearm audio. No modern flat-shaded
+  stylized low-poly, and no copies of Valve's own models.
 
 ## Conventions
 

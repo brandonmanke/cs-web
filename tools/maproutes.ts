@@ -4,6 +4,13 @@ import type { Vec3 } from "../client/src/map/brush";
 // Authored walking routes, with feet positions at each checkpoint. These use
 // the real player hull and pmove, not point rays or a separate navigation model.
 const ROUTES: Record<string, Record<string, Vec3[]>> = {
+  dustyard: {
+    // Remember: world z = -tb_y, so North (CT) is -Z and South (T) is +Z.
+    "mid doors": [[0, 0, 720], [0, 0, 120], [0, 0, -120], [0, 0, -360]],
+    "west tunnel": [[-560, 0, 560], [-560, 0, 0], [-560, 0, -480]],
+    "tunnel to mid": [[-560, 0, 160], [-256, 0, 160], [0, 0, 160]],
+    "east catwalk": [[640, 0, 560], [640, 128, 120], [640, 128, -120], [640, 0, -520]],
+  },
   foundry: {
     ring: [[-480, 96, -704], [480, 96, -704], [480, 96, 704], [-480, 96, 704], [-480, 96, -704]],
     catwalk: [[0, 96, -704], [0, 208, -352], [0, 208, 352], [0, 96, 704]],

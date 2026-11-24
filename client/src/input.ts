@@ -47,10 +47,6 @@ export class Input {
   /** Set when on-screen controls are live; they feed the same command. */
   touch: TouchSource | null = null;
 
-  /** View delta since the last sample, for viewmodel sway. */
-  yawDelta = 0;
-  pitchDelta = 0;
-
   private keys = new Set<string>();
   private fire = false;
   private zoom = false;
@@ -66,8 +62,6 @@ export class Input {
   /** Scroll ticks queued as jumps — the 1.6 bhop binding. */
   private scrollJumps = 0;
   private lockRetry: number | null = null;
-  private accumYaw = 0;
-  private accumPitch = 0;
 
   /** Notified whenever pointer lock is gained or lost. */
   onLockChange: ((locked: boolean) => void) | null = null;
@@ -178,8 +172,6 @@ export class Input {
     this.yaw -= dx * gain;
     this.pitch -= dy * gain;
     this.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, this.pitch));
-    this.accumYaw -= dx * gain;
-    this.accumPitch -= dy * gain;
   }
 
   /** A drag on the on-screen look pad, in CSS pixels. */
@@ -240,13 +232,5 @@ export class Input {
     const weapon = this.pendingWeapon || touchWeapon;
     this.pendingWeapon = 0;
     return { forward, strafe, yaw: this.yaw, pitch: this.pitch, buttons, weapon };
-  }
-
-  /** Consume the accumulated view delta; call once per rendered frame. */
-  takeViewDelta(): void {
-    this.yawDelta = this.accumYaw;
-    this.pitchDelta = this.accumPitch;
-    this.accumYaw = 0;
-    this.accumPitch = 0;
   }
 }
