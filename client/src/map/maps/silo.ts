@@ -1,6 +1,6 @@
 import { Mode } from "../../sim";
 import { box, ramp, room, Surface, type Brush } from "../brush";
-import type { MapDef, SpawnDef } from "../mapdef";
+import type { MapDecalDef, MapDef, PropDef, SpawnDef } from "../mapdef";
 
 // SILO — a roomy industrial loop with a crosscut through the central tower.
 // Lower lanes are 320u wide before cover; 192u ramps have approaches at both
@@ -102,9 +102,31 @@ const spawns: SpawnDef[] = [
   { pos: [368, 40, 0], yaw: Math.PI / 2 },
 ];
 
+const props: PropDef[] = [
+  // Industrial lamps over the central crosscut & four corners
+  { model: "lamp_ind", pos: [-368, CEIL - 14, -448], yaw: 0 },
+  { model: "lamp_ind", pos: [368, CEIL - 14, -448], yaw: 0 },
+  { model: "lamp_ind", pos: [-368, CEIL - 14, 448], yaw: 0 },
+  { model: "lamp_ind", pos: [368, CEIL - 14, 448], yaw: 0 },
+  // Industrial barrels & ammo cases tucked against existing cover
+  { model: "barrel", pos: [-224, 0, -400], yaw: 0.7 },
+  { model: "barrel", pos: [224, 0, 400], yaw: 2.3 },
+  { model: "ammo_box", pos: [-128, 64, -400], yaw: 0.18 },
+  { model: "ammo_box", pos: [128, 64, 400], yaw: -0.22 },
+  { model: "crate_mil", pos: [-720, 0, -720], yaw: 0.1 },
+  { model: "crate_mil", pos: [720, 0, 720], yaw: Math.PI + 0.1 },
+];
+
+const decals: MapDecalDef[] = [
+  { kind: "grime", pos: [-193, 84, 0], normal: [-1, 0, 0], size: 112 },
+  { kind: "grime", pos: [193, 84, 0], normal: [1, 0, 0], size: 112 },
+  { kind: "grime", pos: [0, 84, -767], normal: [0, 0, 1], size: 140 },
+  { kind: "grime", pos: [0, 84, 767], normal: [0, 0, -1], size: 140 },
+];
+
 export const SILO: MapDef = {
-  name: "silo", brushes, lights, spawns,
-  ambient: [0.13, 0.135, 0.15],
+  name: "silo", brushes, lights, spawns, props, decals,
+  ambient: [0.095, 0.105, 0.12],
   mode: Mode.deathmatch, bots: 5,
   background: 0x11151b, fog: [1200, 3400],
 };

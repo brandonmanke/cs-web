@@ -450,12 +450,22 @@ Next, in order:
   - ACES Filmic tone mapping, padded lightmap atlas charts, directional
     `light_environment` sun + sky fill, per-material bullet holes + wall blood
     splatters, knife slash animation, bot yaw/pitch interpolation, and pooled FX.
-- **M-lighting (next: Lighting Quality Buff)** — built directly on the `.map`
-  `light_environment` and padded atlas hooks from M-assets:
-  - 1–2 bounce radiosity (real colour bleeding into shaded arches/interiors)
-  - 2×2 supersampled soft shadows + Web Worker / pre-baked lightmap cache
-  - World light-grid probes matching character/prop/viewmodel shading to the room
-  - Dynamic muzzle-flash world lights + room-sized reverb.
+- **M-lighting (Lighting Quality Buff)** — landed on `feat/m2-lighting-buff`:
+  - Upgraded lightmap baker (`client/src/map/build.ts`): 12u luxel density packed
+    into a 2048px-wide half-float HDR atlas with 1px gutters and corner/border
+    extrusion, 4-sample jittered solar disc penumbras, 8-ray stratified
+    hemisphere gather (smooth distance-weighted contact AO + continuous sky
+    visibility), 2-bounce color-bleeding radiosity via cached surface links +
+    O(log N) normal-bucketed chart index, and edge-preserving bilateral denoise.
+  - Unified directional + hemisphere world light probe (`sampleLightProbe`)
+    driving character shading, GLB prop tinting, and camera-space directional
+    key + sky/ground fill on the first-person viewmodel.
+  - Pooled real-time dynamic muzzle-flash world lights (`MAX_WORLD_FLASHES = 4`):
+    `THREE.PointLight`s for characters/props paired with shared `uFlashPos` /
+    `uFlashColor` uniforms injected into the GoldSrc world shader (`dlight_t`
+    feel in dark tunnels/interiors).
+  - Headless radiosity, penumbra, light-probe, and atlas-budget regression suite
+    (`npm run test:lighting`).
 
 ## 8. Rules that don't change
 

@@ -3,7 +3,10 @@ import { Character, type Fall, type Look } from "./art/character";
 import { reflectionRoom } from "./art/weapons";
 import { desertSky, DuskTraffic, duskSky, orbitalSky } from "./art/sky";
 import { canvasTexture } from "./art/textures";
-import { buildMapGeometry, sampleLight, type ShadowProbe } from "./map/build";
+import {
+  buildMapGeometry, createWorldFlashUniforms, MAX_WORLD_FLASHES,
+  sampleLightProbe, type RayTracer, type ShadowProbe, type WorldFlashUniforms,
+} from "./map/build";
 import type { MapDef, SunLight } from "./map/mapdef";
 import { Flags, Team, TICK_SECONDS, type Snapshot } from "./sim";
 
@@ -28,7 +31,19 @@ const STEP_CATCHUP = 180;
 const CHARACTER_LIFT = (v: number): number => 0.45 + v * 0.75;
 
 const scratchTint = new THREE.Vector3();
+const scratchSky = new THREE.Vector3();
+const scratchGround = new THREE.Vector3();
+const scratchKeyColor = new THREE.Vector3();
+const scratchKeyDir = new THREE.Vector3();
+const scratchInvCam = new THREE.Quaternion();
 const MAX_PUFFS = 32;
+const FLASH_LIFE = 0.065;
+
+interface WorldFlash {
+  light: THREE.PointLight;
+  ttl: number;
+  baseIntensity: number;
+}
 
 /** What a round kicks up: keyed by cs::Material, plus blood. */
 export const Puff = { concrete: 0, wood: 1, metal: 2, sand: 3, blood: 4 } as const;
@@ -169,7 +184,14 @@ export class Renderer {
   private readonly sceneHemi: THREE.HemisphereLight;
   private readonly weaponFill: THREE.HemisphereLight;
   private readonly weaponKey: THREE.DirectionalLight;
+  private readonly weaponSky = new THREE.Vector3(0.75, 0.82, 0.9);
+  private readonly weaponGround = new THREE.Vector3(0.35, 0.32, 0.28);
+  private readonly weaponKeyColor = new THREE.Vector3(1, 0.92, 0.8);
+  private readonly weaponKeyDir = new THREE.Vector3(0.3, 0.85, 0.42);
   private readonly weaponTint = new THREE.Vector3(1, 1, 1);
+  private readonly worldFlashUniforms: WorldFlashUniforms = createWorldFlashUniforms();
+  private readonly worldFlashes: WorldFlash[] = [];
+  private nextFlash = 0;
   private probe: ShadowProbe | undefined;
   private tracers: Tracer[] = [];
   private decals: Decal[] = [];
@@ -234,12 +256,20 @@ export class Renderer {
     this.scene.environmentIntensity = 0.4;
 
     // Dynamic lighting for characters, held weapons, and GLB props; world
-    // architecture uses the baked lightmap atlas.
-    this.sceneHemi = new THREE.HemisphereLight(0xa9b6c4, 0x4a443c, 1.15);
+    // architecture uses the baked radiosity lightmap + dynamic dlight shader.
+    this.sceneHemi = new THREE.HemisphereLight(0xa9b6c4, 0x5c4f3d, 1.15);
     this.scene.add(this.sceneHemi);
     this.sceneKey = new THREE.DirectionalLight(0xfff0d8, 1.35);
     this.sceneKey.position.set(0.3, 1, 0.45);
     this.scene.add(this.sceneKey);
+
+    // Pooled dynamic muzzle-flash world lights (illuminate characters, props & walls).
+    for (let i = 0; i < MAX_WORLD_FLASHES; ++i) {
+      const light = new THREE.PointLight(0xffb85c, 0, 340, 2);
+      light.visible = false;
+      this.scene.add(light);
+      this.worldFlashes.push({ light, ttl: 0, baseIntensity: 0 });
+    }
 
     this.shadowMaterial = new THREE.MeshBasicMaterial({
       map: shadowTexture(),
@@ -287,8 +317,8 @@ export class Renderer {
     this.lastEyeY = 0;
   }
 
-  /** Build world geometry and bake its lighting. Returns the shadow ray count. */
-  buildMap(map: MapDef, probe: ShadowProbe): number {
+  /** Build world geometry and bake its radiosity lighting. Returns the shadow ray count. */
+  buildMap(map: MapDef, probe: ShadowProbe, trace?: RayTracer): number {
     this.mapLights = map.lights;
     this.mapSun = map.sun;
     this.mapAmbient = map.ambient;
@@ -306,17 +336,21 @@ export class Renderer {
     this.skyTraffic = map.sky === "dusk" ? new DuskTraffic() : null;
     if (this.skyTraffic) this.scene.add(this.skyTraffic.root);
 
-    // Align scene dynamic key/hemi lights with the map's sun so characters and
-    // GLB props match the direction and colour temperature of the baked world.
+    // Align scene dynamic key/hemi lights with the map's sun & ground bounce so
+    // characters and GLB props match the direction and warmth of the baked world.
     if (map.sun) {
       this.sceneKey.position.set(...map.sun.dir);
       this.sceneKey.color.setRGB(...map.sun.color);
-      this.sceneKey.intensity = 1.45;
+      this.sceneKey.intensity = 1.5;
       this.sceneHemi.color.setRGB(...map.sun.skyColor);
+      this.sceneHemi.groundColor.setRGB(
+        map.sun.color[0] * 0.42, map.sun.color[1] * 0.36, map.sun.color[2] * 0.26,
+      );
     }
 
     const built = buildMapGeometry(
       map.brushes, map.lights, map.ambient, probe, map.sun, map.props, map.decals,
+      trace, this.worldFlashUniforms,
     );
     for (const mesh of built.meshes) this.scene.add(mesh);
     return built.shadowRays;
@@ -401,15 +435,23 @@ export class Renderer {
       if (view.flash > 0 && (view.flags & Flags.alive) !== 0) {
         character.setTint(1.5, 0.5, 0.4);
       } else {
-        const tint = sampleLight([x, y, z], this.mapLights, this.mapAmbient, this.probe, this.mapSun);
-        character.setTint(...(tint.map(CHARACTER_LIFT) as [number, number, number]));
+        const lp = sampleLightProbe([x, y, z], this.mapLights, this.mapAmbient, this.probe, this.mapSun);
+        character.setTint(...(lp.tint.map(CHARACTER_LIFT) as [number, number, number]));
       }
     }
   }
 
-  /** A roster slot fired: recoil and muzzle flash on its body. */
-  onShot(actor: number): void {
+  /** A roster slot fired: recoil, muzzle flash sprite, and dynamic world dlight. */
+  onShot(actor: number, muzzlePos?: readonly number[], heavy = false): void {
     this.characters[actor]?.fire();
+    if (muzzlePos) {
+      const slot = this.worldFlashes[this.nextFlash++ % MAX_WORLD_FLASHES]!;
+      slot.light.position.set(muzzlePos[0]!, muzzlePos[1]!, muzzlePos[2]!);
+      slot.baseIntensity = heavy ? 1.65 : 1.15;
+      slot.light.intensity = slot.baseIntensity * 1400;
+      slot.light.visible = true;
+      slot.ttl = FLASH_LIFE;
+    }
   }
 
   /** Pick the fall before the body goes limp: backward off a shot from the front. */
@@ -526,6 +568,25 @@ export class Renderer {
       this.retireDecal(decal);
       return false;
     });
+
+    // Update dynamic muzzle-flash world lights & sync them to the world shader uniforms.
+    for (let i = 0; i < this.worldFlashes.length; ++i) {
+      const slot = this.worldFlashes[i]!;
+      const uPos = this.worldFlashUniforms.positions[i]!;
+      const uCol = this.worldFlashUniforms.colors[i]!;
+      if (slot.ttl > 0) {
+        slot.ttl = Math.max(0, slot.ttl - dt);
+        const f = slot.ttl / FLASH_LIFE;
+        const power = f * f * slot.baseIntensity;
+        slot.light.intensity = power * 1400;
+        slot.light.visible = slot.ttl > 0;
+        uPos.copy(slot.light.position);
+        uCol.set(1.0 * power, 0.68 * power, 0.30 * power);
+      } else {
+        slot.light.visible = false;
+        uCol.set(0, 0, 0);
+      }
+    }
   }
 
   /**
@@ -553,22 +614,53 @@ export class Renderer {
   }
 
   /**
-   * GoldSrc lit the weapon in your hands from the floor you stood on. Same
-   * idea: the viewmodel's lights follow the map light reaching the eye, eased
-   * so stepping past a pillar dims the gun instead of blinking it.
+   * Unified world-matched viewmodel lighting (M2 probe):
+   * Samples sky dome fill, floor bounce warmth, and the dominant light vector
+   * (sun outdoors, overhead lamp in tunnels) and transforms that direction into
+   * camera space so the weapon and gloves sit inside the exact room lighting.
    */
   private lightWeapon(dt: number): void {
     const eye = this.camera.position;
-    const [r, g, b] = sampleLight([eye.x, eye.y, eye.z], this.mapLights, this.mapAmbient, this.probe, this.mapSun);
-    const tint = this.weaponTint;
-    tint.lerp(scratchTint.set(r, g, b), Math.min(1, dt * 6));
-    const level = (tint.x + tint.y + tint.z) / 3;
-    const lift = CHARACTER_LIFT(level) / (level || 1);
-    const exposure = Math.min(1.25, CHARACTER_LIFT(level));
-    this.weaponFill.intensity = 1.5 * exposure;
-    // Reflections dim with the room, or blued steel would gleam in the dark.
-    this.weaponScene.environmentIntensity = 0.6 * exposure;
-    this.weaponKey.color.setRGB(tint.x * lift, tint.y * lift, tint.z * lift);
+    const lp = sampleLightProbe([eye.x, eye.y, eye.z], this.mapLights, this.mapAmbient, this.probe, this.mapSun);
+    const rate = Math.min(1, dt * 7);
+
+    this.weaponTint.lerp(scratchTint.set(...lp.tint), rate);
+    this.weaponSky.lerp(scratchSky.set(...lp.sky), rate);
+    this.weaponGround.lerp(scratchGround.set(...lp.ground), rate);
+    this.weaponKeyColor.lerp(scratchKeyColor.set(...lp.keyColor), rate);
+    this.weaponKeyDir.lerp(scratchKeyDir.set(...lp.keyDir), rate).normalize();
+
+    const level = (this.weaponTint.x + this.weaponTint.y + this.weaponTint.z) / 3;
+    const exposure = Math.min(1.35, CHARACTER_LIFT(level));
+
+    this.weaponFill.color.setRGB(
+      Math.max(0.25, this.weaponSky.x + 0.25),
+      Math.max(0.25, this.weaponSky.y + 0.25),
+      Math.max(0.25, this.weaponSky.z + 0.25),
+    );
+    this.weaponFill.groundColor.setRGB(
+      Math.max(0.14, this.weaponGround.x + 0.14),
+      Math.max(0.13, this.weaponGround.y + 0.13),
+      Math.max(0.12, this.weaponGround.z + 0.12),
+    );
+    this.weaponFill.intensity = 1.45 * exposure;
+    this.weaponScene.environmentIntensity = 0.58 * exposure;
+
+    // Transform world key light direction into weaponCamera-local coordinates.
+    scratchInvCam.copy(this.camera.quaternion).invert();
+    scratchKeyDir.copy(this.weaponKeyDir).applyQuaternion(scratchInvCam).normalize();
+    this.weaponKey.position.set(
+      scratchKeyDir.x * 32,
+      scratchKeyDir.y * 32,
+      scratchKeyDir.z * 32 - 20,
+    );
+    const kLift = CHARACTER_LIFT(Math.max(this.weaponKeyColor.x, this.weaponKeyColor.y, this.weaponKeyColor.z));
+    this.weaponKey.color.setRGB(
+      Math.min(1.6, 0.35 + this.weaponKeyColor.x * 1.15),
+      Math.min(1.6, 0.35 + this.weaponKeyColor.y * 1.15),
+      Math.min(1.6, 0.35 + this.weaponKeyColor.z * 1.15),
+    );
+    this.weaponKey.intensity = 1.65 * kLift;
   }
 
   /** `eyeHeight` overrides the interpolated stance height — the death cam. */

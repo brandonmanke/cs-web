@@ -1,6 +1,6 @@
 import { Mode, Team } from "../../sim";
 import { box, ramp, room, stairs, Surface, type Brush } from "../brush";
-import type { MapDef, SpawnDef } from "../mapdef";
+import type { MapDecalDef, MapDef, PropDef, SpawnDef } from "../mapdef";
 
 // DEPOT — the team map, and the one that gives the AWP a reason to exist.
 //
@@ -124,11 +124,38 @@ const spawns: SpawnDef[] = [
   })),
 ];
 
+// --- props & decals ---------------------------------------------------------
+
+const props: PropDef[] = [
+  // Industrial ceiling pendants beneath the central sodium bay lights
+  { model: "lamp_ind", pos: [-192, CEIL - 12, -320], yaw: 0 },
+  { model: "lamp_ind", pos: [-192, CEIL - 12, 320], yaw: 0 },
+  { model: "lamp_ind", pos: [192, CEIL - 12, -320], yaw: 0 },
+  { model: "lamp_ind", pos: [192, CEIL - 12, 320], yaw: 0 },
+  { model: "lamp_ind", pos: [0, CEIL - 12, 0], yaw: 0 },
+  // Industrial barrels & ammo cases tucked against existing cover/walls
+  { model: "barrel", pos: [-490, 0, 250], yaw: 0.4 },
+  { model: "barrel", pos: [490, 0, -250], yaw: 2.1 },
+  { model: "ammo_box", pos: [-535, 96, 130], yaw: 0.25 },
+  { model: "ammo_box", pos: [535, 96, -130], yaw: -0.3 },
+  { model: "crate_mil", pos: [-728, 0, 440], yaw: 0.05 },
+  { model: "crate_mil", pos: [728, 0, -440], yaw: Math.PI - 0.05 },
+];
+
+const decals: MapDecalDef[] = [
+  { kind: "grime", pos: [-767, 72, 0], normal: [1, 0, 0], size: 128 },
+  { kind: "grime", pos: [767, 72, 0], normal: [-1, 0, 0], size: 128 },
+  { kind: "arrow_r", pos: [-192, 38, -257], normal: [0, 0, -1], size: 52 },
+  { kind: "arrow_l", pos: [192, 38, 257], normal: [0, 0, 1], size: 52 },
+];
+
 export const DEPOT: MapDef = {
   name: "depot",
   brushes,
   lights,
-  ambient: [0.09, 0.095, 0.105],
+  props,
+  decals,
+  ambient: [0.065, 0.072, 0.085],
   mode: Mode.team,
   bots: 7,
   spawns,
