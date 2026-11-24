@@ -15,6 +15,7 @@
     "test:touch": "esbuild tools/touch.test.ts --bundle --platform=node --format=esm --outfile=build/touch.test.mjs --log-level=error && node --test build/touch.test.mjs",
     "test:bots": "esbuild tools/bots.test.ts --bundle --platform=node --format=esm --loader:.map=text --outfile=build/bots.test.mjs --log-level=error && node --test build/bots.test.mjs",
     "test:art": "esbuild tools/character.test.ts tools/sky.test.ts tools/viewmodel.test.ts --bundle --platform=node --format=esm --outdir=build --out-extension:.js=.mjs --log-level=error && node --test build/character.test.mjs build/sky.test.mjs build/viewmodel.test.mjs",
+    "test:lighting": "esbuild tools/lighting.test.ts --bundle --platform=node --format=esm --loader:.map=text --outfile=build/lighting.test.mjs --log-level=error && node --test build/lighting.test.mjs",
     "mapcheck": "esbuild tools/mapcheck.ts --bundle --platform=node --format=esm --loader:.map=text --outfile=build/mapcheck.mjs --log-level=error && node build/mapcheck.mjs",
     "typecheck": "tsc --noEmit"
   },

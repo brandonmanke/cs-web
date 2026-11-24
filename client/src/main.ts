@@ -168,9 +168,13 @@ async function boot(): Promise<void> {
   // Yield once so the status paints before the bake blocks the main thread.
   await new Promise((resolve) => setTimeout(resolve, 0));
   const bakeStart = performance.now();
-  const rays = renderer.buildMap(map, (from, to) => sim.isBlocked(from, to));
+  const rays = renderer.buildMap(
+    map,
+    (from, to) => sim.isBlocked(from, to),
+    (from, to) => sim.traceRay(from, to),
+  );
   const bakeMs = Math.round(performance.now() - bakeStart);
-  console.info(`${map.name}: ${map.brushes.length} brushes, ${rays} shadow rays, ${bakeMs}ms bake`);
+  console.info(`${map.name}: ${map.brushes.length} brushes, ${rays} shadow rays, ${bakeMs}ms radiosity bake`);
 
   const prev = new Snapshot();
   const curr = new Snapshot();
@@ -382,7 +386,6 @@ async function boot(): Promise<void> {
     if (!local && !audible(event.start)) return;
 
     audio.shot(event.weapon, local ? undefined : event.start);
-    renderer.onShot(event.actor);
 
     if (local) {
       viewmodel.onShot();
@@ -398,6 +401,9 @@ async function boot(): Promise<void> {
           return [muzzle.x, muzzle.y, muzzle.z] as const;
         })()
       : event.start;
+    // Trigger body recoil, muzzle flash sprite, and dynamic world dlight (skip knife & suppressed USP).
+    const flashPos = event.weapon === 1 || event.weapon === 2 ? undefined : start;
+    renderer.onShot(event.actor, flashPos, event.weapon === 6);
     renderer.spawnTracer(start, event.end);
 
     // Mark every surface the round entered, not just where it came to rest: a
