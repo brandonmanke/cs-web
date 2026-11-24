@@ -34,12 +34,23 @@ function valveMapPlugin(): Plugin {
   };
 }
 
+function envPort(): number | undefined {
+  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env;
+  const raw = env?.PORT ?? env?.npm_config_port;
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isInteger(parsed) && parsed > 0 && parsed <= 65535 ? parsed : undefined;
+}
+
+const port = envPort();
+
 export default defineConfig({
   root: "client",
   // `client/public/assets/` holds vetted CC0 / original web assets (tracked in
   // PROVENANCE.md). Never add Valve-derived or unlicensed binaries here.
   publicDir: "public",
   plugins: [valveMapPlugin()],
+  server: port ? { port } : undefined,
+  preview: port ? { port } : undefined,
   build: {
     outDir: "../dist",
     emptyOutDir: true,
